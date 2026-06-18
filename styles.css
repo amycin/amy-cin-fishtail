@@ -967,6 +967,21 @@ button.primary-button.is-generating {
   padding-left: 20px;
 }
 
+.help-body .ratio-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.help-body .ratio-list li {
+  padding: 6px 8px;
+  border: 1px solid rgba(192, 83, 42, 0.16);
+  border-radius: 6px;
+  background: rgba(255, 247, 216, 0.46);
+}
+
 .help-body code {
   color: #3a1329;
   font: 0.86em/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

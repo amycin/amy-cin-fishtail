@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=30">
+    <link rel="stylesheet" href="styles.css?v=31">
   </head>
   <body>
     <main class="shell">
@@ -207,7 +207,22 @@
               <section>
                 <h3>Pitch Modes</h3>
                 <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs. The voice tracks stay clean: note on/off events only, no program changes, no controller setup, and no track-name clutter. If Tempo map is on, a separate conductor track writes BPM and time signatures. The selected BPM is also shown in the downloaded filename.</p>
-                <p><strong>Amy Dub Intonation</strong> is Amy McBride's experimental ratio-based dub tuning. Instead of dividing the octave into twelve equal steps, it maps chromatic slots to chosen ratios such as <code>1/1</code>, <code>9/8</code>, <code>5/4</code>, <code>4/3</code>, <code>3/2</code>, and <code>7/4</code>. In retuner mode the MIDI notes are carrier keys: the note number may look ordinary or unusual, but the retuner turns that key into the intended ratio pitch.</p>
+                <p><strong>Amy Dub Intonation</strong> is Amy McBride's experimental ratio-based dub tuning. Instead of dividing the octave into twelve equal steps, it maps chromatic slots to chosen ratios. In retuner mode the MIDI notes are carrier keys: the note number may look ordinary or unusual, but the retuner turns that key into the intended ratio pitch.</p>
+                <p><strong>Amy Dub ratio pattern</strong>, chromatic from the selected root:</p>
+                <ul class="ratio-list">
+                  <li><code>0</code> <code>1/1</code> home</li>
+                  <li><code>1</code> <code>16/15</code> upper bite</li>
+                  <li><code>2</code> <code>9/8</code> motion</li>
+                  <li><code>3</code> <code>8/7</code> blue low</li>
+                  <li><code>4</code> <code>7/6</code> minor soul</li>
+                  <li><code>5</code> <code>5/4</code> sweet light</li>
+                  <li><code>6</code> <code>4/3</code> plagal</li>
+                  <li><code>7</code> <code>11/8</code> shimmer</li>
+                  <li><code>8</code> <code>3/2</code> pillar</li>
+                  <li><code>9</code> <code>8/5</code> pivot</li>
+                  <li><code>10</code> <code>13/8</code> tender lift</li>
+                  <li><code>11</code> <code>7/4</code> dub crown</li>
+                </ul>
                 <p><strong>Bend MIDI</strong> writes multiple single-voice MIDI tracks, one voice per track/channel, and retunes each voice toward Amy Dub intonation with pitch-bend messages. It should be played through separate mono instruments or separate mono channels. If the parts are merged into one polyphonic instrument, the pitch bends will fight each other and the tuning will not work properly.</p>
               </section>
 
