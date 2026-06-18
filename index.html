@@ -207,8 +207,14 @@
               <section>
                 <h3>Pitch Modes</h3>
                 <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs. The voice tracks stay clean: note on/off events only, no program changes, no controller setup, and no track-name clutter. If Tempo map is on, a separate conductor track writes BPM and time signatures. The selected BPM is also shown in the downloaded filename.</p>
-                <p><strong>Amy Dub Intonation</strong> writes carrier MIDI notes for a retuner such as Entonal. The MIDI note numbers may look unusual because the retuner turns those carrier keys into Amy Dub ratio pitches. The voice tracks stay clean so the retuner or DAW receives simple voice parts. For the tuning logic, look at the ratios in the GitHub <code>README.md</code> section called Gravity Counterpoint Rules And Amy Dub Ratios.</p>
+                <p><strong>Amy Dub Intonation</strong> is Amy McBride's experimental ratio-based dub tuning. Instead of dividing the octave into twelve equal steps, it maps chromatic slots to chosen ratios such as <code>1/1</code>, <code>9/8</code>, <code>5/4</code>, <code>4/3</code>, <code>3/2</code>, and <code>7/4</code>. In retuner mode the MIDI notes are carrier keys: the note number may look ordinary or unusual, but the retuner turns that key into the intended ratio pitch.</p>
                 <p><strong>Bend MIDI</strong> writes multiple single-voice MIDI tracks, one voice per track/channel, and retunes each voice toward Amy Dub intonation with pitch-bend messages. It should be played through separate mono instruments or separate mono channels. If the parts are merged into one polyphonic instrument, the pitch bends will fight each other and the tuning will not work properly.</p>
+              </section>
+
+              <section>
+                <h3>Fishtail Gravity</h3>
+                <p><strong>Fishtail Gravity</strong> is Amy's compositional idea for making complex theory flow gently. Notes are treated as forces with tendencies: leading tones want to rise, certain minor-key colours want to fall, cadences pull the voices home, bass tones create weight, and silence lets another voice answer.</p>
+                <p>The generator combines that gravity with counterpoint, fugue structure, rhythmic breathing, and optional Amy Dub ratios. Equal Temperament keeps the usual twelve-step tuning; Amy Dub Intonation keeps the same musical functions but lets the pitch world bend toward Amy's ratio experiment.</p>
               </section>
 
               <section>
@@ -300,6 +306,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=40"></script>
+    <script src="src/app.js?v=41"></script>
   </body>
 </html>

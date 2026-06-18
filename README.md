@@ -59,13 +59,17 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 
 ## Tuning Modes
 
-- `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or another retuner. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers. The voice tracks are note-only.
+- `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or another retuner. This is Amy McBride's experimental ratio-based dub intonation system. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers. The voice tracks are note-only.
 - `Equal temperament`: writes ordinary MIDI notes for normal synth playback. The voice tracks are note-only. Use the Tempo map switch to add a conductor track with BPM and time signatures, or turn it off for strict note-only MIDI.
 - `Bend MIDI`: writes multiple single-voice tracks, one voice per track/channel, with per-voice pitch bend for approximate Dub-ratio playback. Use separate mono instruments or separate mono channels. If these parts are merged into one polyphonic instrument, pitch bends for one note can retune the other notes and the result will not work properly.
 
 ## Gravity Counterpoint Rules And Amy Dub Ratios
 
 The counterpoint generator treats notes as musical functions first, then maps them to either ordinary equal-temperament MIDI, Amy Dub carrier notes for a retuner, or Bend MIDI pitch-bend output.
+
+Fishtail Gravity is Amy's composition idea for making complex theory behave like musical force. Notes are not only random choices; they have tendencies and weights. Leading tones pull upward, certain minor-key colours pull downward, cadences pull voices toward a landing, bass notes create gravity, and rests let another voice answer. The generator uses this idea across counterpoint, imitation, Fishtail Fugue form, breath, cadence, and DUB behavior.
+
+Equal temperament divides the octave into twelve equal logarithmic steps. Amy Dub Intonation is different: it keeps the twelve chromatic slots as a practical MIDI map, but each slot points to a chosen ratio. Those ratios are Amy's dub-tuning experiment, so the generator can write familiar MIDI structures while a retuner or Bend MIDI output makes the pitch world lean toward ratios such as `1/1`, `9/8`, `5/4`, `4/3`, `3/2`, and `7/4`.
 
 Rule ideas currently represented in the prototype:
 
