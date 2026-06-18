@@ -201,8 +201,8 @@
 
               <section>
                 <h3>Randomness</h3>
-                <p>The app runs locally in the browser. It uses the browser Web Crypto random source to make a seed, then uses that seed for repeatable musical choices inside the generator. On a normal web page, JavaScript cannot read <code>/dev/urandom</code> directly, but modern browsers expose secure random bytes through <code>crypto.getRandomValues</code>. Advanced users can optionally mix in a custom entropy endpoint; see <code>PUBLISHING.md</code>.</p>
-                <p><strong>D4</strong> rolls a gentler form with a tasteful chance of Refrain or Gentle Development after the first section. <strong>D20</strong> rolls a wider form with more varied keys, meters, Refrain returns, Development rows, and occasional Dubby treatments. The first section stays Normal so later rows have source material to return to or develop.</p>
+                <p>The app runs locally in the browser. It uses the browser Web Crypto random source to make a seed, then uses that seed for repeatable musical choices inside the generator. On an ordinary web page, JavaScript cannot read <code>/dev/urandom</code> directly, but modern browsers expose secure random bytes through <code>crypto.getRandomValues</code>. Advanced users can optionally mix in a custom entropy endpoint; see <code>PUBLISHING.md</code>.</p>
+                <p><strong>D4</strong> rolls a gentler form with a tasteful chance of Refrain or Gentle Development after the first section. <strong>D20</strong> rolls a wider form with more varied keys, meters, Refrain returns, Development rows, and occasional Dubby treatments. The first section stays <strong>Fishtail/Source</strong> so later rows have source material to return to or develop.</p>
               </section>
 
               <section>
@@ -242,8 +242,8 @@
 
               <section>
                 <h3>Refrains, Pedals, And Held Notes</h3>
-                <p><strong>Role</strong> chooses what each Form row does. The first row is always <strong>Normal</strong>, because it introduces the source material. Later <strong>Refrain</strong> rows return that first-section idea, and later <strong>Development</strong> rows reshape it into a new answer. If a Development ever has no source to work from, it simply writes a normal section and says so in Generation Notes.</p>
-                <p><strong>Treatment</strong> chooses the flavour of a Refrain or Development. <strong>Straight</strong> keeps a Refrain close to the first-section source. <strong>Gentle</strong> develops it with key movement, octave changes, small answering gestures, light rhythm changes, and voice handoff. <strong>Dubby</strong> keeps recognizable fragments while the bass finds more root/fifth gravity and the inner voices answer with offbeat skank chords.</p>
+                <p><strong>Role</strong> chooses what each Form row does. The first row is always <strong>Fishtail</strong>, because it introduces the source material. Later <strong>Refrain</strong> rows return that first-section idea, and later <strong>Development</strong> rows reshape it into a new answer. If a Development ever has no source to work from, it writes a fresh Fishtail section and says so in Generation Notes.</p>
+                <p><strong>Treatment</strong> chooses the flavour of a Refrain or Development. <strong>Source</strong> marks the first Fishtail row. <strong>Clear Return</strong> keeps a Refrain close to the first-section source. <strong>Gentle</strong> develops it with key movement, octave changes, small answering gestures, light rhythm changes, and voice handoff. <strong>Dubby</strong> keeps recognizable fragments while the bass finds more root/fifth gravity and the inner voices answer with offbeat skank chords.</p>
                 <p><strong>Pedal</strong> voice switches tell the generator that a voice is allowed to hold longer tonic or fifth notes as an intentional drone. Bass pedal turns on by default in DUB mode. For melody and inner voices, long held notes are shaped to breathe and resolve musically, so they feel like expressive tension rather than accidental stuck notes.</p>
                 <p>Project JSON remembers section roles, treatments, pedal choices, Refrain source material, and Development transformations, so a favourite form can be saved and returned to later.</p>
               </section>
@@ -317,6 +317,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=45"></script>
+    <script src="src/app.js?v=46"></script>
   </body>
 </html>

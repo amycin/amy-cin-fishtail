@@ -44,7 +44,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.
 - Fishtail Fugue mode with automatic three-section minimum form shaping, subject/answer/countersubject planning, exposition entries, episodes, middle entries, and final return. DUB off uses Formal Gravity; DUB on keeps the fugue map but gives the bass and offbeat answers more room.
 - Optional Dub Gravity switch for steadier root/fifth bass, offbeat middle-voice skank gestures, more breathing room, black/green terminal visuals, and rare deliberate rule bends that are still reported by the checker.
-- Whole-section refrain roles with straight/dubby returns and gentle/dubby developments.
+- Whole-section refrain roles with clear/dubby returns and gentle/dubby developments.
 - Suspension gravity with per-voice pedal controls, stepwise resolution pressure, and checker reporting for overlong held notes.
 - Slower staged generation pass with a final output checker for timing, range, cadence, tendency-tone, overlap, and parallel-perfect warnings.
 - Clean Equal Temperament and Amy Dub Intonation MIDI exports: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When Tempo map is on, a separate conductor track writes BPM and time signatures for DAWs that read them. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes.
@@ -61,12 +61,12 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 
 - `D4`: a gentle weighted form roll. It usually creates 3-5 sections with moderate bar lengths, common meters, close key relationships, and a tasteful chance of Refrain or Gentle Development after the first section.
 - `D20`: a wider weighted form roll. It usually creates 4-7 sections, allows broader bar lengths, and gives the Varied slider more influence over meters, modes, key movement, Refrain returns, Development rows, and occasional Dubby treatments.
-- With `DUB` armed, both dice lean toward Fishtail Fugue, slightly larger forms, more Refrain/Development roles, and more Dubby treatments. The first section remains Normal so later rows have source material to return to or develop.
+- With `DUB` armed, both dice lean toward Fishtail Fugue, slightly larger forms, more Refrain/Development roles, and more Dubby treatments. The first section remains Fishtail/Source so later rows have source material to return to or develop.
 
 ## Tuning Modes
 
 - `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or a similar retuner that can define these ratios. This is Amy McBride's experimental ratio-based dub intonation system. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers. The voice tracks are note-only.
-- `Equal temperament`: writes ordinary MIDI notes for normal synth playback. The voice tracks are note-only. Use the Tempo map switch to add a conductor track with BPM and time signatures, or turn it off for strict note-only MIDI.
+- `Equal temperament`: writes ordinary MIDI notes for standard synth playback. The voice tracks are note-only. Use the Tempo map switch to add a conductor track with BPM and time signatures, or turn it off for strict note-only MIDI.
 - `Bend MIDI`: writes multiple single-voice tracks, one voice per track/channel, with per-voice pitch bend for approximate Dub-ratio playback. Use separate mono instruments or separate mono channels. If these parts are merged into one polyphonic instrument, pitch bends for one note can retune the other notes and the result will not work properly.
 
 ## Gravity Counterpoint Rules And Amy Dub Ratios

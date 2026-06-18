@@ -2,13 +2,13 @@
 
 This app is static: `index.html`, `styles.css`, `src/app.js`, and assets. It does not need a backend server for the current MIDI generator.
 
-Normal Equal Temperament and Amy Dub Intonation exports keep voice tracks note-only: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When the Tempo map switch is on, the app adds a small conductor track with BPM and time-signature metadata for DAWs that read Standard MIDI tempo maps. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes. Bend MIDI is the exception because pitch-bend output necessarily writes pitch-bend and controller setup data.
+Equal Temperament and Amy Dub Intonation exports keep voice tracks note-only: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When the Tempo map switch is on, the app adds a small conductor track with BPM and time-signature metadata for DAWs that read Standard MIDI tempo maps. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes. Bend MIDI is the exception because pitch-bend output necessarily writes pitch-bend and controller setup data.
 
 ## Randomness On The Web
 
 The app cannot read `/dev/urandom` directly from a visitor's computer, because browser JavaScript is sandboxed. Instead it uses `crypto.getRandomValues`, the browser Web Crypto source for strong random bytes. The generated seed is saved into the JSON manifest so a generated piece can be studied or reproduced.
 
-For normal use, Web Crypto is the recommended default. A custom entropy server is optional and mostly interesting for hardware-random, installation, studio, or research builds.
+For everyday use, Web Crypto is the recommended default. A custom entropy server is optional and mostly interesting for hardware-random, installation, studio, or research builds.
 
 ## Optional Custom Entropy Server
 

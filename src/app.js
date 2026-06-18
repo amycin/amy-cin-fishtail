@@ -275,13 +275,13 @@ const CADENCES = {
 };
 
 const SECTION_ROLES = {
-  normal: "Normal",
+  normal: "Fishtail",
   refrain: "Refrain",
   development: "Development",
 };
 
 const SECTION_TREATMENTS = {
-  straight: "Straight",
+  straight: "Clear Return",
   gentle: "Gentle",
   dubby: "Dubby",
 };
@@ -687,7 +687,12 @@ function normalizeSection(section, index = null) {
 function treatmentOptionsForRole(role) {
   if (role === "development") return [["gentle", SECTION_TREATMENTS.gentle], ["dubby", SECTION_TREATMENTS.dubby]];
   if (role === "refrain") return [["straight", SECTION_TREATMENTS.straight], ["dubby", SECTION_TREATMENTS.dubby]];
-  return [["straight", SECTION_TREATMENTS.straight]];
+  return [["straight", "Source"]];
+}
+
+function sectionTreatmentLabel(role, treatment) {
+  if (role === "normal" && treatment === "straight") return "Source";
+  return SECTION_TREATMENTS[treatment] || treatment;
 }
 
 function optionHtml(value, label, selected) {
@@ -1521,7 +1526,7 @@ function buildPiece(settings, rng) {
       : planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, rng);
     const fugueSectionPlan = fugueSummary?.sections?.[sectionIndex] || null;
     sectionMeta.push({ ...section, startTick: currentTick, barTicks, numerator: meter.numerator, denominator: meter.denominator, refrainPlan: summarizeRefrainPlan(refrainPlan), fuguePlan: summarizeFugueSectionPlan(fugueSectionPlan) });
-    reports.push(`${sectionIndex + 1}. ${section.bars} bars in ${section.key} ${mode.label}, ${section.meter}, ${CADENCES[section.cadence].label}, ${SECTION_ROLES[section.role]}${section.role === "normal" ? "" : `/${SECTION_TREATMENTS[section.treatment]}`}`);
+    reports.push(`${sectionIndex + 1}. ${section.bars} bars in ${section.key} ${mode.label}, ${section.meter}, ${CADENCES[section.cadence].label}, ${SECTION_ROLES[section.role]}${section.role === "normal" ? "" : `/${sectionTreatmentLabel(section.role, section.treatment)}`}`);
 
     const entries = planEntries(activeVoices, steps, meter, rng, settings);
     const lastPitches = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
