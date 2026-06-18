@@ -134,9 +134,9 @@ const CADENCES = {
 };
 
 const DEFAULT_SECTIONS = [
-  { bars: 7, key: "C", mode: "major", meter: "4/4", cadence: "authentic" },
-  { bars: 5, key: "A", mode: "gravity_melodic_minor", meter: "3/4", cadence: "minor_authentic" },
-  { bars: 8, key: "G", mode: "mixolydian", meter: "6/8", cadence: "dub_suspension" },
+  { bars: 6, key: "F", mode: "mixolydian", meter: "3/4", cadence: "plagal" },
+  { bars: 8, key: "D", mode: "gravity_melodic_minor", meter: "6/8", cadence: "authentic" },
+  { bars: 24, key: "F", mode: "mixolydian", meter: "3/4", cadence: "dub_suspension" },
 ];
 
 const state = {
@@ -208,6 +208,7 @@ function bindElements() {
     "styleInput",
     "voicesInput",
     "tempoInput",
+    "embedTempoInput",
     "referenceNoteInput",
     "referenceFreqInput",
     "tempoDivisorInput",
@@ -649,6 +650,7 @@ function readSettings(seed) {
     sections: structuredClone(state.sections),
     voices: clamp(parseInt(els.voicesInput.value, 10) || 4, 2, 4),
     tempo: clamp(parseFloat(els.tempoInput.value) || 72, 30, 220),
+    includeTempoMap: Boolean(els.embedTempoInput.checked),
     referenceNote: els.referenceNoteInput.value || "A4",
     referenceMidi: selectedReferenceMidi(),
     referenceHz: currentReferenceHz(),
@@ -1084,8 +1086,14 @@ function makeNoteEvent(note, voice, tick, duration, settings) {
 
 function writeMidiFile({ tracks, sectionMeta, settings }) {
   const chunks = [];
-  chunks.push(makeHeaderChunk(1, Object.keys(tracks).length, PPQ));
-  Object.values(tracks).forEach((track) => chunks.push(makeVoiceTrack(track, settings)));
+  const voiceTracks = Object.values(tracks);
+  const hasConductor = Boolean(settings.includeTempoMap);
+  chunks.push(makeHeaderChunk(1, voiceTracks.length + (hasConductor ? 1 : 0), PPQ));
+  if (hasConductor) {
+    const totalTicks = sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0);
+    chunks.push(makeConductorTrack(sectionMeta, settings, totalTicks));
+  }
+  voiceTracks.forEach((track) => chunks.push(makeVoiceTrack(track, settings)));
   return concatBytes(chunks);
 }
 
@@ -1114,6 +1122,32 @@ function makeVoiceTrack(track, settings) {
   return chunk("MTrk", deltaEncode(events));
 }
 
+function makeConductorTrack(sectionMeta, settings, totalTicks) {
+  const events = [
+    { tick: 0, bytes: tempoMetaBytes(settings.tempo) },
+  ];
+  sectionMeta.forEach((section) => {
+    events.push({ tick: section.startTick, bytes: timeSignatureMetaBytes(section.numerator, section.denominator) });
+  });
+  events.sort((a, b) => a.tick - b.tick || eventOrder(a.bytes) - eventOrder(b.bytes));
+  return chunk("MTrk", deltaEncode(events, totalTicks));
+}
+
+function tempoMetaBytes(bpm) {
+  const microsecondsPerQuarter = clamp(Math.round(60000000 / clamp(bpm, 1, 999)), 1, 0xffffff);
+  return [
+    0xff, 0x51, 0x03,
+    (microsecondsPerQuarter >>> 16) & 0xff,
+    (microsecondsPerQuarter >>> 8) & 0xff,
+    microsecondsPerQuarter & 0xff,
+  ];
+}
+
+function timeSignatureMetaBytes(numerator, denominator) {
+  const power = Math.max(0, Math.round(Math.log2(denominator || 4)));
+  return [0xff, 0x58, 0x04, numerator & 0xff, power & 0xff, 24, 8];
+}
+
 function pitchBendRangeEvents(channel, semitones) {
   return [
     { tick: 0, bytes: [0xb0 | channel, 101, 0] },
@@ -1134,14 +1168,15 @@ function eventOrder(bytes) {
   return 4;
 }
 
-function deltaEncode(events) {
+function deltaEncode(events, endTick = null) {
   const bytes = [];
   let previousTick = 0;
   for (const event of events) {
     bytes.push(...varLen(event.tick - previousTick), ...event.bytes);
     previousTick = event.tick;
   }
-  bytes.push(...varLen(0), 0xff, 0x2f, 0x00);
+  const finalTick = endTick == null ? previousTick : Math.max(previousTick, endTick);
+  bytes.push(...varLen(finalTick - previousTick), 0xff, 0x2f, 0x00);
   return bytes;
 }
 
@@ -1230,6 +1265,7 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       a4_anchor_hz: Number(settings.referenceAnchorA4Hz.toFixed(4)),
       divisor_n: settings.tempoDivisor,
       bpm: Number(settings.tempo.toFixed(4)),
+      midi_tempo_map: settings.includeTempoMap,
     },
     sections: sectionMeta,
     subject,
@@ -1262,6 +1298,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`Seed: ${settings.seed}`);
   lines.push(`Style: ${generationStyleLabel(settings.generationStyle)}`);
   lines.push(`Tempo: ${settings.tempo.toFixed(4)} BPM`);
+  lines.push(`MIDI tempo map: ${settings.includeTempoMap ? "on" : "off"}`);
   lines.push(`Reference pitch: ${settings.referenceNote} = ${settings.referenceHz.toFixed(4)} Hz`);
   lines.push(`Fishtail tempo: 60 * ${settings.referenceHz.toFixed(4)} / ${settings.tempoDivisor}`);
   lines.push(`Voices: ${settings.voices}`);
@@ -1349,14 +1386,14 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     const format = readUint16(midiBytes, 8);
     const trackCount = readUint16(midiBytes, 10);
     const division = readUint16(midiBytes, 12);
-    const expectedTracks = activeVoices.length;
+    const expectedTracks = activeVoices.length + (settings.includeTempoMap ? 1 : 0);
     if (headerLength !== 6) pushIssue(`MIDI header length should be 6 bytes, got ${headerLength}.`);
     if (format !== 1) pushIssue(`MIDI format should be 1 for separate voice tracks, got ${format}.`);
     if (trackCount !== expectedTracks) pushIssue(`MIDI header track count should be ${expectedTracks}, got ${trackCount}.`);
     if (division !== PPQ) pushIssue(`MIDI time division should be ${PPQ} ticks per quarter, got ${division}.`);
     if (String.fromCharCode(...midiBytes.slice(14, 18)) !== "MTrk") pushIssue("First MIDI track chunk does not start immediately after the header.");
     if (settings.outputMode !== "bend") {
-      const noteOnlyIssue = noteOnlyMidiIssue(midiBytes);
+      const noteOnlyIssue = noteOnlyMidiIssue(midiBytes, { allowConductor: settings.includeTempoMap });
       if (noteOnlyIssue) pushIssue(noteOnlyIssue);
     }
   }
@@ -1466,10 +1503,12 @@ function readUint32(bytes, offset) {
   return ((bytes[offset] ?? 0) * 0x1000000) + (((bytes[offset + 1] ?? 0) << 16) | ((bytes[offset + 2] ?? 0) << 8) | (bytes[offset + 3] ?? 0));
 }
 
-function noteOnlyMidiIssue(bytes) {
+function noteOnlyMidiIssue(bytes, options = {}) {
+  const allowConductor = Boolean(options.allowConductor);
   const trackCount = readUint16(bytes, 10);
   let offset = 14;
   for (let track = 0; track < trackCount; track += 1) {
+    const conductorTrack = allowConductor && track === 0;
     if (String.fromCharCode(...bytes.slice(offset, offset + 4)) !== "MTrk") return `MIDI track ${track + 1} is missing its MTrk header.`;
     const trackLength = readUint32(bytes, offset + 4);
     offset += 8;
@@ -1492,6 +1531,7 @@ function noteOnlyMidiIssue(bytes) {
         offset += 1;
         const length = readVarLen(bytes, offset);
         offset = length.next + length.value;
+        if (conductorTrack && (type === 0x51 || type === 0x58)) continue;
         if (type !== 0x2f) return `MIDI track ${track + 1} contains meta event 0x${type.toString(16)}; note-only exports should contain notes only.`;
         continue;
       }
@@ -1500,6 +1540,9 @@ function noteOnlyMidiIssue(bytes) {
       const eventType = status & 0xf0;
       const dataBytes = eventType === 0xc0 || eventType === 0xd0 ? 1 : 2;
       offset += dataBytes;
+      if (conductorTrack) {
+        return "MIDI conductor track contains MIDI note/controller data; it should contain tempo and time-signature metadata only.";
+      }
       if (eventType !== 0x80 && eventType !== 0x90) {
         return `MIDI track ${track + 1} contains MIDI event 0x${eventType.toString(16)}; note-only exports should contain note on/off only.`;
       }

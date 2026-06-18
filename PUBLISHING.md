@@ -2,7 +2,7 @@
 
 This app is static: `index.html`, `styles.css`, `src/app.js`, and assets. It does not need a backend server for the current MIDI generator.
 
-Normal Equal Temperament and Amy Dub Intonation exports are note-only Standard MIDI files: one track per generated voice, no program changes, no controller setup, no conductor track, no tempo map, and no text meta events beyond required MIDI track endings. The selected BPM is included in the downloaded filename, JSON manifest, and generation notes instead. Bend MIDI is the exception because pitch-bend output necessarily writes pitch-bend and controller setup data.
+Normal Equal Temperament and Amy Dub Intonation exports keep voice tracks note-only: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When the Tempo map switch is on, the app adds a small conductor track with BPM and time-signature metadata for DAWs that read Standard MIDI tempo maps. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes. Bend MIDI is the exception because pitch-bend output necessarily writes pitch-bend and controller setup data.
 
 ## Randomness On The Web
 

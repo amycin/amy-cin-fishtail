@@ -23,11 +23,11 @@ For web hosting, ownership notes, and optional custom entropy-server wiring, see
 - Weighted random form generation with D4 and D20-style dice controls.
 - Section controls for bars, key, mode, time signature, and cadence.
 - Style switch for Fugue or Imitation + Invention generation.
-- Reference-pitch menu and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places.
+- Reference-pitch menu and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A4 = 432 Hz and `n = 864`, giving 30.0000 BPM.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.
 - Slower staged generation pass with a final output checker for timing, range, cadence, tendency-tone, overlap, and parallel-perfect warnings.
-- Note-only Equal Temperament and Amy Dub Intonation MIDI exports: one track per generated voice, no program changes, no controller setup, no conductor track, and no tempo or text meta events beyond required MIDI track endings. The selected BPM is included in the downloaded filename, JSON manifest, and generation notes.
+- Clean Equal Temperament and Amy Dub Intonation MIDI exports: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When Tempo map is on, a separate conductor track writes BPM and time signatures for DAWs that read them. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes.
 - Multiple single-voice Bend MIDI output for pitch-bend experiments.
 - Ocular Debris artwork overlay used as a visual circuit-map substrate.
 - Three.js wireframe torus visualisation with a canvas gravity-wave lattice.
@@ -38,8 +38,8 @@ For web hosting, ownership notes, and optional custom entropy-server wiring, see
 
 ## Tuning Modes
 
-- `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or another retuner. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers. The export is note-only.
-- `Equal temperament`: writes ordinary MIDI notes for normal synth playback. The export is note-only, with BPM carried in the filename instead of the MIDI track data.
+- `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or another retuner. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers. The voice tracks are note-only.
+- `Equal temperament`: writes ordinary MIDI notes for normal synth playback. The voice tracks are note-only. Use the Tempo map switch to add a conductor track with BPM and time signatures, or turn it off for strict note-only MIDI.
 - `Bend MIDI`: writes multiple single-voice tracks, one voice per track/channel, with per-voice pitch bend for approximate Dub-ratio playback. Use separate mono instruments or separate mono channels. If these parts are merged into one polyphonic instrument, pitch bends for one note can retune the other notes and the result will not work properly.
 
 ## Gravity Counterpoint Rules And Amy Dub Ratios

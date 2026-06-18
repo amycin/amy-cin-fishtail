@@ -41,7 +41,7 @@
               </button>
               <label class="slider-label">
                 Calm
-                <input id="strangenessInput" type="range" min="0" max="100" value="28">
+                <input id="strangenessInput" type="range" min="0" max="100" value="16">
                 Strange
               </label>
             </div>
@@ -69,19 +69,26 @@
               </label>
               <label>
                 Tempo
-                <input id="tempoInput" type="text" value="72.0000" readonly>
+                <input id="tempoInput" type="text" value="30.0000" readonly>
               </label>
               <label class="tempo-slider-field">
-                Tempo divisor <span id="tempoDivisorLabel">n = 360</span>
-                <input id="tempoDivisorInput" type="range" min="118" max="864" step="1" value="360">
+                Tempo divisor <span id="tempoDivisorLabel">n = 864</span>
+                <input id="tempoDivisorInput" type="range" min="118" max="864" step="1" value="864">
+              </label>
+              <label class="switch-label" title="Include tempo and time signatures">
+                <span>Tempo data</span>
+                <span class="switch-control">
+                  <input id="embedTempoInput" type="checkbox" checked>
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
               </label>
               <label>
                 Breathing
-                <input id="breathingInput" type="range" min="0" max="100" value="44">
+                <input id="breathingInput" type="range" min="0" max="100" value="74">
               </label>
               <label>
                 Density
-                <input id="densityInput" type="range" min="0" max="100" value="48">
+                <input id="densityInput" type="range" min="0" max="100" value="26">
               </label>
             </div>
           </section>
@@ -102,8 +109,8 @@
               <label>
                 Map
                 <select id="resolutionInput">
-                  <option value="nearest-ratio" selected>Nearest ratio</option>
-                  <option value="literal">Literal notes</option>
+                  <option value="nearest-ratio">Nearest ratio</option>
+                  <option value="literal" selected>Literal notes</option>
                 </select>
               </label>
               <label>
@@ -136,7 +143,7 @@
               <button id="downloadJsonButton" type="button" disabled>Save Project JSON</button>
               <button id="toggleNotesButton" type="button">Hide Notes</button>
             </div>
-            <p class="download-help">Generate + Save MIDI is the main button. Note-only MIDI files keep tempo out of the track data and put BPM in the filename. Project JSON saves the recipe, settings, and seed. Hide/Show Notes opens or closes the text below. Codex preview may not save downloads; Safari, Chrome, or a hosted page should.</p>
+            <p class="download-help">Generate + Save MIDI is the main button. The tempo-map switch writes BPM and time signatures for DAWs that read them; BPM is also kept in the filename. Project JSON saves the recipe, settings, and seed. Hide/Show Notes opens or closes the text below. Codex preview may not save downloads; Safari, Chrome, or a hosted page should.</p>
           </section>
         </section>
 
@@ -181,8 +188,8 @@
 
               <section>
                 <h3>Pitch Modes</h3>
-                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs. The export is note-only: separate voice tracks with note on/off events and no program changes, controller setup, tempo map, or track-name clutter. The selected BPM is shown in the downloaded filename.</p>
-                <p><strong>Amy Dub Intonation</strong> writes carrier MIDI notes for a retuner such as Entonal. The MIDI note numbers may look unusual because the retuner turns those carrier keys into Amy Dub ratio pitches. This export is also note-only, so the retuner or DAW receives clean voice tracks. For the tuning logic, look at the ratios in the GitHub <code>README.md</code> section called Gravity Counterpoint Rules And Amy Dub Ratios.</p>
+                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs. The voice tracks stay clean: note on/off events only, no program changes, no controller setup, and no track-name clutter. If Tempo map is on, a separate conductor track writes BPM and time signatures. The selected BPM is also shown in the downloaded filename.</p>
+                <p><strong>Amy Dub Intonation</strong> writes carrier MIDI notes for a retuner such as Entonal. The MIDI note numbers may look unusual because the retuner turns those carrier keys into Amy Dub ratio pitches. The voice tracks stay clean so the retuner or DAW receives simple voice parts. For the tuning logic, look at the ratios in the GitHub <code>README.md</code> section called Gravity Counterpoint Rules And Amy Dub Ratios.</p>
                 <p><strong>Bend MIDI</strong> writes multiple single-voice MIDI tracks, one voice per track/channel, and retunes each voice toward Amy Dub intonation with pitch-bend messages. It should be played through separate mono instruments or separate mono channels. If the parts are merged into one polyphonic instrument, the pitch bends will fight each other and the tuning will not work properly.</p>
               </section>
 
@@ -260,6 +267,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=30"></script>
+    <script src="src/app.js?v=32"></script>
   </body>
 </html>
