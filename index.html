@@ -207,7 +207,7 @@
               <section>
                 <h3>Pitch Modes</h3>
                 <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs. The voice tracks stay clean: note on/off events only, no program changes, no controller setup, and no track-name clutter. If Tempo map is on, a separate conductor track writes BPM and time signatures. The selected BPM is also shown in the downloaded filename.</p>
-                <p><strong>Amy Dub Intonation</strong> is Amy McBride's experimental ratio-based dub tuning. Instead of dividing the octave into twelve equal steps, it maps chromatic slots to chosen ratios. In retuner mode the MIDI notes are carrier keys: the note number may look ordinary or unusual, but the retuner turns that key into the intended ratio pitch.</p>
+                <p><strong>Amy Dub Intonation</strong> is Amy McBride's experimental ratio-based dub tuning. Instead of dividing the octave into twelve equal steps, it maps chromatic slots to chosen ratios. It is designed to be run through Entonal or a similar retuner that can define these ratios. In retuner mode the MIDI notes are carrier keys: the note number may look ordinary or unusual, but the retuner turns that key into the intended ratio pitch.</p>
                 <p><strong>Amy Dub ratio pattern</strong>, chromatic from the selected root:</p>
                 <ul class="ratio-list">
                   <li><code>0</code> <code>1/1</code> home</li>
@@ -321,6 +321,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=41"></script>
+    <script src="src/app.js?v=42"></script>
   </body>
 </html>

@@ -65,7 +65,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 
 ## Tuning Modes
 
-- `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or another retuner. This is Amy McBride's experimental ratio-based dub intonation system. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers. The voice tracks are note-only.
+- `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or a similar retuner that can define these ratios. This is Amy McBride's experimental ratio-based dub intonation system. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers. The voice tracks are note-only.
 - `Equal temperament`: writes ordinary MIDI notes for normal synth playback. The voice tracks are note-only. Use the Tempo map switch to add a conductor track with BPM and time signatures, or turn it off for strict note-only MIDI.
 - `Bend MIDI`: writes multiple single-voice tracks, one voice per track/channel, with per-voice pitch bend for approximate Dub-ratio playback. Use separate mono instruments or separate mono channels. If these parts are merged into one polyphonic instrument, pitch bends for one note can retune the other notes and the result will not work properly.
 
