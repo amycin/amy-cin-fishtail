@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>amy_cin fishtail generator</title>
+    <link rel="stylesheet" href="styles.css?v=24">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="instrument">
+        <div class="art-layer" aria-hidden="true"></div>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Lambda Echo</p>
+            <h1>amy_cin fishtail generator</h1>
+            <p class="ownership-line">Copyright (c) 2026 Amy McBride. All rights reserved. Artwork by Ocular Debris.</p>
+          </div>
+          <div class="status-cluster">
+            <span id="seedLabel">Seed: system</span>
+            <span id="statusLabel">Ready</span>
+            <a class="feedback-link" href="mailto:amy_cin@icloud.com?subject=amy_cin%20fishtail%20generator%20feedback">Feedback</a>
+            <button class="feedback-link help-link" id="helpButton" type="button">HELP!</button>
+            <button class="feedback-link help-link" id="creditsButton" type="button">Credits</button>
+          </div>
+        </header>
+
+        <section class="control-grid">
+          <section class="panel form-panel">
+            <div class="panel-head">
+              <h2>Form</h2>
+              <button class="icon-button" id="addSectionButton" type="button" title="Add section">+</button>
+            </div>
+            <div class="section-table" id="sectionTable"></div>
+            <div class="dice-row">
+              <button class="dice dice-d4" id="gentleRollButton" type="button" title="Gentle weighted random form">
+                <span>D4</span>
+              </button>
+              <button class="dice dice-d20" id="wildRollButton" type="button" title="Wide weighted random form">
+                <span>D20</span>
+              </button>
+              <label class="slider-label">
+                Calm
+                <input id="strangenessInput" type="range" min="0" max="100" value="28">
+                Strange
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Voices</h2>
+            </div>
+            <div class="field-grid">
+              <label>
+                Style
+                <select id="styleInput">
+                  <option value="fugue" selected>Fugue</option>
+                  <option value="invention">Imitation + Invention</option>
+                </select>
+              </label>
+              <label>
+                Voices
+                <select id="voicesInput">
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4" selected>4</option>
+                </select>
+              </label>
+              <label>
+                Tempo
+                <input id="tempoInput" type="text" value="72.0000" readonly>
+              </label>
+              <label class="tempo-slider-field">
+                Tempo divisor <span id="tempoDivisorLabel">n = 360</span>
+                <input id="tempoDivisorInput" type="range" min="118" max="864" step="1" value="360">
+              </label>
+              <label>
+                Breathing
+                <input id="breathingInput" type="range" min="0" max="100" value="44">
+              </label>
+              <label>
+                Density
+                <input id="densityInput" type="range" min="0" max="100" value="48">
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Pitch</h2>
+            </div>
+            <div class="field-grid">
+              <label>
+                Reference pitch
+                <select id="referenceNoteInput"></select>
+              </label>
+              <label>
+                Reference Hz
+                <input id="referenceFreqInput" type="number" min="20" max="2000" step="0.01" value="432.00">
+              </label>
+              <label>
+                Map
+                <select id="resolutionInput">
+                  <option value="nearest-ratio" selected>Nearest ratio</option>
+                  <option value="literal">Literal notes</option>
+                </select>
+              </label>
+              <label>
+                Output
+                <select id="outputModeInput">
+                  <option value="equal" selected>Equal Temperament</option>
+                  <option value="retuner">Amy Dub Intonation</option>
+                  <option value="bend">Bend MIDI</option>
+                </select>
+              </label>
+              <label class="bend-only">
+                Intonation root
+                <select id="rootNoteInput"></select>
+              </label>
+              <label class="bend-only">
+                Root Hz
+                <input id="rootFreqInput" type="number" min="20" max="2000" step="0.01" value="432.00">
+              </label>
+            </div>
+          </section>
+
+          <section class="panel action-panel">
+            <div class="generator-core" aria-hidden="true">
+              <div class="torus-host" id="torusHost"></div>
+              <canvas id="coreCanvas" width="360" height="220"></canvas>
+            </div>
+            <div class="action-buttons">
+              <button class="primary-button" id="generateButton" type="button">Generate + Save MIDI</button>
+              <button id="downloadMidiButton" type="button" disabled>Save MIDI Again</button>
+              <button id="downloadJsonButton" type="button" disabled>Save Project JSON</button>
+              <button id="toggleNotesButton" type="button">Hide Notes</button>
+            </div>
+            <p class="download-help">Generate + Save MIDI is the main button. Project JSON saves the recipe, settings, and seed. Hide/Show Notes opens or closes the text below. Codex preview may not save downloads; Safari, Chrome, or a hosted page should.</p>
+          </section>
+        </section>
+
+        <section class="panel output-panel" id="notesPanel">
+          <div class="panel-head">
+            <h2>Generation Notes</h2>
+            <span id="pieceLengthLabel">No piece yet</span>
+          </div>
+          <pre id="reportOutput">Choose a form, roll the dice if you like, then press Generate + Save MIDI.</pre>
+        </section>
+
+        <section class="help-modal" id="helpModal" hidden aria-labelledby="helpTitle" aria-modal="true" role="dialog">
+          <div class="help-card">
+            <div class="help-head">
+              <div>
+                <p class="eyebrow">amy_cin fishtail generator</p>
+                <h2 id="helpTitle">HELP!</h2>
+              </div>
+              <button class="icon-button" id="closeHelpButton" type="button" title="Close help" aria-label="Close help">x</button>
+            </div>
+            <div class="help-body">
+              <section>
+                <h3>What It Does</h3>
+                <p>This is a browser-based fugue and counterpoint MIDI generator. It creates a structured piece from sections of bars, keys, modes, metres, cadences, voice-leading rules, breath/rest choices, and weighted randomness.</p>
+                <p>The generator aims for calm, coherent, harmonically pleasing material rather than completely wild note soup. It writes a MIDI file, a project JSON recipe, and generation notes with checker warnings.</p>
+              </section>
+
+              <section>
+                <h3>Quick Start</h3>
+                <ol>
+                  <li>Choose sections in Form: bars, key, mode, time signature, and cadence.</li>
+                  <li>Choose Fugue or Imitation + Invention, voice count, breathing, density, and pitch mode.</li>
+                  <li>Press Generate + Save MIDI. The MIDI file should download automatically.</li>
+                  <li>Use Save Project JSON to keep the exact recipe and seed for later.</li>
+                </ol>
+              </section>
+
+              <section>
+                <h3>Randomness</h3>
+                <p>The app runs locally in the browser. It uses the browser Web Crypto random source to make a seed, then uses that seed for repeatable musical choices inside the generator. On a normal web page, JavaScript cannot read <code>/dev/urandom</code> directly, but modern browsers expose secure random bytes through <code>crypto.getRandomValues</code>. Advanced users can optionally mix in a custom entropy endpoint; see <code>PUBLISHING.md</code>.</p>
+              </section>
+
+              <section>
+                <h3>Pitch Modes</h3>
+                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs.</p>
+                <p><strong>Amy Dub Intonation</strong> writes carrier MIDI notes for a retuner such as Entonal. The MIDI note numbers may look unusual because the retuner turns those carrier keys into Amy Dub ratio pitches. For the tuning logic, look at the ratios in the GitHub <code>README.md</code> section called Gravity Counterpoint Rules And Amy Dub Ratios.</p>
+                <p><strong>Bend MIDI</strong> writes multiple single-voice MIDI tracks, one voice per track/channel, and retunes each voice toward Amy Dub intonation with pitch-bend messages. It should be played through separate mono instruments or separate mono channels. If the parts are merged into one polyphonic instrument, the pitch bends will fight each other and the tuning will not work properly.</p>
+              </section>
+
+              <section>
+                <h3>Modes And Gravity</h3>
+                <p>Major, harmonic minor, modal scales, and gravity melodic minor are available. Gravity melodic minor allows extra minor-key passing tones with tendency rules: leading tones rise, raised sixths lift, flat sevenths fall, and flat sixths resolve down.</p>
+              </section>
+
+              <section>
+                <h3>Credits And Ownership</h3>
+                <p>Project identity, musical concept, tuning direction, and Fishtail design: Amy McBride / amy_cin. Artwork by Ocular Debris. Copyright (c) 2026 Amy McBride. All rights reserved. This version was vibe coded with Codex, collaborating as Lambda Echo. Three.js is used for the WebGL torus visual and is acknowledged in <code>CREDITS.md</code>.</p>
+                <p>The source currently runs as a static web app: HTML, CSS, JavaScript, and image assets. Keep the credits file with the project when publishing it.</p>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="help-modal" id="creditsModal" hidden aria-labelledby="creditsTitle" aria-modal="true" role="dialog">
+          <div class="help-card">
+            <div class="help-head">
+              <div>
+                <p class="eyebrow">amy_cin fishtail generator</p>
+                <h2 id="creditsTitle">Credits</h2>
+              </div>
+              <button class="icon-button" id="closeCreditsButton" type="button" title="Close credits" aria-label="Close credits">x</button>
+            </div>
+            <div class="help-body">
+              <section>
+                <h3>Original Project</h3>
+                <p><strong>amy_cin fishtail generator v0</strong> is original implementation code written for Amy McBride's Fishtail project.</p>
+                <p>No third-party counterpoint-generator source code has been copied into this project.</p>
+                <p>Copyright (c) 2026 Amy McBride. All rights reserved.</p>
+              </section>
+
+              <section>
+                <h3>Concept And Direction</h3>
+                <p>Project identity, musical concept, Fishtail gravity-counterpoint direction, Amy Dub tuning direction, and interface collaboration: Amy McBride / amy_cin.</p>
+              </section>
+
+              <section>
+                <h3>Artwork</h3>
+                <p>Artwork by Ocular Debris, provided for Fishtail graphic design use.</p>
+              </section>
+
+              <section>
+                <h3>Conceptual Inspirations</h3>
+                <ul>
+                  <li>Fux-style species counterpoint and Palestrina-style voice-leading practice.</li>
+                  <li>Knud Jeppesen-style Palestrina counterpoint as a stylistic reference.</li>
+                  <li>Backtracking counterpoint generators that place notes, validate rules, and retry.</li>
+                  <li>Constraint-programming approaches such as FuxCP, used here only as a design reference for explicit hard rules.</li>
+                  <li>Markov/probabilistic Palestrina approaches such as Farbood and Schoner, used here only as inspiration for combining deterministic rules with weighted musical choices.</li>
+                  <li>Interactive rule-checking tools such as CounterPointer, used here only as inspiration for producing a human-readable report.</li>
+                </ul>
+              </section>
+
+              <section>
+                <h3>Implementation Notes</h3>
+                <ul>
+                  <li>This version was vibe coded with Codex, collaborating as Lambda Echo.</li>
+                  <li>The MIDI writer in <code>src/app.js</code> is original code.</li>
+                  <li>The moving torus visualisation uses Three.js, an MIT-licensed open-source 3D library.</li>
+                  <li>The seeded random functions are small public-domain-style PRNG/hash patterns commonly circulated in JavaScript communities; they are included inline only for deterministic replay after the browser supplies a system entropy seed.</li>
+                  <li>Browser APIs used: Canvas, WebGL through Three.js, optional Device Motion/Orientation input, Web Audio, optional Vibration API feedback, Blob download, TextEncoder, and Web Crypto <code>crypto.getRandomValues</code>.</li>
+                </ul>
+              </section>
+
+              <section>
+                <h3>Publishing Notice</h3>
+                <p>Keep <code>CREDITS.md</code> and <code>LICENSE.md</code> with any published copy. See <code>PUBLISHING.md</code> for hosting notes.</p>
+              </section>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="src/app.js?v=27"></script>
+  </body>
+</html>
