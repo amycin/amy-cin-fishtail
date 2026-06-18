@@ -715,7 +715,7 @@ async function randomiseForm(kind) {
     const cadence = isMinorMode(currentMode)
       ? weightedChoice(rng, [["minor_authentic", 5], ["modal", 2], ["dub_suspension", 1]])
       : weightedChoice(rng, [["authentic", 4], ["plagal", 2], ["modal", 1], ["dub_suspension", 2]]);
-    const roleTreatment = chooseRandomSectionRoleTreatment(rng, i, sectionCount, dubMode);
+    const roleTreatment = chooseRandomSectionRoleTreatment(rng, i, sectionCount, dubMode, kind);
     sections.push({
       bars: randomFormBars(rng, kind, dubMode),
       key: currentKey,
@@ -749,19 +749,44 @@ function randomFormBars(rng, kind, dubMode) {
   return kind === "gentle" ? randomInt(rng, 4, 9) : randomInt(rng, 3, 13);
 }
 
-function chooseRandomSectionRoleTreatment(rng, index, sectionCount, dubMode) {
-  if (!dubMode || index === 0) return { role: "normal", treatment: "straight" };
+function chooseRandomSectionRoleTreatment(rng, index, sectionCount, dubMode, kind = "gentle") {
+  if (index === 0) return { role: "normal", treatment: "straight" };
   let role;
-  if (index === sectionCount - 1) {
-    role = weightedChoice(rng, [["refrain", 5], ["development", 2], ["normal", 1.5]]);
+  const wide = kind === "wild";
+  if (dubMode) {
+    if (index === sectionCount - 1) {
+      role = weightedChoice(rng, [["refrain", 5], ["development", 2], ["normal", 1.5]]);
+    } else {
+      role = weightedChoice(rng, [["development", 4], ["refrain", 3.2], ["normal", 1.4]]);
+    }
+  } else if (index === sectionCount - 1) {
+    role = weightedChoice(rng, wide
+      ? [["refrain", 3.6], ["development", 2.4], ["normal", 1.6]]
+      : [["refrain", 3.4], ["normal", 2.4], ["development", 1.2]]);
   } else {
-    role = weightedChoice(rng, [["development", 4], ["refrain", 3.2], ["normal", 1.4]]);
+    role = weightedChoice(rng, wide
+      ? [["development", 3.4], ["refrain", 2.7], ["normal", 1.5]]
+      : [["normal", 3.0], ["refrain", 2.3], ["development", 1.7]]);
   }
   if (role === "normal") return { role, treatment: "straight" };
-  const treatment = weightedChoice(rng, role === "refrain"
-    ? [["dubby", 5], ["straight", 1.5]]
-    : [["dubby", 5], ["gentle", 1.5]]);
+  const treatment = weightedChoice(rng, treatmentWeightsForRole(role, { dubMode, wide }));
   return { role, treatment };
+}
+
+function treatmentWeightsForRole(role, { dubMode, wide }) {
+  if (dubMode) {
+    return role === "refrain"
+      ? [["dubby", 5], ["straight", 1.5]]
+      : [["dubby", 5], ["gentle", 1.5]];
+  }
+  if (role === "refrain") {
+    return wide
+      ? [["straight", 3.2], ["dubby", 1.1]]
+      : [["straight", 4.8], ["dubby", 0.35]];
+  }
+  return wide
+    ? [["gentle", 3.4], ["dubby", 1.2]]
+    : [["gentle", 5], ["dubby", 0.35]];
 }
 
 function chooseNextKey(rng, currentKey, mode, kind, strange) {

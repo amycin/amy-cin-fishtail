@@ -59,9 +59,9 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 
 ## Dice Controls
 
-- `D4`: a gentle weighted form roll. It usually creates 3-5 sections with moderate bar lengths, common meters, and close key relationships.
-- `D20`: a wider weighted form roll. It usually creates 4-7 sections, allows broader bar lengths, and gives the Varied slider more influence over meters, modes, and key movement.
-- With `DUB` armed, both dice lean toward Fishtail Fugue, slightly larger forms, more Refrain/Development roles, and more Dubby treatments.
+- `D4`: a gentle weighted form roll. It usually creates 3-5 sections with moderate bar lengths, common meters, close key relationships, and a tasteful chance of Refrain or Gentle Development after the first section.
+- `D20`: a wider weighted form roll. It usually creates 4-7 sections, allows broader bar lengths, and gives the Varied slider more influence over meters, modes, key movement, Refrain returns, Development rows, and occasional Dubby treatments.
+- With `DUB` armed, both dice lean toward Fishtail Fugue, slightly larger forms, more Refrain/Development roles, and more Dubby treatments. The first section remains Normal so later rows have source material to return to or develop.
 
 ## Tuning Modes
 

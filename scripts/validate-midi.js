@@ -331,9 +331,14 @@ function runFugueTests() {
       }
 
       function dubDiceWeighting() {
+        const sequenceRng = (values) => {
+          let index = 0;
+          return () => values[Math.min(index++, values.length - 1)];
+        };
         const firstRole = chooseRandomSectionRoleTreatment(() => 0, 0, 5, true);
         const dubRole = chooseRandomSectionRoleTreatment(() => 0, 1, 5, true);
-        const plainRole = chooseRandomSectionRoleTreatment(() => 0, 1, 5, false);
+        const d4Role = chooseRandomSectionRoleTreatment(() => 0.5, 1, 5, false, "gentle");
+        const d20Role = chooseRandomSectionRoleTreatment(sequenceRng([0, 0.9]), 1, 5, false, "wild");
         const normalizedFirst = normalizeSection({ bars: 4, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "development", treatment: "dubby" }, 0);
         return firstRole.role === "normal"
           && firstRole.treatment === "straight"
@@ -341,8 +346,10 @@ function runFugueTests() {
           && normalizedFirst.treatment === "straight"
           && dubRole.role === "development"
           && dubRole.treatment === "dubby"
-          && plainRole.role === "normal"
-          && plainRole.treatment === "straight";
+          && d4Role.role === "refrain"
+          && d4Role.treatment === "straight"
+          && d20Role.role === "development"
+          && d20Role.treatment === "dubby";
       }
 
       function buildFuguePiece({ sections, dubMode = false, voices = 4, seed = "validation-fugue" }) {
