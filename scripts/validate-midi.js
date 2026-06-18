@@ -232,7 +232,7 @@ function runRefrainAndSuspensionTests() {
           rootMidi: 69,
           rootFreq: 432,
           sections: [
-            { bars: 2, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "refrain", treatment: "straight" },
+            { bars: 2, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" },
             { bars: 2, key: "G", mode: "mixolydian", meter: "4/4", cadence: "dub_suspension", role: "refrain", treatment: "dubby" },
             { bars: 2, key: "A", mode: "gravity_melodic_minor", meter: "3/4", cadence: "minor_authentic", role: "development", treatment: "gentle" },
             { bars: 2, key: "F", mode: "mixolydian", meter: "3/4", cadence: "plagal", role: "development", treatment: "dubby" },
@@ -272,6 +272,7 @@ function runRefrainAndSuspensionTests() {
         {
           name: "refrain metadata",
           ok: piece.manifest.refrain.has_source
+            && piece.manifest.refrain.source_section === 1
             && piece.manifest.refrain.returns >= 1
             && piece.manifest.refrain.developments >= 2
             && piece.manifest.refrain.dubby_treatments >= 2
@@ -330,9 +331,15 @@ function runFugueTests() {
       }
 
       function dubDiceWeighting() {
+        const firstRole = chooseRandomSectionRoleTreatment(() => 0, 0, 5, true);
         const dubRole = chooseRandomSectionRoleTreatment(() => 0, 1, 5, true);
         const plainRole = chooseRandomSectionRoleTreatment(() => 0, 1, 5, false);
-        return dubRole.role === "development"
+        const normalizedFirst = normalizeSection({ bars: 4, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "development", treatment: "dubby" }, 0);
+        return firstRole.role === "normal"
+          && firstRole.treatment === "straight"
+          && normalizedFirst.role === "normal"
+          && normalizedFirst.treatment === "straight"
+          && dubRole.role === "development"
           && dubRole.treatment === "dubby"
           && plainRole.role === "normal"
           && plainRole.treatment === "straight";

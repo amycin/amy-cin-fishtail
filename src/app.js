@@ -631,7 +631,7 @@ function selectedReferenceMidi() {
 function renderSections() {
   els.sectionTable.innerHTML = "";
   state.sections.forEach((section, index) => {
-    const normalized = normalizeSection(section);
+    const normalized = normalizeSection(section, index);
     state.sections[index] = normalized;
     const row = document.createElement("div");
     row.className = "section-row";
@@ -642,7 +642,7 @@ function renderSections() {
       <label>Mode<select data-field="mode">${Object.entries(MODES).map(([id, mode]) => optionHtml(id, mode.label, id === normalized.mode)).join("")}</select></label>
       <label>Meter<select data-field="meter">${Object.keys(METERS).map((meter) => optionHtml(meter, meter, meter === normalized.meter)).join("")}</select></label>
       <label>Cadence<select data-field="cadence">${Object.entries(CADENCES).map(([id, cadence]) => optionHtml(id, cadence.label, id === normalized.cadence)).join("")}</select></label>
-      <label>Role<select data-field="role">${Object.entries(SECTION_ROLES).map(([id, label]) => optionHtml(id, label, id === normalized.role)).join("")}</select></label>
+      <label>Role<select data-field="role">${roleOptionsForSection(index).map(([id, label]) => optionHtml(id, label, id === normalized.role)).join("")}</select></label>
       <label>Treatment<select data-field="treatment">${treatmentOptionsForRole(normalized.role).map(([id, label]) => optionHtml(id, label, id === normalized.treatment)).join("")}</select></label>
       <button class="icon-button" type="button" data-remove="${index}" title="Remove section">-</button>
     `;
@@ -663,8 +663,13 @@ function renderSections() {
   });
 }
 
-function normalizeSection(section) {
-  const role = SECTION_ROLES[section.role] ? section.role : "normal";
+function roleOptionsForSection(index) {
+  return index === 0 ? [["normal", SECTION_ROLES.normal]] : Object.entries(SECTION_ROLES);
+}
+
+function normalizeSection(section, index = null) {
+  const requestedRole = SECTION_ROLES[section.role] ? section.role : "normal";
+  const role = index === 0 ? "normal" : requestedRole;
   const defaultTreatment = role === "development" ? "gentle" : "straight";
   const allowedTreatments = treatmentOptionsForRole(role).map(([id]) => id);
   const treatment = allowedTreatments.includes(section.treatment) ? section.treatment : defaultTreatment;
@@ -745,11 +750,9 @@ function randomFormBars(rng, kind, dubMode) {
 }
 
 function chooseRandomSectionRoleTreatment(rng, index, sectionCount, dubMode) {
-  if (!dubMode) return { role: "normal", treatment: "straight" };
+  if (!dubMode || index === 0) return { role: "normal", treatment: "straight" };
   let role;
-  if (index === 0) {
-    role = weightedChoice(rng, [["refrain", 4], ["normal", 3], ["development", 1]]);
-  } else if (index === sectionCount - 1) {
+  if (index === sectionCount - 1) {
     role = weightedChoice(rng, [["refrain", 5], ["development", 2], ["normal", 1.5]]);
   } else {
     role = weightedChoice(rng, [["development", 4], ["refrain", 3.2], ["normal", 1.4]]);
@@ -989,9 +992,6 @@ function makeRefrainState(activeVoices) {
 
 function planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, rng) {
   if (section.role === "normal") return { kind: "normal", treatment: "straight" };
-  if (section.role === "refrain" && !refrainState.source) {
-    return { kind: "capture", treatment: section.treatment, sectionIndex };
-  }
   if (!refrainState.source) {
     refrainState.fallbacks += 1;
     return { kind: "fallback", treatment: section.treatment, sectionIndex };
@@ -1028,7 +1028,7 @@ function summarizeRefrainPlan(plan) {
 }
 
 function maybeCaptureRefrainSource(refrainState, section, sectionIndex, steps, meter, activeVoices, noteGrid) {
-  if (refrainState.source || section.role !== "refrain") return;
+  if (refrainState.source || sectionIndex !== 0) return;
   refrainState.source = {
     sectionIndex,
     key: section.key,
@@ -2581,7 +2581,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
     lines.push("");
     lines.push("Refrain development");
     if (stats.refrainSummary.has_source) {
-      lines.push(`  Source refrain: section ${stats.refrainSummary.source_section}, ${stats.refrainSummary.source_steps} grid steps.`);
+      lines.push(`  Source material: section ${stats.refrainSummary.source_section}, ${stats.refrainSummary.source_steps} grid steps.`);
       lines.push(`  Returns: ${stats.refrainSummary.returns}`);
       lines.push(`  Developments: ${stats.refrainSummary.developments}`);
       lines.push(`  Dubby treatments: ${stats.refrainSummary.dubby_treatments}`);
