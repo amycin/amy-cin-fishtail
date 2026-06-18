@@ -526,6 +526,26 @@ input[readonly] {
   background: rgba(255, 247, 216, 0.62);
 }
 
+.tempo-readout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.unit-chip {
+  display: inline-grid;
+  place-items: center;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(192, 83, 42, 0.24);
+  border-radius: 6px;
+  color: #8d3b2a;
+  background: rgba(255, 247, 216, 0.62);
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
 input[type="range"] {
   accent-color: var(--orange);
 }

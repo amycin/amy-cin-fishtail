@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=29">
+    <link rel="stylesheet" href="styles.css?v=30">
   </head>
   <body>
     <main class="shell">
@@ -77,7 +77,10 @@
               </div>
               <label>
                 Tempo
-                <input id="tempoInput" type="text" value="60.0000" readonly>
+                <span class="tempo-readout">
+                  <input id="tempoInput" type="text" value="60.0000" readonly>
+                  <span class="unit-chip">BPM</span>
+                </span>
               </label>
               <label class="tempo-slider-field">
                 Tempo divisor <span id="tempoDivisorLabel">n = 432</span>
