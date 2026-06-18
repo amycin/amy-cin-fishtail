@@ -16,14 +16,59 @@ const DUB_RELAX_LINES = [
   "Low and steady: bass gravity is carrying the message.",
   "Easy now: the machine is in dub mode and the checker is listening softly.",
 ];
-const CHECK_REASSURANCE_LINES = [
-  "Gemma says: it's ok, it's all good.",
-  "Gemma says: no worries braa, the music is still breathing.",
-  "Gemma says: all good, just a little checker note.",
-  "Gemma says: relax, the piece has character.",
-  "Gemma says: no stress, this is useful listening information.",
-  "Gemma says: it's ok, the groove is still welcome here.",
-];
+const CHECK_REASSURANCE_TABLE = {
+  calm: [
+    "Gemma says: it's ok, it's all good.",
+    "Gemma says: breathe easy, the music is still safe.",
+    "Gemma says: no stress, this is just a listening note.",
+    "Gemma says: relax, the piece has character.",
+    "Gemma says: all good, the harmony is still welcome here.",
+    "Gemma says: soft landing, nothing scary.",
+    "Gemma says: steady now, the phrase is still beautiful.",
+    "Gemma says: no worries, we can let the sound settle.",
+  ],
+  dub: [
+    "Gemma says: no worries braa, the groove is still breathing.",
+    "Gemma says: easy now, the bass has got this.",
+    "Gemma says: all good, leave a little smoke in the room.",
+    "Gemma says: it wobbled, but the wobble has feeling.",
+    "Gemma says: dub is allowed to lean a little.",
+    "Gemma says: the skank heard it and smiled.",
+    "Gemma says: low and kind, keep listening.",
+    "Gemma says: sweet as, the pulse knows the way home.",
+  ],
+  craft: [
+    "Gemma says: useful note, not a failure.",
+    "Gemma says: this is a clue for the next pass.",
+    "Gemma says: the checker is helping, not judging.",
+    "Gemma says: one small adjustment can make it shine.",
+    "Gemma says: the structure is learning its own shape.",
+    "Gemma says: every warning is a little lantern.",
+    "Gemma says: keep the good bit and smooth the edge.",
+    "Gemma says: this is how careful music gets kinder.",
+  ],
+  tender: [
+    "Gemma says: the listener is held gently.",
+    "Gemma says: there is still peace in this phrase.",
+    "Gemma says: the note can resolve when it is ready.",
+    "Gemma says: the silence around it is helping.",
+    "Gemma says: this moment has a soft heart.",
+    "Gemma says: beautiful things can be slightly imperfect.",
+    "Gemma says: nothing is ruined, the feeling remains.",
+    "Gemma says: let the cadence breathe.",
+  ],
+  cosmic: [
+    "Gemma says: the torus approves of this small anomaly.",
+    "Gemma says: Hilbert space says relax.",
+    "Gemma says: the gravity field bent, but gently.",
+    "Gemma says: the phase object is still coherent.",
+    "Gemma says: tiny anomaly, big calm.",
+    "Gemma says: the wormhole remains stable.",
+    "Gemma says: the lattice found another path.",
+    "Gemma says: all systems are kind enough.",
+  ],
+};
+const CHECK_REASSURANCE_LINES = Object.values(CHECK_REASSURANCE_TABLE).flat();
 const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const KEY_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const REFERENCE_NOTE_NAMES = buildReferenceNoteNames(2, 6);
