@@ -1,6 +1,6 @@
 # amy_cin fishtail generator
 
-A local, browser-based MIDI fugue generator for Amy's Fishtail gravity-counterpoint idea.
+A local, browser-based MIDI invention and counterpoint generator for Amy's Fishtail gravity-counterpoint idea.
 
 The first build is a static web app. It generates ordinary `.mid` files plus a JSON manifest and text report. It does not need live MIDI, and generated pieces/settings are created in the browser. The WebGL torus visual loads Three.js from a public CDN unless that dependency is vendored locally later.
 
@@ -38,7 +38,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 
 - Weighted random form generation with D4 and D20-style dice controls.
 - Section controls for bars, key, mode, time signature, and cadence.
-- Style switch for Fugue or Imitation + Invention generation.
+- Style switch for Imitation + Invention or Counterpoint generation.
 - Reference-pitch menu and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A4 = 432 Hz and `n = 864`, giving 30.0000 BPM.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.

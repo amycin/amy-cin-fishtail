@@ -55,8 +55,8 @@
               <label>
                 Style
                 <select id="styleInput">
-                  <option value="fugue" selected>Fugue</option>
-                  <option value="invention">Imitation + Invention</option>
+                  <option value="invention" selected>Imitation + Invention</option>
+                  <option value="counterpoint">Counterpoint</option>
                 </select>
               </label>
               <label>
@@ -181,7 +181,7 @@
             <div class="help-body">
               <section>
                 <h3>What It Does</h3>
-                <p>This is a browser-based fugue and counterpoint MIDI generator. It creates a structured piece from sections of bars, keys, modes, metres, cadences, voice-leading rules, breath/rest choices, and weighted randomness.</p>
+                <p>This is a browser-based imitation, invention, and counterpoint MIDI generator. It creates a structured piece from sections of bars, keys, modes, metres, cadences, voice-leading rules, breath/rest choices, and weighted randomness.</p>
                 <p>The generator aims for calm, coherent, harmonically pleasing material rather than completely wild note soup. It writes a MIDI file, a project JSON recipe, and generation notes with musical observations, form details, and kind little Gemma reassurances.</p>
               </section>
 
@@ -189,7 +189,7 @@
                 <h3>Quick Start</h3>
                 <ol>
                   <li>Choose sections in Form: bars, key, mode, meter, cadence, role, and treatment.</li>
-                  <li>Choose Fugue or Imitation + Invention, voice count, pedal voices, breathing, density, and pitch mode.</li>
+                  <li>Choose Imitation + Invention or Counterpoint, voice count, pedal voices, breathing, density, and pitch mode.</li>
                   <li>Press Generate + Save MIDI. The MIDI file should download automatically.</li>
                   <li>Use Save Project JSON to keep the exact recipe and seed for later.</li>
                 </ol>
@@ -295,6 +295,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=37"></script>
+    <script src="src/app.js?v=38"></script>
   </body>
 </html>

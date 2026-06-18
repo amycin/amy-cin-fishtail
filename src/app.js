@@ -122,7 +122,7 @@ const CHECK_REASSURANCE_TABLE = {
     "Gemma says: the sequence has been tucked in, but not too tightly.",
     "Gemma says: the rhythm drawer was open; we have gently closed it.",
     "Gemma says: the modulation cupboard contains one surprising but pleasant hat.",
-    "Gemma says: the fugue engine made a funny beep and then apologized beautifully.",
+    "Gemma says: the invention engine made a funny beep and then apologized beautifully.",
     "Gemma says: the chord table has been polished with a soft cloth.",
     "Gemma says: the note printer briefly used fancy paper.",
     "Gemma says: the refrain has returned wearing a tasteful little neon scarf.",
@@ -1329,7 +1329,7 @@ function makeSubject(settings, rng) {
   const section = settings.sections[0];
   const mode = MODES[section.mode];
   const middle = mode.cadenceQuality === "minor" ? 3 : 4;
-  const fugueOptions = [
+  const counterpointOptions = [
     [0, 2, middle, 5, 7, 5, middle, 2, 0],
     [0, 7, 5, middle, 2, middle, 5, 7, 0],
     [0, 2, 5, middle, 7, 9, 7, 5, middle, 2, 0],
@@ -1341,7 +1341,7 @@ function makeSubject(settings, rng) {
     [0, 7, 5, middle, 2, 0],
     [0, 2, 5, 7, 9, 7, 5],
   ];
-  const options = settings.generationStyle === "invention" ? inventionOptions : fugueOptions;
+  const options = settings.generationStyle === "invention" ? inventionOptions : counterpointOptions;
   const base = weightedChoice(rng, options.map((item) => [item, 1]));
   const shaped = base.filter((offset) => mode.offsets.includes(mod(offset, 12)) || offset === 0 || offset === 12);
   const minimum = settings.generationStyle === "invention" ? 5 : 7;
@@ -2693,7 +2693,7 @@ function closeCredits() {
 
 function saveMidiPiece(piece) {
   const seed = piece.settings.seed.slice(0, 8);
-  const style = piece.settings.generationStyle === "invention" ? "invention" : "fugue";
+  const style = piece.settings.generationStyle === "invention" ? "invention" : "counterpoint";
   const tempo = tempoFilenameSlug(piece.settings.tempo);
   downloadBlob(new Blob([piece.midiBytes], { type: "audio/midi" }), `amy-cin-fishtail-${style}-${tempo}-${seed}.mid`);
 }
@@ -2723,7 +2723,7 @@ function outputModeLabel(mode) {
 
 function generationStyleLabel(style) {
   if (style === "invention") return "Imitation + Invention";
-  return "Fugue";
+  return "Counterpoint";
 }
 
 function isDubModeVisual() {
