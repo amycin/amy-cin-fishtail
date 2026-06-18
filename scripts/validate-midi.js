@@ -56,9 +56,10 @@ function runSmokeTests() {
     const velocityOk = piece.events.every((event) => Number.isInteger(event.velocity) && event.velocity >= 90 && event.velocity <= 127);
     const velocityReportOk = piece.report.includes("Velocity curve:");
     const velocityManifestOk = piece.manifest.velocity_curve?.low_velocity === 127 && piece.manifest.velocity_curve?.high_velocity === 90;
-    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk && velocityOk && velocityReportOk && velocityManifestOk ? "ok" : "failed";
+    const reassuranceOk = piece.audit.issues.length + piece.audit.warnings.length === 0 || piece.report.includes("Gemma says:");
+    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk && velocityOk && velocityReportOk && velocityManifestOk && reassuranceOk ? "ok" : "failed";
     console.log(`${status} ${test.name}: tracks=${result.trackCount}, notes=${result.notes}, tempos=${result.tempos}, warnings=${piece.audit.warnings.length}`);
-    if (!result.ok || piece.audit.issues.length || !dubReportOk || !velocityOk || !velocityReportOk || !velocityManifestOk) {
+    if (!result.ok || piece.audit.issues.length || !dubReportOk || !velocityOk || !velocityReportOk || !velocityManifestOk || !reassuranceOk) {
       ok = false;
       printMessages(
         result.issues,
@@ -68,6 +69,7 @@ function runSmokeTests() {
         velocityOk ? [] : ["Generated note velocities are outside the expected 90-127 pitch-feel range."],
         velocityReportOk ? [] : ["Generation report is missing the velocity curve note."],
         velocityManifestOk ? [] : ["Manifest is missing the expected 127-to-90 velocity curve block."],
+        reassuranceOk ? [] : ["Generation report is missing Gemma reassurance after checker notes."],
       );
     }
   }

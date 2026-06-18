@@ -16,6 +16,14 @@ const DUB_RELAX_LINES = [
   "Low and steady: bass gravity is carrying the message.",
   "Easy now: the machine is in dub mode and the checker is listening softly.",
 ];
+const CHECK_REASSURANCE_LINES = [
+  "Gemma says: it's ok, it's all good.",
+  "Gemma says: no worries braa, the music is still breathing.",
+  "Gemma says: all good, just a little checker note.",
+  "Gemma says: relax, the piece has character.",
+  "Gemma says: no stress, this is useful listening information.",
+  "Gemma says: it's ok, the groove is still welcome here.",
+];
 const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const KEY_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const REFERENCE_NOTE_NAMES = buildReferenceNoteNames(2, 6);
@@ -1545,11 +1553,17 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   }
   if (audit.issues.length) {
     lines.push("  Issues");
-    audit.issues.forEach((issue) => lines.push(`    - ${issue}`));
+    audit.issues.forEach((issue, index) => {
+      lines.push(`    - ${issue}`);
+      lines.push(`      ${checkerReassurance(settings.seed, index)}`);
+    });
   }
   if (audit.warnings.length) {
     lines.push("  Warnings");
-    audit.warnings.forEach((warning) => lines.push(`    - ${warning}`));
+    audit.warnings.forEach((warning, index) => {
+      lines.push(`    - ${warning}`);
+      lines.push(`      ${checkerReassurance(settings.seed, audit.issues.length + index)}`);
+    });
   }
   if (!audit.issues.length && !audit.warnings.length) {
     lines.push("  No timing, range, overlap, cadence, tendency, or parallel-perfect warnings found in the generated event stream.");
@@ -1581,6 +1595,15 @@ function dubRelaxLine(seed) {
     hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
   }
   return DUB_RELAX_LINES[Math.abs(hash) % DUB_RELAX_LINES.length];
+}
+
+function checkerReassurance(seed, index) {
+  const text = `${seed || "checker"}:${index}`;
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return CHECK_REASSURANCE_LINES[Math.abs(hash) % CHECK_REASSURANCE_LINES.length];
 }
 
 function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTicks) {
