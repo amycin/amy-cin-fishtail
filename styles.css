@@ -82,6 +82,23 @@ select {
   transform: scale(1.03);
 }
 
+.art-layer::before,
+.art-layer::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.art-layer::before {
+  inset: -3%;
+  background: url("assets/ocular-debris-grid.jpeg") center / cover no-repeat;
+}
+
+.art-layer::after {
+  inset: 0;
+}
+
 body.dub-mode {
   color-scheme: dark;
   --ink: #dfffe8;
@@ -123,9 +140,59 @@ body.dub-mode .instrument::after {
 }
 
 body.dub-mode .art-layer {
-  opacity: 0.14;
-  filter: saturate(0.72) hue-rotate(78deg) contrast(1.24);
+  opacity: 0.34;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(57, 255, 136, 0.2), transparent 40%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.26), rgba(57, 255, 136, 0.08)),
+    url("assets/ocular-debris-grid.jpeg") center / cover no-repeat;
+  filter: invert(1) hue-rotate(82deg) saturate(2.1) contrast(1.28) brightness(0.58);
   mix-blend-mode: screen;
+}
+
+body.dub-mode .art-layer::before {
+  opacity: 0.44;
+  filter: invert(1) hue-rotate(118deg) saturate(3.2) contrast(1.48) brightness(0.76);
+  mix-blend-mode: color-dodge;
+  transform: translate3d(0, 0, 0) scale(1.035);
+  animation: dub-art-drift 24s ease-in-out infinite alternate;
+}
+
+body.dub-mode .art-layer::after {
+  opacity: 0.34;
+  background:
+    repeating-linear-gradient(0deg, rgba(57, 255, 136, 0.18) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(90deg, transparent 0 34px, rgba(183, 255, 77, 0.08) 34px 35px),
+    linear-gradient(180deg, transparent, rgba(57, 255, 136, 0.16), transparent);
+  mix-blend-mode: screen;
+  animation: dub-scanline-field 8s linear infinite;
+}
+
+@keyframes dub-art-drift {
+  0% {
+    transform: translate3d(-0.8%, -0.4%, 0) scale(1.04);
+  }
+
+  42% {
+    transform: translate3d(0.6%, 0.2%, 0) scale(1.055);
+  }
+
+  58% {
+    transform: translate3d(0.9%, -0.1%, 0) scale(1.045);
+  }
+
+  100% {
+    transform: translate3d(-0.2%, 0.7%, 0) scale(1.06);
+  }
+}
+
+@keyframes dub-scanline-field {
+  from {
+    background-position: 0 0, 0 0, 0 -120px;
+  }
+
+  to {
+    background-position: 0 56px, 42px 0, 0 120px;
+  }
 }
 
 body.dub-mode .topbar {
