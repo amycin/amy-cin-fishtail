@@ -1092,7 +1092,6 @@ function writeMidiFile({ tracks, sectionMeta, settings }) {
 
 function makeHeaderChunk(format, ntrks, division) {
   return chunk("MThd", [
-    0, 0, 0, 6,
     (format >> 8) & 0xff, format & 0xff,
     (ntrks >> 8) & 0xff, ntrks & 0xff,
     (division >> 8) & 0xff, division & 0xff,
@@ -1372,7 +1371,20 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
   const pushWarning = (message) => pushLimited(warnings, message);
 
   if (midiBytes.length < 22) pushIssue("MIDI file is unexpectedly small.");
-  if (String.fromCharCode(...midiBytes.slice(0, 4)) !== "MThd") pushIssue("MIDI header chunk is missing.");
+  if (String.fromCharCode(...midiBytes.slice(0, 4)) !== "MThd") {
+    pushIssue("MIDI header chunk is missing.");
+  } else {
+    const headerLength = readUint32(midiBytes, 4);
+    const format = readUint16(midiBytes, 8);
+    const trackCount = readUint16(midiBytes, 10);
+    const division = readUint16(midiBytes, 12);
+    const expectedTracks = activeVoices.length + 1;
+    if (headerLength !== 6) pushIssue(`MIDI header length should be 6 bytes, got ${headerLength}.`);
+    if (format !== 1) pushIssue(`MIDI format should be 1 for separate voice tracks, got ${format}.`);
+    if (trackCount !== expectedTracks) pushIssue(`MIDI header track count should be ${expectedTracks}, got ${trackCount}.`);
+    if (division !== PPQ) pushIssue(`MIDI time division should be ${PPQ} ticks per quarter, got ${division}.`);
+    if (String.fromCharCode(...midiBytes.slice(14, 18)) !== "MTrk") pushIssue("First MIDI track chunk does not start immediately after the header.");
+  }
   if (!events.length) pushIssue("No note events were written.");
   const expectedTotalTicks = sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0);
   if (expectedTotalTicks !== totalTicks) pushIssue(`Section duration mismatch: expected ${expectedTotalTicks} ticks, got ${totalTicks}.`);
@@ -1469,6 +1481,14 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     warnings,
     summary,
   };
+}
+
+function readUint16(bytes, offset) {
+  return ((bytes[offset] ?? 0) << 8) | (bytes[offset + 1] ?? 0);
+}
+
+function readUint32(bytes, offset) {
+  return ((bytes[offset] ?? 0) * 0x1000000) + (((bytes[offset + 1] ?? 0) << 16) | ((bytes[offset + 2] ?? 0) << 8) | (bytes[offset + 3] ?? 0));
 }
 
 function describeTickLocation(tick, sectionMeta, settings) {
