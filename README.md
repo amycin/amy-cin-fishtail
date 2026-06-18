@@ -46,6 +46,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Slower staged generation pass with a final output checker for timing, range, cadence, tendency-tone, overlap, and parallel-perfect warnings.
 - Clean Equal Temperament and Amy Dub Intonation MIDI exports: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When Tempo map is on, a separate conductor track writes BPM and time signatures for DAWs that read them. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes.
 - Multiple single-voice Bend MIDI output for pitch-bend experiments.
+- Deterministic pitch-based velocity feel: 127 at the generator bass floor down to 90 at the soprano ceiling, shaped with a gentle 3 dB/octave tilt.
 - Ocular Debris artwork overlay used as a visual circuit-map substrate.
 - Three.js wireframe torus visualisation with a canvas gravity-wave lattice.
 - Slow torus-to-wormhole phase animation with aperture focus zoom, lens-field overlay, and optional device tilt/motion response where the browser permits it.

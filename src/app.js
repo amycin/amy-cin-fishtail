@@ -26,6 +26,11 @@ const VOICE_RANGES = {
   alto: [53, 76],
   soprano: [60, 84],
 };
+const VELOCITY_PITCH_LOW = VOICE_RANGES.bass[0];
+const VELOCITY_PITCH_HIGH = VOICE_RANGES.soprano[1];
+const VELOCITY_LOW = 127;
+const VELOCITY_HIGH = 90;
+const VELOCITY_TILT_DB_PER_OCTAVE = 3;
 
 const AMY_DUB_RATIOS = [
   ["1/1", 1 / 1, 1.0, "home"],
@@ -1236,8 +1241,6 @@ function gridToEvents(grid, voice, sectionStartTick, pulseTicks, settings) {
 }
 
 function makeNoteEvent(note, voice, tick, duration, settings) {
-  const velocityBase = { bass: 72, tenor: 60, alto: 58, soprano: 70 }[voice] || 64;
-  const velocity = clamp(Math.round(velocityBase + (note.symbolicOffset === 0 ? 5 : 0) - Math.min(12, note.resolutionCents || 0) * 0.2), 42, 92);
   const tunedFrequency = settings.rootFreq * ratioForMidi(note.midi, settings);
   let midi = note.midi;
   let bend = null;
@@ -1249,6 +1252,7 @@ function makeNoteEvent(note, voice, tick, duration, settings) {
     const cents = 1200 * Math.log2(tunedFrequency / etFreq);
     bend = centsToPitchBend(cents, 2);
   }
+  const velocity = velocityForPitch(midi);
   return {
     tick,
     duration: Math.max(PPQ / 4, duration),
@@ -1262,6 +1266,16 @@ function makeNoteEvent(note, voice, tick, duration, settings) {
     velocity,
     bend,
   };
+}
+
+function velocityForPitch(midi) {
+  const pitch = clamp(midi, VELOCITY_PITCH_LOW, VELOCITY_PITCH_HIGH);
+  const totalOctaves = Math.max(1 / 12, (VELOCITY_PITCH_HIGH - VELOCITY_PITCH_LOW) / 12);
+  const octaves = (pitch - VELOCITY_PITCH_LOW) / 12;
+  const endAmplitude = 10 ** (-(VELOCITY_TILT_DB_PER_OCTAVE * totalOctaves) / 20);
+  const amplitude = 10 ** (-(VELOCITY_TILT_DB_PER_OCTAVE * octaves) / 20);
+  const shaped = (amplitude - endAmplitude) / (1 - endAmplitude);
+  return clamp(Math.round(VELOCITY_HIGH + (VELOCITY_LOW - VELOCITY_HIGH) * shaped), VELOCITY_HIGH, VELOCITY_LOW);
 }
 
 function writeMidiFile({ tracks, sectionMeta, settings }) {
@@ -1439,6 +1453,17 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       tuning_mode: outputModeLabel(settings.outputMode),
       note: "Amy Dub Intonation writes carrier keys for a retuner. Bend MIDI uses per-voice channel pitch bend.",
     },
+    velocity_curve: {
+      mode: "pitch_tilt",
+      note: "Velocity is deterministic pitch feel, not random: lower notes carry more energy and higher notes sit softer.",
+      low_midi: VELOCITY_PITCH_LOW,
+      low_note: midiName(VELOCITY_PITCH_LOW),
+      low_velocity: VELOCITY_LOW,
+      high_midi: VELOCITY_PITCH_HIGH,
+      high_note: midiName(VELOCITY_PITCH_HIGH),
+      high_velocity: VELOCITY_HIGH,
+      tilt_db_per_octave: -VELOCITY_TILT_DB_PER_OCTAVE,
+    },
     fishtail_tempo: {
       formula: "BPM = 60 * referenceHz / n",
       reference_note: settings.referenceNote,
@@ -1469,6 +1494,7 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       resolved: event.resolved,
       ratio: event.ratioName,
       hz: Number(event.tunedFrequency.toFixed(4)),
+      velocity: event.velocity,
     })),
   };
 }
@@ -1487,6 +1513,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`Voices: ${settings.voices}`);
   lines.push(`Pitch map: ${settings.resolution}`);
   lines.push(`Output: ${outputModeLabel(settings.outputMode)}`);
+  lines.push(`Velocity curve: pitch feel, ${VELOCITY_LOW} at ${midiName(VELOCITY_PITCH_LOW)} down to ${VELOCITY_HIGH} at ${midiName(VELOCITY_PITCH_HIGH)} with a ${VELOCITY_TILT_DB_PER_OCTAVE} dB/octave tilt.`);
   if (settings.outputMode === "bend") {
     lines.push(`Bend reference: ${settings.rootNote} = ${settings.rootFreq.toFixed(4)} Hz, derived from ${settings.referenceNote} at ${settings.referenceHz.toFixed(4)} Hz`);
   }
@@ -1511,6 +1538,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`  MIDI bytes: ${audit.summary.midiBytes}`);
   lines.push(`  Grid checks: ${audit.summary.gridChecks}`);
   lines.push(`  Strong-beat vertical checks: ${audit.summary.strongBeatChecks}`);
+  lines.push(`  Velocity curve checks: ${audit.summary.velocityChecks}`);
   lines.push(`  Status: ${audit.ok ? "passed" : "review notes below"}`);
   if (settings.dubMode) {
     lines.push(`  Dub checker: ${dubRelaxLine(settings.seed)}`);
@@ -1567,6 +1595,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     rangeChecks: 0,
     cadenceChecks: 0,
     tendencyChecks: 0,
+    velocityChecks: 0,
   };
   const activeVoices = VOICE_ORDER.slice(4 - settings.voices);
   const byVoice = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
@@ -1610,6 +1639,15 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
       pushWarning(`${event.voice} note at ${describeTickLocation(event.tick, sectionMeta, settings)} is off the 16th-note audit grid.`);
     }
     if (event.midi < 0 || event.midi > 127) pushIssue(`${event.voice} outputs invalid MIDI note ${event.midi}.`);
+    if (!Number.isInteger(event.velocity) || event.velocity < 1 || event.velocity > 127) {
+      pushIssue(`${event.voice} has invalid velocity ${event.velocity} at ${describeTickLocation(event.tick, sectionMeta, settings)}.`);
+    } else {
+      const expectedVelocity = velocityForPitch(event.midi);
+      summary.velocityChecks += 1;
+      if (event.velocity !== expectedVelocity) {
+        pushWarning(`${event.voice} velocity ${event.velocity} at ${describeTickLocation(event.tick, sectionMeta, settings)} does not match pitch curve value ${expectedVelocity}.`);
+      }
+    }
     const carrier = event.carrierMidi ?? event.midi;
     if (voiceRange && (carrier < voiceRange[0] || carrier > voiceRange[1])) {
       pushWarning(`${event.voice} carrier ${carrier} at ${describeTickLocation(event.tick, sectionMeta, settings)} is outside its intended range ${voiceRange[0]}-${voiceRange[1]}.`);

@@ -53,11 +53,22 @@ function runSmokeTests() {
       expectTempo30: test.expectTempo30,
     });
     const dubReportOk = !test.dubMode || piece.report.includes("Dub checker:");
-    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk ? "ok" : "failed";
+    const velocityOk = piece.events.every((event) => Number.isInteger(event.velocity) && event.velocity >= 90 && event.velocity <= 127);
+    const velocityReportOk = piece.report.includes("Velocity curve:");
+    const velocityManifestOk = piece.manifest.velocity_curve?.low_velocity === 127 && piece.manifest.velocity_curve?.high_velocity === 90;
+    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk && velocityOk && velocityReportOk && velocityManifestOk ? "ok" : "failed";
     console.log(`${status} ${test.name}: tracks=${result.trackCount}, notes=${result.notes}, tempos=${result.tempos}, warnings=${piece.audit.warnings.length}`);
-    if (!result.ok || piece.audit.issues.length || !dubReportOk) {
+    if (!result.ok || piece.audit.issues.length || !dubReportOk || !velocityOk || !velocityReportOk || !velocityManifestOk) {
       ok = false;
-      printMessages(result.issues, result.warnings, piece.audit.issues, dubReportOk ? [] : ["Dub Gravity report is missing the Dub checker note."]);
+      printMessages(
+        result.issues,
+        result.warnings,
+        piece.audit.issues,
+        dubReportOk ? [] : ["Dub Gravity report is missing the Dub checker note."],
+        velocityOk ? [] : ["Generated note velocities are outside the expected 90-127 pitch-feel range."],
+        velocityReportOk ? [] : ["Generation report is missing the velocity curve note."],
+        velocityManifestOk ? [] : ["Manifest is missing the expected 127-to-90 velocity curve block."],
+      );
     }
   }
   return ok;
