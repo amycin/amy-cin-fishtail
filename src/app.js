@@ -1659,7 +1659,13 @@ function closeCredits() {
 function saveMidiPiece(piece) {
   const seed = piece.settings.seed.slice(0, 8);
   const style = piece.settings.generationStyle === "invention" ? "invention" : "fugue";
-  downloadBlob(new Blob([piece.midiBytes], { type: "audio/midi" }), `amy-cin-fishtail-${style}-${seed}.mid`);
+  const tempo = tempoFilenameSlug(piece.settings.tempo);
+  downloadBlob(new Blob([piece.midiBytes], { type: "audio/midi" }), `amy-cin-fishtail-${style}-${tempo}-${seed}.mid`);
+}
+
+function tempoFilenameSlug(bpm) {
+  const tempo = Number.isFinite(Number(bpm)) ? Number(bpm) : 72;
+  return `${tempo.toFixed(4).replace(".", "p")}bpm`;
 }
 
 function downloadBlob(blob, filename) {

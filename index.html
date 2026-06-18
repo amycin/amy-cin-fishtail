@@ -136,7 +136,7 @@
               <button id="downloadJsonButton" type="button" disabled>Save Project JSON</button>
               <button id="toggleNotesButton" type="button">Hide Notes</button>
             </div>
-            <p class="download-help">Generate + Save MIDI is the main button. Project JSON saves the recipe, settings, and seed. Hide/Show Notes opens or closes the text below. Codex preview may not save downloads; Safari, Chrome, or a hosted page should.</p>
+            <p class="download-help">Generate + Save MIDI is the main button. Note-only MIDI files keep tempo out of the track data and put BPM in the filename. Project JSON saves the recipe, settings, and seed. Hide/Show Notes opens or closes the text below. Codex preview may not save downloads; Safari, Chrome, or a hosted page should.</p>
           </section>
         </section>
 
@@ -181,7 +181,7 @@
 
               <section>
                 <h3>Pitch Modes</h3>
-                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs. The export is note-only: separate voice tracks with note on/off events and no program changes, controller setup, tempo map, or track-name clutter.</p>
+                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs. The export is note-only: separate voice tracks with note on/off events and no program changes, controller setup, tempo map, or track-name clutter. The selected BPM is shown in the downloaded filename.</p>
                 <p><strong>Amy Dub Intonation</strong> writes carrier MIDI notes for a retuner such as Entonal. The MIDI note numbers may look unusual because the retuner turns those carrier keys into Amy Dub ratio pitches. This export is also note-only, so the retuner or DAW receives clean voice tracks. For the tuning logic, look at the ratios in the GitHub <code>README.md</code> section called Gravity Counterpoint Rules And Amy Dub Ratios.</p>
                 <p><strong>Bend MIDI</strong> writes multiple single-voice MIDI tracks, one voice per track/channel, and retunes each voice toward Amy Dub intonation with pitch-bend messages. It should be played through separate mono instruments or separate mono channels. If the parts are merged into one polyphonic instrument, the pitch bends will fight each other and the tuning will not work properly.</p>
               </section>
@@ -260,6 +260,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=29"></script>
+    <script src="src/app.js?v=30"></script>
   </body>
 </html>
