@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=28">
+    <link rel="stylesheet" href="styles.css?v=29">
   </head>
   <body>
     <main class="shell">
@@ -42,7 +42,7 @@
               <label class="slider-label">
                 Calm
                 <input id="strangenessInput" type="range" min="0" max="100" value="16">
-                Strange
+                Varied
               </label>
             </div>
           </section>
@@ -77,11 +77,11 @@
               </div>
               <label>
                 Tempo
-                <input id="tempoInput" type="text" value="30.0000" readonly>
+                <input id="tempoInput" type="text" value="60.0000" readonly>
               </label>
               <label class="tempo-slider-field">
-                Tempo divisor <span id="tempoDivisorLabel">n = 864</span>
-                <input id="tempoDivisorInput" type="range" min="118" max="864" step="1" value="864">
+                Tempo divisor <span id="tempoDivisorLabel">n = 432</span>
+                <input id="tempoDivisorInput" type="range" min="118" max="864" step="1" value="432">
               </label>
               <label class="switch-label" title="Include tempo and time signatures">
                 <span>Tempo data</span>
@@ -216,7 +216,7 @@
               <section>
                 <h3>Modes And Gravity</h3>
                 <p>Major, harmonic minor, modal scales, and gravity melodic minor are available. Gravity melodic minor allows extra minor-key passing tones with tendency rules: leading tones rise, raised sixths lift, flat sevenths fall, and flat sixths resolve down.</p>
-                <p><strong>Fishtail Fugue</strong> uses the Form rows as tonal regions, then shapes them into exposition, episodes, middle entries, final return, and cadence. If the form is too short, the generator quietly adds enough internal structure and explains it in Generation Notes. With DUB off it uses Formal Gravity; with DUB on it keeps the fugue map but lets the bass and offbeat answers breathe more freely.</p>
+                <p><strong>Fishtail Fugue</strong> uses the Form rows as tonal regions, then shapes them into exposition, episodes, middle entries, final return, and cadence. If the form is too short, the generator quietly adds enough internal sections or bars and explains the shaping in Generation Notes. This means a fugue can come out longer than the visible Form. With DUB off it uses Formal Gravity; with DUB on it keeps the fugue map but lets the bass and offbeat answers breathe more freely.</p>
                 <p><strong>Dub Gravity</strong> keeps the counterpoint engine but biases the bass toward repeated root/fifth gravity, gives middle voices offbeat skank gestures, makes the upper voices breathe more, and allows the occasional parallel-perfect bend in the rules while noting it gently in Generation Notes. The interface also shifts into a black and green terminal-style view while DUB is armed.</p>
               </section>
 
@@ -297,6 +297,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=39"></script>
+    <script src="src/app.js?v=40"></script>
   </body>
 </html>

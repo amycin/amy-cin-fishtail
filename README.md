@@ -39,7 +39,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Weighted random form generation with D4 and D20-style dice controls.
 - Section controls for bars, key, mode, time signature, and cadence.
 - Style switch for Imitation + Invention, Counterpoint, or Fishtail Fugue generation.
-- Reference-pitch menu and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A4 = 432 Hz and `n = 864`, giving 30.0000 BPM.
+- Reference-pitch menu and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A4 = 432 Hz and `n = 432`, giving 60.0000 BPM.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.
 - Fishtail Fugue mode with automatic three-section minimum form shaping, subject/answer/countersubject planning, exposition entries, episodes, middle entries, and final return. DUB off uses Formal Gravity; DUB on keeps the fugue map but gives the bass and offbeat answers more room.

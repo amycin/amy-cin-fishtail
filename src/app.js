@@ -542,6 +542,7 @@ function updateDubModeUi() {
   const enabled = Boolean(els.dubModeInput?.checked);
   document.body?.classList.toggle("dub-mode", enabled);
   if (enabled) {
+    if (els.styleInput) els.styleInput.value = FUGUE_STYLE_ID;
     els.statusLabel.textContent = "DUB armed";
   } else if (els.statusLabel.textContent === "DUB armed") {
     els.statusLabel.textContent = "Ready";
@@ -601,7 +602,7 @@ function updateTempoControls() {
   const maxN = Math.max(minN, Math.floor((60 * referenceHz) / 30));
   els.tempoDivisorInput.min = String(minN);
   els.tempoDivisorInput.max = String(maxN);
-  const divisor = clamp(parseInt(els.tempoDivisorInput.value, 10) || 360, minN, maxN);
+  const divisor = clamp(parseInt(els.tempoDivisorInput.value, 10) || 432, minN, maxN);
   els.tempoDivisorInput.value = String(divisor);
   const bpm = fishtailTempo(referenceHz, divisor);
   els.tempoInput.value = bpm.toFixed(4);
@@ -696,7 +697,8 @@ async function randomiseForm(kind) {
   const seed = await makeSystemSeed();
   const rng = makeRng(seed);
   const strange = Number(els.strangenessInput.value) / 100;
-  const sectionCount = kind === "gentle" ? randomInt(rng, 3, 5) : randomInt(rng, 4, 7);
+  const dubMode = Boolean(els.dubModeInput?.checked);
+  const sectionCount = randomFormSectionCount(rng, kind, dubMode);
   const startKey = weightedChoice(rng, KEY_NAMES.map((key) => [key, key === "C" || key === "D" || key === "G" || key === "A" ? 5 : 1]));
   let currentKey = startKey;
   let currentMode = weightedChoice(rng, [["major", 4], ["mixolydian", 3], ["dorian", 2], ["gravity_melodic_minor", 2], ["harmonic_minor", 1.8]]);
@@ -708,14 +710,15 @@ async function randomiseForm(kind) {
     const cadence = isMinorMode(currentMode)
       ? weightedChoice(rng, [["minor_authentic", 5], ["modal", 2], ["dub_suspension", 1]])
       : weightedChoice(rng, [["authentic", 4], ["plagal", 2], ["modal", 1], ["dub_suspension", 2]]);
+    const roleTreatment = chooseRandomSectionRoleTreatment(rng, i, sectionCount, dubMode);
     sections.push({
-      bars: kind === "gentle" ? randomInt(rng, 4, 9) : randomInt(rng, 3, 13),
+      bars: randomFormBars(rng, kind, dubMode),
       key: currentKey,
       mode: currentMode,
       meter: chooseMeter(rng, kind, strange),
       cadence,
-      role: "normal",
-      treatment: "straight",
+      role: roleTreatment.role,
+      treatment: roleTreatment.treatment,
     });
   }
 
@@ -729,6 +732,33 @@ async function randomiseForm(kind) {
   renderSections();
   els.seedLabel.textContent = `Dice: ${seed.slice(0, 8)}`;
   els.statusLabel.textContent = kind === "gentle" ? "D4 form" : "D20 form";
+}
+
+function randomFormSectionCount(rng, kind, dubMode) {
+  if (dubMode) return kind === "gentle" ? randomInt(rng, 4, 6) : randomInt(rng, 5, 8);
+  return kind === "gentle" ? randomInt(rng, 3, 5) : randomInt(rng, 4, 7);
+}
+
+function randomFormBars(rng, kind, dubMode) {
+  if (dubMode) return kind === "gentle" ? randomInt(rng, 5, 11) : randomInt(rng, 4, 15);
+  return kind === "gentle" ? randomInt(rng, 4, 9) : randomInt(rng, 3, 13);
+}
+
+function chooseRandomSectionRoleTreatment(rng, index, sectionCount, dubMode) {
+  if (!dubMode) return { role: "normal", treatment: "straight" };
+  let role;
+  if (index === 0) {
+    role = weightedChoice(rng, [["refrain", 4], ["normal", 3], ["development", 1]]);
+  } else if (index === sectionCount - 1) {
+    role = weightedChoice(rng, [["refrain", 5], ["development", 2], ["normal", 1.5]]);
+  } else {
+    role = weightedChoice(rng, [["development", 4], ["refrain", 3.2], ["normal", 1.4]]);
+  }
+  if (role === "normal") return { role, treatment: "straight" };
+  const treatment = weightedChoice(rng, role === "refrain"
+    ? [["dubby", 5], ["straight", 1.5]]
+    : [["dubby", 5], ["gentle", 1.5]]);
+  return { role, treatment };
 }
 
 function chooseNextKey(rng, currentKey, mode, kind, strange) {
@@ -915,7 +945,7 @@ function readSettings(seed) {
     referenceMidi: selectedReferenceMidi(),
     referenceHz: currentReferenceHz(),
     referenceAnchorA4Hz: state.referenceAnchorA4Hz,
-    tempoDivisor: clamp(parseInt(els.tempoDivisorInput.value, 10) || 360, 1, 100000),
+    tempoDivisor: clamp(parseInt(els.tempoDivisorInput.value, 10) || 432, 1, 100000),
     breathing: Number(els.breathingInput.value) / 100,
     density: Number(els.densityInput.value) / 100,
     strangeness: Number(els.strangenessInput.value) / 100,

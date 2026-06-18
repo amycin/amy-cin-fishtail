@@ -309,10 +309,35 @@ function runRefrainAndSuspensionTests() {
 
 function runFugueTests() {
   const indexHtml = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  const stylesCss = fs.readFileSync(path.join(ROOT, "styles.css"), "utf8");
   const styleOptionOk = indexHtml.includes('<option value="fishtail_fugue">Fishtail Fugue</option>');
+  const tempoDefaultOk = indexHtml.includes('id="tempoInput" type="text" value="60.0000"')
+    && indexHtml.includes('id="tempoDivisorLabel">n = 432</span>')
+    && indexHtml.includes('id="tempoDivisorInput" type="range" min="118" max="864" step="1" value="432"')
+    && stylesCss.includes("#tempoDivisorInput")
+    && stylesCss.includes("direction: rtl");
+  const variedLabelOk = indexHtml.includes("Varied") && !indexHtml.includes("Strange");
   const context = makeAppContext();
   const results = vm.runInContext(`
     (() => {
+      function dubUiDefault() {
+        els.dubModeInput = { checked: true };
+        els.styleInput = { value: "counterpoint" };
+        els.statusLabel = { textContent: "Ready" };
+        document.body = { classList: { toggle() {} } };
+        updateDubModeUi();
+        return els.styleInput.value === "fishtail_fugue" && els.statusLabel.textContent === "DUB armed";
+      }
+
+      function dubDiceWeighting() {
+        const dubRole = chooseRandomSectionRoleTreatment(() => 0, 1, 5, true);
+        const plainRole = chooseRandomSectionRoleTreatment(() => 0, 1, 5, false);
+        return dubRole.role === "development"
+          && dubRole.treatment === "dubby"
+          && plainRole.role === "normal"
+          && plainRole.treatment === "straight";
+      }
+
       function buildFuguePiece({ sections, dubMode = false, voices = 4, seed = "validation-fugue" }) {
         const settings = {
           seed,
@@ -381,6 +406,14 @@ function runFugueTests() {
 
       return [
         {
+          name: "dub switch selects Fishtail Fugue",
+          ok: dubUiDefault(),
+        },
+        {
+          name: "dub dice weights role and treatment",
+          ok: dubDiceWeighting(),
+        },
+        {
           name: "auto-repairs one section to three",
           ok: oneSection.manifest.fugue.repaired_form.final_sections === 3
             && oneSection.manifest.fugue.repaired_form.auto_repaired
@@ -431,8 +464,10 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
+  console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
+  console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} fugue ${result.name}`);
