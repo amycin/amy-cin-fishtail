@@ -1084,8 +1084,7 @@ function makeNoteEvent(note, voice, tick, duration, settings) {
 
 function writeMidiFile({ tracks, sectionMeta, settings }) {
   const chunks = [];
-  chunks.push(makeHeaderChunk(1, Object.keys(tracks).length + 1, PPQ));
-  chunks.push(makeConductorTrack(sectionMeta, settings));
+  chunks.push(makeHeaderChunk(1, Object.keys(tracks).length, PPQ));
   Object.values(tracks).forEach((track) => chunks.push(makeVoiceTrack(track, settings)));
   return concatBytes(chunks);
 }
@@ -1098,21 +1097,8 @@ function makeHeaderChunk(format, ntrks, division) {
   ]);
 }
 
-function makeConductorTrack(sectionMeta, settings) {
-  const events = [];
-  events.push({ tick: 0, bytes: metaText(0x03, "amy_cin fishtail generator") });
-  events.push({ tick: 0, bytes: tempoBytes(settings.tempo) });
-  sectionMeta.forEach((section) => {
-    events.push({ tick: section.startTick, bytes: timeSignatureBytes(section.numerator, section.denominator) });
-    events.push({ tick: section.startTick, bytes: metaText(0x06, `${section.key} ${MODES[section.mode].label} ${section.meter}`) });
-  });
-  events.sort((a, b) => a.tick - b.tick);
-  return chunk("MTrk", deltaEncode(events));
-}
-
 function makeVoiceTrack(track, settings) {
   const events = [];
-  events.push({ tick: 0, bytes: metaText(0x03, track.name) });
   const channel = track.channel;
   if (settings.outputMode === "bend") {
     events.push(...pitchBendRangeEvents(channel, 2));
@@ -1170,21 +1156,6 @@ function chunk(id, data) {
     length & 0xff,
     ...data,
   ]);
-}
-
-function metaText(type, text) {
-  const encoded = new TextEncoder().encode(text);
-  return [0xff, type, ...varLen(encoded.length), ...encoded];
-}
-
-function tempoBytes(bpm) {
-  const mpqn = Math.round(60000000 / bpm);
-  return [0xff, 0x51, 0x03, (mpqn >> 16) & 0xff, (mpqn >> 8) & 0xff, mpqn & 0xff];
-}
-
-function timeSignatureBytes(numerator, denominator) {
-  const dd = Math.round(Math.log2(denominator));
-  return [0xff, 0x58, 0x04, numerator & 0xff, dd & 0xff, 24, 8];
 }
 
 function pitchBendBytes(channel, value) {
@@ -1378,12 +1349,16 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     const format = readUint16(midiBytes, 8);
     const trackCount = readUint16(midiBytes, 10);
     const division = readUint16(midiBytes, 12);
-    const expectedTracks = activeVoices.length + 1;
+    const expectedTracks = activeVoices.length;
     if (headerLength !== 6) pushIssue(`MIDI header length should be 6 bytes, got ${headerLength}.`);
     if (format !== 1) pushIssue(`MIDI format should be 1 for separate voice tracks, got ${format}.`);
     if (trackCount !== expectedTracks) pushIssue(`MIDI header track count should be ${expectedTracks}, got ${trackCount}.`);
     if (division !== PPQ) pushIssue(`MIDI time division should be ${PPQ} ticks per quarter, got ${division}.`);
     if (String.fromCharCode(...midiBytes.slice(14, 18)) !== "MTrk") pushIssue("First MIDI track chunk does not start immediately after the header.");
+    if (settings.outputMode !== "bend") {
+      const noteOnlyIssue = noteOnlyMidiIssue(midiBytes);
+      if (noteOnlyIssue) pushIssue(noteOnlyIssue);
+    }
   }
   if (!events.length) pushIssue("No note events were written.");
   const expectedTotalTicks = sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0);
@@ -1489,6 +1464,60 @@ function readUint16(bytes, offset) {
 
 function readUint32(bytes, offset) {
   return ((bytes[offset] ?? 0) * 0x1000000) + (((bytes[offset + 1] ?? 0) << 16) | ((bytes[offset + 2] ?? 0) << 8) | (bytes[offset + 3] ?? 0));
+}
+
+function noteOnlyMidiIssue(bytes) {
+  const trackCount = readUint16(bytes, 10);
+  let offset = 14;
+  for (let track = 0; track < trackCount; track += 1) {
+    if (String.fromCharCode(...bytes.slice(offset, offset + 4)) !== "MTrk") return `MIDI track ${track + 1} is missing its MTrk header.`;
+    const trackLength = readUint32(bytes, offset + 4);
+    offset += 8;
+    const trackEnd = offset + trackLength;
+    let runningStatus = null;
+    while (offset < trackEnd) {
+      const delta = readVarLen(bytes, offset);
+      offset = delta.next;
+      let status = bytes[offset];
+      if (status < 0x80) {
+        if (runningStatus == null) return `MIDI track ${track + 1} uses running status before any status byte.`;
+        status = runningStatus;
+      } else {
+        offset += 1;
+        if (status < 0xf0) runningStatus = status;
+      }
+
+      if (status === 0xff) {
+        const type = bytes[offset];
+        offset += 1;
+        const length = readVarLen(bytes, offset);
+        offset = length.next + length.value;
+        if (type !== 0x2f) return `MIDI track ${track + 1} contains meta event 0x${type.toString(16)}; note-only exports should contain notes only.`;
+        continue;
+      }
+      if (status === 0xf0 || status === 0xf7) return `MIDI track ${track + 1} contains SysEx data; note-only exports should contain notes only.`;
+
+      const eventType = status & 0xf0;
+      const dataBytes = eventType === 0xc0 || eventType === 0xd0 ? 1 : 2;
+      offset += dataBytes;
+      if (eventType !== 0x80 && eventType !== 0x90) {
+        return `MIDI track ${track + 1} contains MIDI event 0x${eventType.toString(16)}; note-only exports should contain note on/off only.`;
+      }
+    }
+  }
+  if (offset !== bytes.length) return "MIDI file has unexpected trailing bytes after the declared tracks.";
+  return "";
+}
+
+function readVarLen(bytes, offset) {
+  let value = 0;
+  let current = 0;
+  do {
+    current = bytes[offset] ?? 0;
+    value = (value << 7) | (current & 0x7f);
+    offset += 1;
+  } while (current & 0x80);
+  return { value, next: offset };
 }
 
 function describeTickLocation(tick, sectionMeta, settings) {

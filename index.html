@@ -181,8 +181,8 @@
 
               <section>
                 <h3>Pitch Modes</h3>
-                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs.</p>
-                <p><strong>Amy Dub Intonation</strong> writes carrier MIDI notes for a retuner such as Entonal. The MIDI note numbers may look unusual because the retuner turns those carrier keys into Amy Dub ratio pitches. For the tuning logic, look at the ratios in the GitHub <code>README.md</code> section called Gravity Counterpoint Rules And Amy Dub Ratios.</p>
+                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs. The export is note-only: separate voice tracks with note on/off events and no program changes, controller setup, tempo map, or track-name clutter.</p>
+                <p><strong>Amy Dub Intonation</strong> writes carrier MIDI notes for a retuner such as Entonal. The MIDI note numbers may look unusual because the retuner turns those carrier keys into Amy Dub ratio pitches. This export is also note-only, so the retuner or DAW receives clean voice tracks. For the tuning logic, look at the ratios in the GitHub <code>README.md</code> section called Gravity Counterpoint Rules And Amy Dub Ratios.</p>
                 <p><strong>Bend MIDI</strong> writes multiple single-voice MIDI tracks, one voice per track/channel, and retunes each voice toward Amy Dub intonation with pitch-bend messages. It should be played through separate mono instruments or separate mono channels. If the parts are merged into one polyphonic instrument, the pitch bends will fight each other and the tuning will not work properly.</p>
               </section>
 
@@ -260,6 +260,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=28"></script>
+    <script src="src/app.js?v=29"></script>
   </body>
 </html>

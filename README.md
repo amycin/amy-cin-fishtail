@@ -27,7 +27,8 @@ For web hosting, ownership notes, and optional custom entropy-server wiring, see
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.
 - Slower staged generation pass with a final output checker for timing, range, cadence, tendency-tone, overlap, and parallel-perfect warnings.
-- Amy Dub Intonation carrier MIDI, equal-temperament MIDI, and multiple single-voice Bend MIDI output modes.
+- Note-only Equal Temperament and Amy Dub Intonation MIDI exports: one track per generated voice, no program changes, no controller setup, no conductor track, and no tempo or text meta events beyond required MIDI track endings.
+- Multiple single-voice Bend MIDI output for pitch-bend experiments.
 - Ocular Debris artwork overlay used as a visual circuit-map substrate.
 - Three.js wireframe torus visualisation with a canvas gravity-wave lattice.
 - Slow torus-to-wormhole phase animation with aperture focus zoom, lens-field overlay, and optional device tilt/motion response where the browser permits it.
@@ -37,8 +38,8 @@ For web hosting, ownership notes, and optional custom entropy-server wiring, see
 
 ## Tuning Modes
 
-- `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or another retuner. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers.
-- `Equal temperament`: writes ordinary MIDI notes for normal synth playback.
+- `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or another retuner. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers. The export is note-only.
+- `Equal temperament`: writes ordinary MIDI notes for normal synth playback. The export is note-only.
 - `Bend MIDI`: writes multiple single-voice tracks, one voice per track/channel, with per-voice pitch bend for approximate Dub-ratio playback. Use separate mono instruments or separate mono channels. If these parts are merged into one polyphonic instrument, pitch bends for one note can retune the other notes and the result will not work properly.
 
 ## Gravity Counterpoint Rules And Amy Dub Ratios
