@@ -182,14 +182,14 @@
               <section>
                 <h3>What It Does</h3>
                 <p>This is a browser-based fugue and counterpoint MIDI generator. It creates a structured piece from sections of bars, keys, modes, metres, cadences, voice-leading rules, breath/rest choices, and weighted randomness.</p>
-                <p>The generator aims for calm, coherent, harmonically pleasing material rather than completely wild note soup. It writes a MIDI file, a project JSON recipe, and generation notes with checker warnings. Gemma adds a small reassurance after each checker note so strict validation still feels kind.</p>
+                <p>The generator aims for calm, coherent, harmonically pleasing material rather than completely wild note soup. It writes a MIDI file, a project JSON recipe, and generation notes with musical observations, form details, and kind little Gemma reassurances.</p>
               </section>
 
               <section>
                 <h3>Quick Start</h3>
                 <ol>
-                  <li>Choose sections in Form: bars, key, mode, time signature, and cadence.</li>
-                  <li>Choose Fugue or Imitation + Invention, voice count, breathing, density, and pitch mode.</li>
+                  <li>Choose sections in Form: bars, key, mode, meter, cadence, role, and treatment.</li>
+                  <li>Choose Fugue or Imitation + Invention, voice count, pedal voices, breathing, density, and pitch mode.</li>
                   <li>Press Generate + Save MIDI. The MIDI file should download automatically.</li>
                   <li>Use Save Project JSON to keep the exact recipe and seed for later.</li>
                 </ol>
@@ -215,13 +215,15 @@
               <section>
                 <h3>Modes And Gravity</h3>
                 <p>Major, harmonic minor, modal scales, and gravity melodic minor are available. Gravity melodic minor allows extra minor-key passing tones with tendency rules: leading tones rise, raised sixths lift, flat sevenths fall, and flat sixths resolve down.</p>
-                <p><strong>Dub Gravity</strong> keeps the counterpoint engine but biases the bass toward repeated root/fifth gravity, gives middle voices offbeat skank gestures, makes the upper voices breathe more, and allows the occasional parallel-perfect error to pass through while still reporting it in the checker. The interface also shifts into a black and green terminal-style view while DUB is armed.</p>
+                <p><strong>Dub Gravity</strong> keeps the counterpoint engine but biases the bass toward repeated root/fifth gravity, gives middle voices offbeat skank gestures, makes the upper voices breathe more, and allows the occasional parallel-perfect bend in the rules while noting it gently in Generation Notes. The interface also shifts into a black and green terminal-style view while DUB is armed.</p>
               </section>
 
               <section>
-                <h3>Refrains And Suspensions</h3>
-                <p>Each form row can be Normal, Refrain, or Development. The first Refrain captures a whole-section source; later Refrains can return straight or dubby, and Developments can reshape it gently or through bass/skank dub treatment.</p>
-                <p>Pedal voice switches allow intentional tonic/fifth drones. Other long held notes are treated as suspensions: they are encouraged to resolve by step, checked after generation, and reported gently if they hang around too long.</p>
+                <h3>Refrains, Pedals, And Held Notes</h3>
+                <p><strong>Role</strong> chooses what each Form row does. <strong>Normal</strong> writes fresh counterpoint. <strong>Refrain</strong> captures or returns a whole-section musical idea. <strong>Development</strong> reshapes the first Refrain into a new answer; if there is no Refrain yet, it simply writes a normal section and says so in Generation Notes.</p>
+                <p><strong>Treatment</strong> chooses the flavour of a Refrain or Development. <strong>Straight</strong> keeps a Refrain close to its original shape. <strong>Gentle</strong> develops it with key movement, octave changes, small answering gestures, light rhythm changes, and voice handoff. <strong>Dubby</strong> keeps recognizable fragments while the bass finds more root/fifth gravity and the inner voices answer with offbeat skank chords.</p>
+                <p><strong>Pedal</strong> voice switches tell the generator that a voice is allowed to hold longer tonic or fifth notes as an intentional drone. Bass pedal turns on by default in DUB mode. For melody and inner voices, long held notes are shaped to breathe and resolve musically, so they feel like expressive tension rather than accidental stuck notes.</p>
+                <p>Project JSON remembers section roles, treatments, pedal choices, Refrain source material, and Development transformations, so a favourite form can be saved and returned to later.</p>
               </section>
 
               <section>
