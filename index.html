@@ -57,6 +57,7 @@
                 <select id="styleInput">
                   <option value="invention" selected>Imitation + Invention</option>
                   <option value="counterpoint">Counterpoint</option>
+                  <option value="fishtail_fugue">Fishtail Fugue</option>
                 </select>
               </label>
               <label>
@@ -181,7 +182,7 @@
             <div class="help-body">
               <section>
                 <h3>What It Does</h3>
-                <p>This is a browser-based imitation, invention, and counterpoint MIDI generator. It creates a structured piece from sections of bars, keys, modes, metres, cadences, voice-leading rules, breath/rest choices, and weighted randomness.</p>
+                <p>This is a browser-based imitation, invention, counterpoint, and Fishtail Fugue MIDI generator. It creates a structured piece from sections of bars, keys, modes, metres, cadences, voice-leading rules, breath/rest choices, and weighted randomness.</p>
                 <p>The generator aims for calm, coherent, harmonically pleasing material rather than completely wild note soup. It writes a MIDI file, a project JSON recipe, and generation notes with musical observations, form details, and kind little Gemma reassurances.</p>
               </section>
 
@@ -189,7 +190,7 @@
                 <h3>Quick Start</h3>
                 <ol>
                   <li>Choose sections in Form: bars, key, mode, meter, cadence, role, and treatment.</li>
-                  <li>Choose Imitation + Invention or Counterpoint, voice count, pedal voices, breathing, density, and pitch mode.</li>
+                  <li>Choose Imitation + Invention, Counterpoint, or Fishtail Fugue, then set voice count, pedal voices, breathing, density, and pitch mode.</li>
                   <li>Press Generate + Save MIDI. The MIDI file should download automatically.</li>
                   <li>Use Save Project JSON to keep the exact recipe and seed for later.</li>
                 </ol>
@@ -215,6 +216,7 @@
               <section>
                 <h3>Modes And Gravity</h3>
                 <p>Major, harmonic minor, modal scales, and gravity melodic minor are available. Gravity melodic minor allows extra minor-key passing tones with tendency rules: leading tones rise, raised sixths lift, flat sevenths fall, and flat sixths resolve down.</p>
+                <p><strong>Fishtail Fugue</strong> uses the Form rows as tonal regions, then shapes them into exposition, episodes, middle entries, final return, and cadence. If the form is too short, the generator quietly adds enough internal structure and explains it in Generation Notes. With DUB off it uses Formal Gravity; with DUB on it keeps the fugue map but lets the bass and offbeat answers breathe more freely.</p>
                 <p><strong>Dub Gravity</strong> keeps the counterpoint engine but biases the bass toward repeated root/fifth gravity, gives middle voices offbeat skank gestures, makes the upper voices breathe more, and allows the occasional parallel-perfect bend in the rules while noting it gently in Generation Notes. The interface also shifts into a black and green terminal-style view while DUB is armed.</p>
               </section>
 
@@ -295,6 +297,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=38"></script>
+    <script src="src/app.js?v=39"></script>
   </body>
 </html>

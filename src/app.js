@@ -158,6 +158,7 @@ const VELOCITY_PITCH_HIGH = VOICE_RANGES.soprano[1];
 const VELOCITY_LOW = 127;
 const VELOCITY_HIGH = 90;
 const VELOCITY_TILT_DB_PER_OCTAVE = 3;
+const FUGUE_STYLE_ID = "fishtail_fugue";
 
 const AMY_DUB_RATIOS = [
   ["1/1", 1 / 1, 1.0, "home"],
@@ -1203,10 +1204,244 @@ function mappedRefrainStep(context, source = context.refrainPlan?.source) {
   return clamp(sourceStep, 0, source.steps - 1);
 }
 
+function isFugueStyle(settingsOrStyle) {
+  const style = typeof settingsOrStyle === "string" ? settingsOrStyle : settingsOrStyle?.generationStyle;
+  return style === FUGUE_STYLE_ID;
+}
+
+function repairFugueSections(sections, activeVoices, subjectLength, settings) {
+  const originalSectionCount = sections.length;
+  const repaired = sections.map((section) => ({ ...normalizeSection(section) }));
+  const notes = [];
+  const base = repaired[0] || normalizeSection(DEFAULT_SECTIONS[0]);
+
+  if (!repaired.length) {
+    repaired.push(base);
+    notes.push("Added an exposition section because the form was empty.");
+  }
+  while (repaired.length < 3) {
+    if (repaired.length === 1) {
+      repaired.push(makeAutoMiddleFugueSection(base));
+      notes.push("Added a middle episode section so the fugue has room to develop.");
+    } else {
+      repaired.push(makeAutoFinalFugueSection(base));
+      notes.push("Added a final return section so the fugue can cadence clearly.");
+    }
+  }
+
+  repaired.forEach((section, index) => {
+    const meter = METERS[section.meter] || METERS["4/4"];
+    const minBars = fugueMinimumBars(index, repaired.length, meter, activeVoices.length, subjectLength, settings.dubMode);
+    if (section.bars < minBars) {
+      notes.push(`Expanded section ${index + 1} from ${section.bars} to ${minBars} bars for subject entries and cadence room.`);
+      section.bars = minBars;
+    }
+  });
+
+  return {
+    sections: repaired,
+    summary: {
+      original_sections: originalSectionCount,
+      final_sections: repaired.length,
+      auto_repaired: notes.length > 0,
+      notes,
+    },
+  };
+}
+
+function makeAutoMiddleFugueSection(base) {
+  const minor = isMinorMode(base.mode);
+  const mode = minor ? "major" : "gravity_melodic_minor";
+  return {
+    bars: 4,
+    key: pcToName(noteToPc(base.key) + (minor ? 3 : 9)),
+    mode,
+    meter: base.meter,
+    cadence: isMinorMode(mode) ? "minor_authentic" : "authentic",
+    role: "development",
+    treatment: "gentle",
+  };
+}
+
+function makeAutoFinalFugueSection(base) {
+  return {
+    bars: 4,
+    key: base.key,
+    mode: base.mode,
+    meter: base.meter,
+    cadence: isMinorMode(base.mode) ? "minor_authentic" : "authentic",
+    role: "refrain",
+    treatment: "straight",
+  };
+}
+
+function fugueMinimumBars(sectionIndex, sectionCount, meter, voiceCount, subjectLength, dubMode) {
+  const entryGap = fugueEntryGapSteps(meter, dubMode);
+  if (sectionIndex === 0) {
+    return Math.max(3, Math.ceil((subjectLength + (voiceCount - 1) * entryGap) / meter.numerator) + 1);
+  }
+  if (sectionIndex === sectionCount - 1) {
+    return Math.max(4, Math.ceil((subjectLength + meter.numerator * 2) / meter.numerator));
+  }
+  return Math.max(3, Math.ceil(subjectLength / meter.numerator) + 1);
+}
+
+function fugueEntryGapSteps(meter, dubMode) {
+  return Math.max(2, Math.floor(meter.numerator * (dubMode ? 0.75 : 1)));
+}
+
+function makeFugueMaterial(settings, activeVoices, subject) {
+  const firstMode = MODES[settings.sections[0]?.mode] || MODES.major;
+  const answer = subject.map((offset) => tonalAnswerOffset(offset, firstMode));
+  const countersubject = makeCounterSubject(subject, firstMode);
+  return {
+    gravity_mode: settings.dubMode ? "dub" : "formal",
+    voice_order: fugueVoiceOrder(activeVoices),
+    subject: subject.map((offset) => mod(offset, 12)),
+    answer,
+    countersubject,
+    episode_fragments: makeEpisodeFragments(subject, countersubject),
+  };
+}
+
+function tonalAnswerOffset(offset, mode) {
+  const pc = mod(offset, 12);
+  if (pc === 0) return 7;
+  if (pc === 7) return 0;
+  if (pc === 5) return 2;
+  if (pc === 11 && mode.cadenceQuality === "major") return 6;
+  return mod(pc + 7, 12);
+}
+
+function makeCounterSubject(subject, mode) {
+  const stable = mode.stable || [0, 4, 7];
+  return subject.map((offset, index) => {
+    const inverted = mod(12 - mod(offset, 12), 12);
+    if (index === 0) return stable[0] || 0;
+    return mod(inverted + (index % 2 ? 7 : 0), 12);
+  });
+}
+
+function makeEpisodeFragments(subject, countersubject) {
+  const head = subject.slice(0, Math.min(4, subject.length));
+  const tail = subject.slice(Math.max(0, subject.length - 4));
+  const answerish = subject.slice(0, Math.min(3, subject.length)).map((offset) => mod(offset + 7, 12));
+  const counter = countersubject.slice(0, Math.min(4, countersubject.length));
+  return [head, tail, answerish, counter].filter((fragment) => fragment.length);
+}
+
+function fugueVoiceOrder(activeVoices) {
+  return ["soprano", "alto", "tenor", "bass"].filter((voice) => activeVoices.includes(voice));
+}
+
+function rotateArray(items, amount) {
+  if (!items.length) return [];
+  return items.map((_, index) => items[mod(index + amount, items.length)]);
+}
+
+function planFugueForm(settings, activeVoices, material, repairSummary) {
+  const sections = settings.sections.map((section, index) => {
+    const meter = METERS[section.meter] || METERS["4/4"];
+    const role = fugueRoleForSection(section, index, settings.sections.length);
+    const entries = planFugueSectionEntries({ section, sectionIndex: index, sectionCount: settings.sections.length, role, meter, activeVoices, material, settings });
+    return {
+      section_index: index + 1,
+      role,
+      key: section.key,
+      mode: section.mode,
+      meter: section.meter,
+      bars: section.bars,
+      treatment: section.treatment,
+      entries,
+    };
+  });
+  const expositionEntries = sections[0]?.entries || [];
+  return {
+    enabled: true,
+    formal_gravity_mode: settings.dubMode ? "dub" : "formal",
+    repaired_form: repairSummary,
+    subject: material.subject,
+    answer: material.answer,
+    countersubject: material.countersubject,
+    episode_fragments: material.episode_fragments,
+    voice_order: material.voice_order,
+    exposition_entries: expositionEntries,
+    sections,
+    middle_entries: sections.filter((section) => section.role === "middle_entry").reduce((sum, section) => sum + section.entries.length, 0),
+    episodes: sections.filter((section) => section.role === "episode").length,
+    final_returns: sections.filter((section) => section.role === "final_return").reduce((sum, section) => sum + section.entries.length, 0),
+  };
+}
+
+function summarizeFugueSectionPlan(plan) {
+  if (!plan) return null;
+  return {
+    role: plan.role,
+    entries: plan.entries.map((entry) => ({ ...entry })),
+  };
+}
+
+function fugueRoleForSection(section, index, sectionCount) {
+  if (index === 0) return "exposition";
+  if (index === sectionCount - 1) return "final_return";
+  if (section.role === "refrain") return "middle_entry";
+  if (section.role === "development") return "episode";
+  return index % 2 === 1 ? "episode" : "middle_entry";
+}
+
+function planFugueSectionEntries({ sectionIndex, sectionCount, role, meter, activeVoices, material, settings }) {
+  const order = material.voice_order.length ? material.voice_order : fugueVoiceOrder(activeVoices);
+  const entryGap = fugueEntryGapSteps(meter, settings.dubMode);
+  const steps = settings.sections[sectionIndex].bars * meter.numerator;
+  const cadenceReserve = role === "final_return" ? meter.numerator * 2 : 0;
+  const maxStart = Math.max(0, steps - material.subject.length - cadenceReserve);
+  const makeEntry = (voice, orderIndex, startStep, kind, purpose) => ({
+    voice,
+    start_step: clamp(startStep, 0, maxStart),
+    kind,
+    purpose,
+  });
+
+  if (role === "exposition") {
+    return order.map((voice, index) => makeEntry(voice, index, index * entryGap, index % 2 === 0 ? "subject" : "answer", "exposition"));
+  }
+
+  if (role === "middle_entry") {
+    const rotated = rotateArray(order, sectionIndex);
+    const entryCount = Math.min(rotated.length, settings.dubMode ? 1 : 2);
+    return rotated.slice(0, entryCount).map((voice, index) => makeEntry(
+      voice,
+      index,
+      index * entryGap * 2,
+      (sectionIndex + index) % 2 === 0 ? "subject" : "answer",
+      "middle_entry",
+    ));
+  }
+
+  if (role === "final_return") {
+    const bass = activeVoices.includes("bass") ? "bass" : order[order.length - 1];
+    const top = order[0] || bass;
+    const entries = [makeEntry(bass, 0, 0, "subject", "final_return")];
+    if (top && top !== bass && sectionCount > 1) entries.push(makeEntry(top, 1, entryGap, "answer", "final_closer"));
+    return entries;
+  }
+
+  return [];
+}
+
 function buildPiece(settings, rng) {
   settings.sections = settings.sections.map(normalizeSection);
   settings.pedalVoices = normalizePedalVoices(settings.pedalVoices, settings.voices, settings.dubMode);
   const activeVoices = VOICE_ORDER.slice(4 - settings.voices);
+  const subject = makeSubject(settings, rng);
+  let fugueSummary = null;
+  let fugueMaterial = null;
+  if (isFugueStyle(settings)) {
+    const repaired = repairFugueSections(settings.sections, activeVoices, subject.length, settings);
+    settings.sections = repaired.sections;
+    fugueMaterial = makeFugueMaterial(settings, activeVoices, subject);
+    fugueSummary = planFugueForm(settings, activeVoices, fugueMaterial, repaired.summary);
+  }
   const tracks = Object.fromEntries(activeVoices.map((voice, index) => [voice, { name: voice, channel: index, events: [] }]));
   const sectionMeta = [];
   const noteGrid = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
@@ -1219,7 +1454,6 @@ function buildPiece(settings, rng) {
   let avoidedParallels = 0;
   let resolvedTendencies = 0;
   let rests = 0;
-  const subject = makeSubject(settings, rng);
 
   settings.sections.forEach((section, sectionIndex) => {
     const mode = MODES[section.mode];
@@ -1227,8 +1461,11 @@ function buildPiece(settings, rng) {
     const barTicks = meter.numerator * meter.pulse;
     const steps = section.bars * meter.numerator;
     const sectionStartTick = currentTick;
-    const refrainPlan = planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, rng);
-    sectionMeta.push({ ...section, startTick: currentTick, barTicks, numerator: meter.numerator, denominator: meter.denominator, refrainPlan: summarizeRefrainPlan(refrainPlan) });
+    const refrainPlan = isFugueStyle(settings)
+      ? { kind: "normal", treatment: section.treatment || "straight" }
+      : planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, rng);
+    const fugueSectionPlan = fugueSummary?.sections?.[sectionIndex] || null;
+    sectionMeta.push({ ...section, startTick: currentTick, barTicks, numerator: meter.numerator, denominator: meter.denominator, refrainPlan: summarizeRefrainPlan(refrainPlan), fuguePlan: summarizeFugueSectionPlan(fugueSectionPlan) });
     reports.push(`${sectionIndex + 1}. ${section.bars} bars in ${section.key} ${mode.label}, ${section.meter}, ${CADENCES[section.cadence].label}, ${SECTION_ROLES[section.role]}${section.role === "normal" ? "" : `/${SECTION_TREATMENTS[section.treatment]}`}`);
 
     const entries = planEntries(activeVoices, steps, meter, rng, settings);
@@ -1255,6 +1492,7 @@ function buildPiece(settings, rng) {
           step,
           steps,
           barIndex,
+          sectionIndex,
           strong,
           cadenceStage,
           voice,
@@ -1272,6 +1510,9 @@ function buildPiece(settings, rng) {
           subject,
           entries,
           refrainPlan,
+          fugueSummary,
+          fugueMaterial,
+          fugueSectionPlan,
           suspensionStats,
           settings,
           rng,
@@ -1297,7 +1538,7 @@ function buildPiece(settings, rng) {
       currentTick += meter.pulse;
     }
 
-    maybeCaptureRefrainSource(refrainState, section, sectionIndex, steps, meter, activeVoices, noteGrid);
+    if (!isFugueStyle(settings)) maybeCaptureRefrainSource(refrainState, section, sectionIndex, steps, meter, activeVoices, noteGrid);
     activeVoices.forEach((voice) => {
       const events = gridToEvents(noteGrid[voice], voice, sectionStartTick, meter.pulse, settings);
       tracks[voice].events.push(...events);
@@ -1311,8 +1552,8 @@ function buildPiece(settings, rng) {
   const midiBytes = writeMidiFile({ tracks, sectionMeta, settings, totalTicks: currentTick });
   const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick);
   const refrainSummary = summarizeRefrainState(refrainState);
-  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, refrainSummary }, audit);
-  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, refrainSummary }, audit);
+  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, refrainSummary, fugueSummary }, audit);
+  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, refrainSummary, fugueSummary }, audit);
 
   return {
     settings,
@@ -1341,15 +1582,16 @@ function makeSubject(settings, rng) {
     [0, 7, 5, middle, 2, 0],
     [0, 2, 5, 7, 9, 7, 5],
   ];
-  const options = settings.generationStyle === "invention" ? inventionOptions : counterpointOptions;
+  const inventionSource = settings.generationStyle === "invention" || isFugueStyle(settings);
+  const options = inventionSource ? inventionOptions : counterpointOptions;
   const base = weightedChoice(rng, options.map((item) => [item, 1]));
   const shaped = base.filter((offset) => mode.offsets.includes(mod(offset, 12)) || offset === 0 || offset === 12);
-  const minimum = settings.generationStyle === "invention" ? 5 : 7;
+  const minimum = inventionSource ? 5 : 7;
   return shaped.length >= minimum ? shaped : [0, 2, middle, 5, 7, 5, middle, 2, 0];
 }
 
 function planEntries(activeVoices, steps, meter, rng, settings) {
-  const weights = settings.generationStyle === "invention"
+  const weights = settings.generationStyle === "invention" || isFugueStyle(settings)
     ? [[0.5, 2], [1, 4], [1.5, 2]]
     : [[1, 3], [1.5, 2], [2, 2]];
   const gap = Math.max(2, Math.floor(meter.numerator * weightedChoice(rng, weights)));
@@ -1367,10 +1609,10 @@ function getCadenceStage(step, steps, pulsesPerBar) {
 function chooseVoiceEvent(context) {
   const { settings, rng, strong, cadenceStage, voice, mode, section, step, entries, subject } = context;
   const debt = context.debts[voice];
-  const canRest = !cadenceStage && !debt && step > 0;
+  const canRest = !cadenceStage && !debt && step > 0 && !fugueNeedsVoice(context);
   if (canRest && shouldRestForRefrain(context)) return { rest: true };
   const baseRestChance = canRest ? (0.05 + settings.breathing * 0.22 - settings.density * 0.08) : 0;
-  const restChance = dubRestChance(context, baseRestChance);
+  const restChance = fugueRestChance(context, dubRestChance(context, baseRestChance));
   if (rng() < restChance && shouldVoiceBreathe(context)) return { rest: true };
 
   const offsets = cadenceStage
@@ -1402,6 +1644,7 @@ function chooseVoiceEvent(context) {
 
 function shouldVoiceBreathe(context) {
   const { voice, step, meter, rng, settings } = context;
+  if (fugueNeedsVoice(context)) return false;
   const phraseEdge = step % meter.numerator === meter.numerator - 1;
   if (settings.dubMode) {
     if (voice === "bass") return phraseEdge && rng() < settings.breathing * 0.24;
@@ -1410,6 +1653,16 @@ function shouldVoiceBreathe(context) {
   }
   const voiceBias = voice === "soprano" || voice === "bass" ? 1.25 : 0.88;
   return phraseEdge || rng() < settings.breathing * voiceBias;
+}
+
+function fugueRestChance(context, baseRestChance) {
+  if (!isFugueStyle(context.settings)) return baseRestChance;
+  const plan = currentFugueSectionPlan(context);
+  if (!plan) return baseRestChance;
+  if (plan.role === "exposition" || plan.role === "middle_entry" || plan.role === "final_return") {
+    return context.settings.dubMode ? baseRestChance * 0.75 : baseRestChance * 0.42;
+  }
+  return context.settings.dubMode ? baseRestChance * 1.08 : baseRestChance * 0.72;
 }
 
 function dubRestChance(context, baseRestChance) {
@@ -1451,8 +1704,114 @@ function mapVoiceToChordIndex(voiceIndex, voiceCount) {
   return [0, 1, 2, 3][voiceIndex];
 }
 
+function currentFugueSectionPlan(context) {
+  if (!isFugueStyle(context.settings)) return null;
+  return context.fugueSectionPlan || context.fugueSummary?.sections?.[context.sectionIndex] || null;
+}
+
+function fugueSequenceForEntry(context, entry) {
+  const material = context.fugueMaterial || context.fugueSummary || {};
+  return entry.kind === "answer" ? material.answer || [] : material.subject || [];
+}
+
+function currentFugueEntry(context, voice = context.voice) {
+  const plan = currentFugueSectionPlan(context);
+  if (!plan?.entries?.length) return null;
+  return plan.entries.find((entry) => {
+    if (entry.voice !== voice) return false;
+    const sequence = fugueSequenceForEntry(context, entry);
+    return context.step >= entry.start_step && context.step < entry.start_step + sequence.length;
+  }) || null;
+}
+
+function activeFugueEntry(context) {
+  const plan = currentFugueSectionPlan(context);
+  if (!plan?.entries?.length) return null;
+  return plan.entries.find((entry) => {
+    const sequence = fugueSequenceForEntry(context, entry);
+    return context.step >= entry.start_step && context.step < entry.start_step + sequence.length;
+  }) || null;
+}
+
+function fugueVoiceHasEntered(context, voice) {
+  const plan = currentFugueSectionPlan(context);
+  if (!plan?.entries?.length) return false;
+  return plan.entries.some((entry) => entry.voice === voice && context.step > entry.start_step);
+}
+
+function fugueNeedsVoice(context) {
+  return Boolean(currentFugueEntry(context));
+}
+
+function offsetsFromFugue(context) {
+  if (!isFugueStyle(context.settings) || context.cadenceStage) return [];
+  const entry = currentFugueEntry(context);
+  if (entry) return fugueEntryOffsets(context, entry);
+
+  const activeEntry = activeFugueEntry(context);
+  if (activeEntry && fugueVoiceHasEntered(context, context.voice) && context.rng() > (context.settings.dubMode ? 0.35 : 0.12)) {
+    return fugueCountersubjectOffsets(context, activeEntry);
+  }
+
+  const plan = currentFugueSectionPlan(context);
+  if (!plan) return [];
+  if (plan.role === "episode") return fugueEpisodeOffsets(context, plan);
+  if (plan.role === "middle_entry" && context.rng() < (context.settings.dubMode ? 0.45 : 0.7)) return fugueEpisodeOffsets(context, plan);
+  if (plan.role === "final_return" && context.step < context.steps - context.meter.numerator * 2 && context.rng() < 0.55) {
+    return fugueEpisodeOffsets(context, plan);
+  }
+  return [];
+}
+
+function fugueEntryOffsets(context, entry) {
+  const sequence = fugueSequenceForEntry(context, entry);
+  const local = context.step - entry.start_step;
+  const raw = sequence[local];
+  if (raw == null) return [];
+  const target = nearestModeOffset(raw, context.mode);
+  return [target, target, raw, ...context.mode.stable];
+}
+
+function fugueCountersubjectOffsets(context, activeEntry) {
+  const material = context.fugueMaterial || context.fugueSummary || {};
+  const countersubject = material.countersubject || [];
+  if (!countersubject.length) return [];
+  const local = mod(context.step - activeEntry.start_step + context.voiceIndex, countersubject.length);
+  const answerShift = activeEntry.kind === "answer" ? 7 : 0;
+  const raw = mod(countersubject[local] + answerShift, 12);
+  const target = nearestModeOffset(raw, context.mode);
+  return [target, raw, ...context.mode.stable, nearestModeOffset(raw + 7, context.mode)];
+}
+
+function fugueEpisodeOffsets(context) {
+  const material = context.fugueMaterial || context.fugueSummary || {};
+  const fragments = material.episode_fragments || [];
+  if (!fragments.length) return [];
+  const fragment = fragments[mod(context.barIndex + context.voiceIndex + context.sectionIndex, fragments.length)];
+  if (!fragment?.length) return [];
+  const sequenceShift = [0, 7, 5, 2, 9][mod(context.barIndex + context.sectionIndex, 5)];
+  const raw = mod(fragment[mod(context.step + context.voiceIndex, fragment.length)] + sequenceShift, 12);
+  const target = nearestModeOffset(raw, context.mode);
+
+  if (context.settings.dubMode && context.voice === "bass") return [target, ...dubBassOffsets(context), raw, 0, 7];
+  if (context.settings.dubMode && isDubSkankVoice(context.voice) && isDubOffbeat(context)) {
+    return [target, ...dubSkankOffsets(context), raw];
+  }
+  return [target, raw, nearestModeOffset(raw + 7, context.mode), ...context.mode.stable];
+}
+
+function fugueTargetOffset(context) {
+  const entry = currentFugueEntry(context);
+  if (!entry) return null;
+  const sequence = fugueSequenceForEntry(context, entry);
+  const raw = sequence[context.step - entry.start_step];
+  return raw == null ? null : nearestModeOffset(raw, context.mode);
+}
+
 function motifOrFieldOffsets(context) {
   const { subject, entries, voice, step, mode, strong, rng, settings, section } = context;
+  const fugueOffsets = offsetsFromFugue(context);
+  if (fugueOffsets.length) return fugueOffsets;
   const refrainOffsets = offsetsFromRefrain(context);
   if (refrainOffsets.length) return refrainOffsets;
   if (settings.dubMode && voice === "bass") return dubBassOffsets(context);
@@ -1798,6 +2157,8 @@ function scoreCandidate(candidate, context) {
   const { mode, strong, lastPitches, voice, settings } = context;
   const offset = mod(candidate.symbolicOffset, 12);
   let score = 1;
+  const fugueTarget = fugueTargetOffset(context);
+  if (fugueTarget != null && offset === mod(fugueTarget, 12)) score += currentFugueEntry(context) ? 16 : 7;
   if (mode.stable.includes(offset)) score += strong ? 8 : 3;
   if (offset === 0) score += strong ? 5 : 1.2;
   if (offset === 7) score += 3;
@@ -2069,6 +2430,7 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       },
     },
     refrain: stats.refrainSummary,
+    fugue: stats.fugueSummary || null,
     intonation: {
       root_note: settings.rootNote,
       root_midi: settings.rootMidi,
@@ -2156,6 +2518,28 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   if (settings.generationStyle === "invention") {
     lines.push("Imitation/invention mode: source cells are reused as fragments, answers, octave shifts, and rhythmic handoffs.");
   }
+  if (isFugueStyle(settings) && stats.fugueSummary?.enabled) {
+    const fugue = stats.fugueSummary;
+    lines.push("");
+    lines.push("Fishtail Fugue map");
+    lines.push(`  Formal Gravity: ${fugue.formal_gravity_mode}`);
+    lines.push(`  Subject: ${fugue.subject.join(" ")}`);
+    lines.push(`  Answer: ${fugue.answer.join(" ")}`);
+    lines.push(`  Countersubject: ${fugue.countersubject.join(" ")}`);
+    lines.push(`  Exposition entries completed: ${fugue.exposition_entries.length}/${settings.voices}`);
+    lines.push(`  Middle entries: ${fugue.middle_entries}`);
+    lines.push(`  Episodes: ${fugue.episodes}`);
+    lines.push(`  Final returns: ${fugue.final_returns}`);
+    if (fugue.repaired_form?.notes?.length) {
+      lines.push("  Form shaping");
+      fugue.repaired_form.notes.forEach((note) => lines.push(`    - ${note}`));
+    }
+    lines.push("  Section roles");
+    fugue.sections.forEach((section) => {
+      const entries = section.entries.map((entry) => `${entry.voice}:${entry.kind}@${entry.start_step}`).join(", ") || "episode fragments";
+      lines.push(`    - ${section.section_index}. ${section.role} | ${entries}`);
+    });
+  }
   lines.push("");
   lines.push("Rule report");
   lines.push(`  Notes written: ${events.length}`);
@@ -2163,17 +2547,19 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`  Tendency resolutions completed: ${stats.resolvedTendencies}`);
   lines.push(`  Parallel perfect candidates rejected: ${stats.avoidedParallels}`);
   lines.push(`  Suspension gravity: ${stats.suspensionStats.detected} detected, ${stats.suspensionStats.resolved} resolved, ${stats.suspensionStats.overlongPrevented} overlong candidates prevented, ${stats.suspensionStats.pedalHolds} pedal holds allowed.`);
-  lines.push("");
-  lines.push("Refrain development");
-  if (stats.refrainSummary.has_source) {
-    lines.push(`  Source refrain: section ${stats.refrainSummary.source_section}, ${stats.refrainSummary.source_steps} grid steps.`);
-    lines.push(`  Returns: ${stats.refrainSummary.returns}`);
-    lines.push(`  Developments: ${stats.refrainSummary.developments}`);
-    lines.push(`  Dubby treatments: ${stats.refrainSummary.dubby_treatments}`);
-  } else {
-    lines.push("  No refrain source marked in this form.");
+  if (!isFugueStyle(settings)) {
+    lines.push("");
+    lines.push("Refrain development");
+    if (stats.refrainSummary.has_source) {
+      lines.push(`  Source refrain: section ${stats.refrainSummary.source_section}, ${stats.refrainSummary.source_steps} grid steps.`);
+      lines.push(`  Returns: ${stats.refrainSummary.returns}`);
+      lines.push(`  Developments: ${stats.refrainSummary.developments}`);
+      lines.push(`  Dubby treatments: ${stats.refrainSummary.dubby_treatments}`);
+    } else {
+      lines.push("  No refrain source marked in this form.");
+    }
+    if (stats.refrainSummary.fallbacks) lines.push(`  Development fallback sections without source: ${stats.refrainSummary.fallbacks}`);
   }
-  if (stats.refrainSummary.fallbacks) lines.push(`  Development fallback sections without source: ${stats.refrainSummary.fallbacks}`);
   lines.push("");
   lines.push("Output checker");
   lines.push(`  MIDI bytes: ${audit.summary.midiBytes}`);
@@ -2693,7 +3079,7 @@ function closeCredits() {
 
 function saveMidiPiece(piece) {
   const seed = piece.settings.seed.slice(0, 8);
-  const style = piece.settings.generationStyle === "invention" ? "invention" : "counterpoint";
+  const style = generationStyleSlug(piece.settings.generationStyle);
   const tempo = tempoFilenameSlug(piece.settings.tempo);
   downloadBlob(new Blob([piece.midiBytes], { type: "audio/midi" }), `amy-cin-fishtail-${style}-${tempo}-${seed}.mid`);
 }
@@ -2723,7 +3109,14 @@ function outputModeLabel(mode) {
 
 function generationStyleLabel(style) {
   if (style === "invention") return "Imitation + Invention";
+  if (style === FUGUE_STYLE_ID) return "Fishtail Fugue";
   return "Counterpoint";
+}
+
+function generationStyleSlug(style) {
+  if (style === "invention") return "invention";
+  if (style === FUGUE_STYLE_ID) return "fugue";
+  return "counterpoint";
 }
 
 function isDubModeVisual() {

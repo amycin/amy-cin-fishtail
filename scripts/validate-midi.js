@@ -19,6 +19,7 @@ function main() {
     failed = !runSmokeTests();
     failed = !runParallelRuleTests() || failed;
     failed = !runRefrainAndSuspensionTests() || failed;
+    failed = !runFugueTests() || failed;
   }
 
   for (const filePath of args) {
@@ -43,6 +44,7 @@ function runSmokeTests() {
     { name: "amy-dub-carriers", outputMode: "retuner", resolution: "nearest-ratio", includeTempoMap: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: false },
     { name: "bend-midi", outputMode: "bend", resolution: "nearest-ratio", includeTempoMap: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: true },
     { name: "dub-gravity", outputMode: "retuner", resolution: "nearest-ratio", includeTempoMap: true, dubMode: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: false },
+    { name: "fishtail-fugue", generationStyle: "fishtail_fugue", outputMode: "equal", resolution: "literal", includeTempoMap: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: false },
   ];
 
   let ok = true;
@@ -60,9 +62,14 @@ function runSmokeTests() {
     const reassuranceOk = piece.audit.issues.length + piece.audit.warnings.length === 0 || piece.report.includes("Gemma says:");
     const suspensionManifestOk = piece.manifest.suspension_control?.mode === "musical_gravity";
     const refrainManifestOk = piece.manifest.refrain && typeof piece.manifest.refrain.has_source === "boolean";
-    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk && velocityOk && velocityReportOk && velocityManifestOk && reassuranceOk && suspensionManifestOk && refrainManifestOk ? "ok" : "failed";
+    const fugueManifestOk = test.generationStyle !== "fishtail_fugue" || (
+      piece.manifest.fugue?.enabled
+      && piece.manifest.fugue.formal_gravity_mode === "formal"
+      && piece.report.includes("Fishtail Fugue map")
+    );
+    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk && velocityOk && velocityReportOk && velocityManifestOk && reassuranceOk && suspensionManifestOk && refrainManifestOk && fugueManifestOk ? "ok" : "failed";
     console.log(`${status} ${test.name}: tracks=${result.trackCount}, notes=${result.notes}, tempos=${result.tempos}, warnings=${piece.audit.warnings.length}`);
-    if (!result.ok || piece.audit.issues.length || !dubReportOk || !velocityOk || !velocityReportOk || !velocityManifestOk || !reassuranceOk || !suspensionManifestOk || !refrainManifestOk) {
+    if (!result.ok || piece.audit.issues.length || !dubReportOk || !velocityOk || !velocityReportOk || !velocityManifestOk || !reassuranceOk || !suspensionManifestOk || !refrainManifestOk || !fugueManifestOk) {
       ok = false;
       printMessages(
         result.issues,
@@ -75,6 +82,7 @@ function runSmokeTests() {
         reassuranceOk ? [] : ["Generation report is missing Gemma reassurance after checker notes."],
         suspensionManifestOk ? [] : ["Manifest is missing suspension control metadata."],
         refrainManifestOk ? [] : ["Manifest is missing refrain metadata."],
+        fugueManifestOk ? [] : ["Fishtail Fugue manifest/report metadata is missing or incorrect."],
       );
     }
   }
@@ -299,6 +307,140 @@ function runRefrainAndSuspensionTests() {
   return ok;
 }
 
+function runFugueTests() {
+  const indexHtml = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  const styleOptionOk = indexHtml.includes('<option value="fishtail_fugue">Fishtail Fugue</option>');
+  const context = makeAppContext();
+  const results = vm.runInContext(`
+    (() => {
+      function buildFuguePiece({ sections, dubMode = false, voices = 4, seed = "validation-fugue" }) {
+        const settings = {
+          seed,
+          voices,
+          tempo: 30,
+          includeTempoMap: true,
+          referenceNote: "A4",
+          referenceMidi: 69,
+          referenceHz: 432,
+          referenceAnchorA4Hz: 432,
+          tempoDivisor: 864,
+          breathing: 0.58,
+          density: 0.32,
+          strangeness: 0.16,
+          generationStyle: "fishtail_fugue",
+          resolution: "literal",
+          outputMode: "equal",
+          dubMode,
+          pedalVoices: { bass: dubMode, tenor: false, alto: false, soprano: false },
+          rootPc: 9,
+          rootNote: "A4",
+          rootMidi: 69,
+          rootFreq: 432,
+          sections,
+        };
+        return buildPiece(settings, makeRng(settings.seed));
+      }
+
+      const oneSection = buildFuguePiece({
+        sections: [{ bars: 2, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" }],
+      });
+      const twoSections = buildFuguePiece({
+        sections: [
+          { bars: 3, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" },
+          { bars: 3, key: "G", mode: "mixolydian", meter: "4/4", cadence: "plagal", role: "normal", treatment: "straight" },
+        ],
+        seed: "validation-fugue-two",
+      });
+      const threeSections = buildFuguePiece({
+        sections: [
+          { bars: 8, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" },
+          { bars: 6, key: "G", mode: "mixolydian", meter: "4/4", cadence: "plagal", role: "development", treatment: "gentle" },
+          { bars: 6, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "refrain", treatment: "straight" },
+        ],
+        seed: "validation-fugue-three",
+      });
+      const fourSections = buildFuguePiece({
+        sections: [
+          { bars: 8, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" },
+          { bars: 5, key: "G", mode: "mixolydian", meter: "4/4", cadence: "plagal", role: "normal", treatment: "straight" },
+          { bars: 5, key: "A", mode: "gravity_melodic_minor", meter: "3/4", cadence: "minor_authentic", role: "normal", treatment: "straight" },
+          { bars: 6, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" },
+        ],
+        seed: "validation-fugue-four",
+      });
+      const dubFugue = buildFuguePiece({
+        sections: structuredClone(threeSections.settings.sections),
+        dubMode: true,
+        seed: "validation-fugue-dub",
+      });
+
+      const expo = threeSections.manifest.fugue.exposition_entries;
+      const expoVoices = new Set(expo.map((entry) => entry.voice));
+      const alternating = expo.every((entry, index) => entry.kind === (index % 2 === 0 ? "subject" : "answer"));
+      const fourRoles = fourSections.manifest.fugue.sections.map((section) => section.role);
+
+      return [
+        {
+          name: "auto-repairs one section to three",
+          ok: oneSection.manifest.fugue.repaired_form.final_sections === 3
+            && oneSection.manifest.fugue.repaired_form.auto_repaired
+            && oneSection.manifest.fugue.repaired_form.notes.some((note) => note.includes("Added")),
+        },
+        {
+          name: "auto-repairs two sections to three",
+          ok: twoSections.manifest.fugue.repaired_form.final_sections === 3
+            && twoSections.manifest.fugue.repaired_form.notes.some((note) => note.includes("final return")),
+        },
+        {
+          name: "preserves sufficient three-section form",
+          ok: threeSections.manifest.fugue.repaired_form.original_sections === 3
+            && threeSections.manifest.fugue.repaired_form.final_sections === 3
+            && threeSections.manifest.fugue.repaired_form.notes.length === 0,
+        },
+        {
+          name: "exposition schedules every voice once",
+          ok: expo.length === threeSections.settings.voices && expoVoices.size === threeSections.settings.voices,
+        },
+        {
+          name: "subject and answer alternate",
+          ok: alternating,
+        },
+        {
+          name: "middle sections alternate episode and entry",
+          ok: fourRoles.includes("episode") && fourRoles.includes("middle_entry"),
+        },
+        {
+          name: "formal gravity when dub is off",
+          ok: threeSections.manifest.fugue.formal_gravity_mode === "formal"
+            && threeSections.report.includes("Formal Gravity: formal"),
+        },
+        {
+          name: "dub gravity keeps fugue metadata",
+          ok: dubFugue.manifest.fugue.formal_gravity_mode === "dub"
+            && dubFugue.manifest.fugue.exposition_entries.length === dubFugue.settings.voices
+            && dubFugue.report.includes("Formal Gravity: dub"),
+        },
+        {
+          name: "manifest includes fugue material",
+          ok: Array.isArray(threeSections.manifest.fugue.subject)
+            && Array.isArray(threeSections.manifest.fugue.answer)
+            && Array.isArray(threeSections.manifest.fugue.countersubject)
+            && threeSections.manifest.fugue.sections.at(-1).role === "final_return",
+        },
+      ];
+    })()
+  `, context);
+
+  let ok = styleOptionOk;
+  console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
+  for (const result of results) {
+    const status = result.ok ? "ok" : "failed";
+    console.log(`${status} fugue ${result.name}`);
+    if (!result.ok) ok = false;
+  }
+  return ok;
+}
+
 function makeAppContext() {
   const context = {
     console,
@@ -341,7 +483,7 @@ function buildSmokePiece(context, test) {
     breathing: 0.74,
     density: 0.26,
     strangeness: 0.16,
-    generationStyle: "counterpoint",
+    generationStyle: test.generationStyle || "counterpoint",
     resolution: test.resolution,
     outputMode: test.outputMode,
     dubMode: Boolean(test.dubMode),

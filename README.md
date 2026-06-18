@@ -38,10 +38,11 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 
 - Weighted random form generation with D4 and D20-style dice controls.
 - Section controls for bars, key, mode, time signature, and cadence.
-- Style switch for Imitation + Invention or Counterpoint generation.
+- Style switch for Imitation + Invention, Counterpoint, or Fishtail Fugue generation.
 - Reference-pitch menu and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A4 = 432 Hz and `n = 864`, giving 30.0000 BPM.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.
+- Fishtail Fugue mode with automatic three-section minimum form shaping, subject/answer/countersubject planning, exposition entries, episodes, middle entries, and final return. DUB off uses Formal Gravity; DUB on keeps the fugue map but gives the bass and offbeat answers more room.
 - Optional Dub Gravity switch for steadier root/fifth bass, offbeat middle-voice skank gestures, more breathing room, black/green terminal visuals, and rare deliberate rule bends that are still reported by the checker.
 - Whole-section refrain roles with straight/dubby returns and gentle/dubby developments.
 - Suspension gravity with per-voice pedal controls, stepwise resolution pressure, and checker reporting for overlong held notes.
@@ -73,6 +74,7 @@ Rule ideas currently represented in the prototype:
 - Harmonic minor gravity: the raised leading tone resolves upward to tonic.
 - Gravity melodic minor: raised sixth tends upward, leading tone rises to tonic, flat seventh falls, and flat sixth falls to fifth.
 - Breath/rest gravity: the voices are allowed to leave space so another voice can answer.
+- Fishtail fugue gravity: the form is shaped into exposition, episode or middle-entry space, and final return, using subject, answer, countersubject, and episode fragments derived from the invention source.
 - Dub gravity: when the DUB switch is on, the bass favors grounded repeated roots and fifths, inner voices can answer with offbeat skank-like chords, and the generator may occasionally allow a parallel perfect motion while still logging it as a checker warning.
 
 Amy Dub ratio slots, chromatic from the selected root:
