@@ -57,6 +57,12 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Show/hide generation notes panel.
 - System entropy seed from `crypto.getRandomValues`, logged in the manifest, with an optional advanced endpoint hook for custom hardware entropy.
 
+## Dice Controls
+
+- `D4`: a gentle weighted form roll. It usually creates 3-5 sections with moderate bar lengths, common meters, and close key relationships.
+- `D20`: a wider weighted form roll. It usually creates 4-7 sections, allows broader bar lengths, and gives the Varied slider more influence over meters, modes, and key movement.
+- With `DUB` armed, both dice lean toward Fishtail Fugue, slightly larger forms, more Refrain/Development roles, and more Dubby treatments.
+
 ## Tuning Modes
 
 - `Amy Dub Intonation`: writes carrier MIDI notes intended for Entonal or another retuner. This is Amy McBride's experimental ratio-based dub intonation system. The important tuning information is in the Amy Dub ratios below; the visible MIDI note numbers are carriers. The voice tracks are note-only.
