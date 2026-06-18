@@ -17,6 +17,7 @@ function main() {
   let failed = false;
   if (smoke) {
     failed = !runSmokeTests();
+    failed = !runParallelRuleTests() || failed;
   }
 
   for (const filePath of args) {
@@ -55,6 +56,110 @@ function runSmokeTests() {
     if (!result.ok || piece.audit.issues.length) {
       ok = false;
       printMessages(result.issues, result.warnings, piece.audit.issues);
+    }
+  }
+  return ok;
+}
+
+function runParallelRuleTests() {
+  const context = makeAppContext();
+  const results = vm.runInContext(`
+    (() => {
+      const activeVoices = ["bass", "soprano"];
+      const sectionMeta = [{ key: "C", mode: "major", bars: 1, startTick: 0, barTicks: 480, numerator: 1, denominator: 4 }];
+      const settings = { tempo: 60 };
+
+      function candidateResult({ previousLower, previousUpper, currentLower, currentUpper, strong }) {
+        return validateCandidate(
+          { midi: currentUpper, symbolicOffset: mod(currentUpper, 12) },
+          {
+            chosen: { bass: { midi: currentLower } },
+            voiceIndex: 1,
+            activeVoices,
+            lastPitches: { bass: previousLower, soprano: previousUpper },
+            lastLeaps: { bass: 0, soprano: 0 },
+            debts: {},
+            voice: "soprano",
+            strong,
+          },
+        );
+      }
+
+      function checkerWarnings({ previousLower, previousUpper, currentLower, currentUpper, strong }) {
+        const summary = { parallelPerfects: 0 };
+        const warnings = [];
+        checkParallelSnapshot(
+          [{ midi: previousLower }, { midi: previousUpper }],
+          [{ midi: currentLower }, { midi: currentUpper }],
+          activeVoices,
+          0,
+          480,
+          strong,
+          sectionMeta,
+          settings,
+          summary,
+          (message) => warnings.push(message),
+        );
+        return { summary, warnings };
+      }
+
+      const cases = [
+        {
+          name: "parallel fifth",
+          args: { previousLower: 48, previousUpper: 55, currentLower: 50, currentUpper: 57, strong: false },
+          expectViolation: true,
+          expectedType: "parallel-perfect",
+        },
+        {
+          name: "parallel octave",
+          args: { previousLower: 48, previousUpper: 60, currentLower: 50, currentUpper: 62, strong: false },
+          expectViolation: true,
+          expectedType: "parallel-perfect",
+        },
+        {
+          name: "direct strong perfect",
+          args: { previousLower: 48, previousUpper: 52, currentLower: 50, currentUpper: 57, strong: true },
+          expectViolation: true,
+          expectedType: "direct-perfect",
+        },
+        {
+          name: "contrary motion into fifth",
+          args: { previousLower: 48, previousUpper: 59, currentLower: 50, currentUpper: 57, strong: true },
+          expectViolation: false,
+          expectedType: null,
+        },
+      ];
+
+      return cases.map((test) => {
+        const classified = classifyParallelPerfectMotion(test.args);
+        const candidate = candidateResult(test.args);
+        const checked = checkerWarnings(test.args);
+        return {
+          name: test.name,
+          expectedType: test.expectedType,
+          classifierType: classified?.type || null,
+          candidateRejected: candidate.ok === false && Boolean(candidate.parallelReject),
+          checkerWarned: checked.summary.parallelPerfects > 0 && checked.warnings.length > 0,
+          expectViolation: test.expectViolation,
+          warnings: checked.warnings,
+        };
+      });
+    })()
+  `, context);
+
+  let ok = true;
+  for (const result of results) {
+    const classifierOk = result.classifierType === result.expectedType;
+    const candidateOk = result.candidateRejected === result.expectViolation;
+    const checkerOk = result.checkerWarned === result.expectViolation;
+    const status = classifierOk && candidateOk && checkerOk ? "ok" : "failed";
+    console.log(`${status} parallel-rule ${result.name}: classifier=${result.classifierType || "none"}, candidateRejected=${result.candidateRejected}, checkerWarned=${result.checkerWarned}`);
+    if (status !== "ok") {
+      ok = false;
+      printMessages([
+        `Expected classifier ${result.expectedType || "none"}, candidateRejected ${result.expectViolation}, checkerWarned ${result.expectViolation}.`,
+        ...result.warnings,
+      ]);
     }
   }
   return ok;

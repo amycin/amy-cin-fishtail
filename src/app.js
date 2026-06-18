@@ -988,15 +988,15 @@ function validateCandidate(candidate, context) {
     const prevA = lastPitches[voice];
     const prevB = lastPitches[otherVoice];
     if (prevA != null && prevB != null) {
-      const previousInterval = mod(prevA - prevB, 12);
-      const nowPerfect = isPerfectInterval(interval);
-      const prevPerfect = isPerfectInterval(previousInterval);
-      const motionA = Math.sign(candidate.midi - prevA);
-      const motionB = Math.sign(other.midi - prevB);
-      if (nowPerfect && prevPerfect && motionA === motionB && motionA !== 0) {
-        return { ok: false, parallelReject: true };
-      }
-      if (strong && nowPerfect && motionA === motionB && Math.abs(candidate.midi - prevA) > 2) {
+      const lowerIsCandidate = i > voiceIndex;
+      const motion = classifyParallelPerfectMotion({
+        previousLower: lowerIsCandidate ? prevA : prevB,
+        previousUpper: lowerIsCandidate ? prevB : prevA,
+        currentLower: lowerIsCandidate ? candidate.midi : other.midi,
+        currentUpper: lowerIsCandidate ? other.midi : candidate.midi,
+        strong,
+      });
+      if (motion) {
         return { ok: false, parallelReject: true };
       }
     }
@@ -1012,6 +1012,25 @@ function isVerticalConsonance(interval, againstBass) {
 
 function isPerfectInterval(interval) {
   return interval === 0 || interval === 7;
+}
+
+function classifyParallelPerfectMotion({ previousLower, previousUpper, currentLower, currentUpper, strong = false }) {
+  const previousInterval = mod(previousUpper - previousLower, 12);
+  const currentInterval = mod(currentUpper - currentLower, 12);
+  const lowerMotion = Math.sign(currentLower - previousLower);
+  const upperMotion = Math.sign(currentUpper - previousUpper);
+  const similarMotion = lowerMotion === upperMotion && lowerMotion !== 0;
+  if (!similarMotion || !isPerfectInterval(currentInterval)) return null;
+
+  if (isPerfectInterval(previousInterval)) {
+    return { type: "parallel-perfect", interval: currentInterval };
+  }
+
+  if (strong && Math.abs(currentUpper - previousUpper) > 2) {
+    return { type: "direct-perfect", interval: currentInterval };
+  }
+
+  return null;
 }
 
 function scoreCandidate(candidate, context) {
@@ -1461,7 +1480,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
         checkVerticalSnapshot(snapshot, activeVoices, strong, location, pushWarning);
       }
       if (previousSnapshot) {
-        checkParallelSnapshot(previousSnapshot, snapshot, activeVoices, previousTick, tick, sectionMeta, settings, summary, pushWarning);
+        checkParallelSnapshot(previousSnapshot, snapshot, activeVoices, previousTick, tick, strong, sectionMeta, settings, summary, pushWarning);
       }
       previousSnapshot = snapshot;
       previousTick = tick;
@@ -1633,7 +1652,7 @@ function checkVerticalSnapshot(snapshot, activeVoices, strong, location, pushWar
   }
 }
 
-function checkParallelSnapshot(previous, current, activeVoices, previousTick, tick, sectionMeta, settings, summary, pushWarning) {
+function checkParallelSnapshot(previous, current, activeVoices, previousTick, tick, strong, sectionMeta, settings, summary, pushWarning) {
   for (let i = 0; i < current.length; i += 1) {
     for (let j = i + 1; j < current.length; j += 1) {
       const prevA = previous[i];
@@ -1641,13 +1660,17 @@ function checkParallelSnapshot(previous, current, activeVoices, previousTick, ti
       const nowA = current[i];
       const nowB = current[j];
       if (!prevA || !prevB || !nowA || !nowB) continue;
-      const prevInterval = mod((prevB.carrierMidi ?? prevB.midi) - (prevA.carrierMidi ?? prevA.midi), 12);
-      const nowInterval = mod((nowB.carrierMidi ?? nowB.midi) - (nowA.carrierMidi ?? nowA.midi), 12);
-      const motionA = Math.sign((nowA.carrierMidi ?? nowA.midi) - (prevA.carrierMidi ?? prevA.midi));
-      const motionB = Math.sign((nowB.carrierMidi ?? nowB.midi) - (prevB.carrierMidi ?? prevB.midi));
-      if (isPerfectInterval(prevInterval) && isPerfectInterval(nowInterval) && motionA === motionB && motionA !== 0) {
+      const motion = classifyParallelPerfectMotion({
+        previousLower: prevA.carrierMidi ?? prevA.midi,
+        previousUpper: prevB.carrierMidi ?? prevB.midi,
+        currentLower: nowA.carrierMidi ?? nowA.midi,
+        currentUpper: nowB.carrierMidi ?? nowB.midi,
+        strong,
+      });
+      if (motion) {
         summary.parallelPerfects += 1;
-        pushWarning(`Parallel perfect motion between ${activeVoices[i]} and ${activeVoices[j]} from ${describeTickLocation(previousTick, sectionMeta, settings)} to ${describeTickLocation(tick, sectionMeta, settings)}.`);
+        const label = motion.type === "direct-perfect" ? "Direct perfect motion" : "Parallel perfect motion";
+        pushWarning(`${label} between ${activeVoices[i]} and ${activeVoices[j]} from ${describeTickLocation(previousTick, sectionMeta, settings)} to ${describeTickLocation(tick, sectionMeta, settings)}.`);
       }
     }
   }
