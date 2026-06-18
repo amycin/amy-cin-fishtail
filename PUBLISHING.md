@@ -62,10 +62,11 @@ Basic flow:
 
 1. Create a GitHub repository.
 2. Add the project files.
-3. Keep `.nojekyll` in the repository.
-4. Go to repository Settings, then Pages.
-5. Publish from the main branch root.
-6. Open the generated `github.io` URL.
+3. Run `node scripts/validate-midi.js --smoke`.
+4. Keep `.nojekyll` in the repository.
+5. Go to repository Settings, then Pages.
+6. Publish from the main branch root.
+7. Open the generated `github.io` URL.
 
 GitHub Pages can also use a custom domain. It is best treated as a showcase/demo host rather than a full commercial SaaS host.
 

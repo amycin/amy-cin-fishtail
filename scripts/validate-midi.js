@@ -1,0 +1,348 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
+
+const ROOT = path.resolve(__dirname, "..");
+const APP_PATH = path.join(ROOT, "src", "app.js");
+const TEMPO_30_BYTES = [0x1e, 0x84, 0x80];
+
+function main() {
+  const args = process.argv.slice(2);
+  const strictNoteVoices = takeFlag(args, "--strict-note-voices");
+  const smoke = takeFlag(args, "--smoke") || args.length === 0;
+
+  let failed = false;
+  if (smoke) {
+    failed = !runSmokeTests();
+  }
+
+  for (const filePath of args) {
+    failed = !validateMidiFile(filePath, { strictNoteVoices }) || failed;
+  }
+
+  if (failed) process.exit(1);
+}
+
+function takeFlag(args, flag) {
+  const index = args.indexOf(flag);
+  if (index === -1) return false;
+  args.splice(index, 1);
+  return true;
+}
+
+function runSmokeTests() {
+  const context = makeAppContext();
+  const cases = [
+    { name: "equal-tempo-on", outputMode: "equal", resolution: "literal", includeTempoMap: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: false },
+    { name: "equal-tempo-off", outputMode: "equal", resolution: "literal", includeTempoMap: false, expectedTracks: 4, expectTempo30: false, allowBendEvents: false },
+    { name: "amy-dub-carriers", outputMode: "retuner", resolution: "nearest-ratio", includeTempoMap: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: false },
+    { name: "bend-midi", outputMode: "bend", resolution: "nearest-ratio", includeTempoMap: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: true },
+  ];
+
+  let ok = true;
+  for (const test of cases) {
+    const piece = buildSmokePiece(context, test);
+    const result = validateMidiBytes(Buffer.from(piece.midiBytes), {
+      allowBendEvents: test.allowBendEvents,
+      expectedTracks: test.expectedTracks,
+      expectTempo30: test.expectTempo30,
+    });
+    const status = result.ok && piece.audit.issues.length === 0 ? "ok" : "failed";
+    console.log(`${status} ${test.name}: tracks=${result.trackCount}, notes=${result.notes}, tempos=${result.tempos}, warnings=${piece.audit.warnings.length}`);
+    if (!result.ok || piece.audit.issues.length) {
+      ok = false;
+      printMessages(result.issues, result.warnings, piece.audit.issues);
+    }
+  }
+  return ok;
+}
+
+function makeAppContext() {
+  const context = {
+    console,
+    structuredClone,
+    window: {},
+    document: { addEventListener() {}, getElementById: () => null },
+    navigator: {},
+    localStorage: { getItem: () => null, setItem() {} },
+    crypto: {
+      getRandomValues: (array) => array.fill(17),
+      subtle: { digest: async () => new ArrayBuffer(32) },
+    },
+    URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
+    Blob,
+    Uint8Array,
+    ArrayBuffer,
+    DataView,
+    TextEncoder,
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame: () => 0,
+    THREE: undefined,
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(APP_PATH, "utf8"), context, { filename: APP_PATH });
+  return context;
+}
+
+function buildSmokePiece(context, test) {
+  context.__fishtailSmoke = {
+    seed: `validation-${test.name}`,
+    voices: 4,
+    tempo: 30,
+    includeTempoMap: test.includeTempoMap,
+    referenceNote: "A4",
+    referenceMidi: 69,
+    referenceHz: 432,
+    referenceAnchorA4Hz: 432,
+    tempoDivisor: 864,
+    breathing: 0.74,
+    density: 0.26,
+    strangeness: 0.16,
+    generationStyle: "fugue",
+    resolution: test.resolution,
+    outputMode: test.outputMode,
+    rootPc: 9,
+    rootNote: "A4",
+    rootMidi: 69,
+    rootFreq: 432,
+  };
+  return vm.runInContext(`
+    (() => {
+      const settings = {
+        ...globalThis.__fishtailSmoke,
+        sections: structuredClone(DEFAULT_SECTIONS),
+      };
+      return buildPiece(settings, makeRng(settings.seed));
+    })()
+  `, context);
+}
+
+function validateMidiFile(filePath, options) {
+  try {
+    const bytes = fs.readFileSync(filePath);
+    const result = validateMidiBytes(bytes, options);
+    const status = result.ok ? "ok" : "failed";
+    console.log(`${status} ${filePath}: format=${result.format}, tracks=${result.trackCount}, division=${result.division}, notes=${result.notes}, tempos=${result.tempos}`);
+    printMessages(result.issues, result.warnings);
+    return result.ok;
+  } catch (error) {
+    console.error(`failed ${filePath}: ${error.message}`);
+    return false;
+  }
+}
+
+function validateMidiBytes(bytes, options = {}) {
+  const issues = [];
+  const warnings = [];
+  let parsed;
+  try {
+    parsed = parseMidi(bytes);
+  } catch (error) {
+    return {
+      ok: false,
+      issues: [error.message],
+      warnings,
+      format: "?",
+      trackCount: "?",
+      division: "?",
+      notes: 0,
+      tempos: 0,
+    };
+  }
+
+  const conductorTrack = detectConductorTrack(parsed);
+  let notes = 0;
+  let tempos = 0;
+  let programChanges = 0;
+  let sysex = 0;
+
+  if (parsed.format !== 1) issues.push(`Expected MIDI format 1, got ${parsed.format}.`);
+  if (options.expectedTracks && parsed.trackCount !== options.expectedTracks) {
+    issues.push(`Expected ${options.expectedTracks} tracks, got ${parsed.trackCount}.`);
+  }
+
+  parsed.tracks.forEach((track, index) => {
+    const isConductor = index === conductorTrack;
+    for (const event of track.events) {
+      if (event.kind === "meta") {
+        if (event.metaType === 0x51) tempos += 1;
+        if (isConductor && [0x51, 0x58, 0x2f].includes(event.metaType)) continue;
+        if (!isConductor && event.metaType === 0x2f) continue;
+        issues.push(`Track ${index + 1} contains unexpected meta event 0x${event.metaType.toString(16)}.`);
+        continue;
+      }
+
+      if (event.kind === "sysex") {
+        sysex += 1;
+        issues.push(`Track ${index + 1} contains SysEx data.`);
+        continue;
+      }
+
+      if (isConductor) {
+        issues.push(`Conductor track ${index + 1} contains MIDI event 0x${event.eventType.toString(16)}.`);
+        continue;
+      }
+
+      if (event.eventType === 0x80 || event.eventType === 0x90) {
+        if (event.eventType === 0x90 && event.data[1] !== 0) notes += 1;
+        continue;
+      }
+
+      if (event.eventType === 0xc0) {
+        programChanges += 1;
+        issues.push(`Track ${index + 1} contains program change data.`);
+        continue;
+      }
+
+      if (event.eventType === 0xb0 || event.eventType === 0xe0) {
+        if (options.strictNoteVoices || options.allowBendEvents === false) {
+          issues.push(`Track ${index + 1} contains ${event.eventType === 0xb0 ? "controller" : "pitch-bend"} data.`);
+        } else {
+          warnings.push(`Track ${index + 1} contains ${event.eventType === 0xb0 ? "controller" : "pitch-bend"} data; expected only for Bend MIDI.`);
+        }
+        continue;
+      }
+
+      issues.push(`Track ${index + 1} contains unsupported MIDI event 0x${event.eventType.toString(16)}.`);
+    }
+  });
+
+  if (notes === 0) issues.push("No note-on events found.");
+  if (options.expectTempo30 === true && !hasTempo30(parsed)) issues.push("Expected embedded 30 BPM tempo metadata.");
+  if (options.expectTempo30 === false && hasTempo30(parsed)) issues.push("Found 30 BPM tempo metadata when tempo map should be off.");
+  if (programChanges) issues.push(`${programChanges} program change event(s) found.`);
+  if (sysex) issues.push(`${sysex} SysEx event(s) found.`);
+
+  return {
+    ok: issues.length === 0,
+    issues,
+    warnings,
+    format: parsed.format,
+    trackCount: parsed.trackCount,
+    division: parsed.division,
+    notes,
+    tempos,
+  };
+}
+
+function parseMidi(bytes) {
+  if (bytes.length < 14) throw new Error("MIDI file is too small.");
+  if (bytes.toString("ascii", 0, 4) !== "MThd") throw new Error("Missing MThd header.");
+  const headerLength = readU32(bytes, 4);
+  if (headerLength !== 6) throw new Error(`Expected MIDI header length 6, got ${headerLength}.`);
+  const format = readU16(bytes, 8);
+  const trackCount = readU16(bytes, 10);
+  const division = readU16(bytes, 12);
+  const tracks = [];
+  let offset = 14;
+
+  for (let trackIndex = 0; trackIndex < trackCount; trackIndex += 1) {
+    if (offset + 8 > bytes.length) throw new Error(`Track ${trackIndex + 1} is truncated.`);
+    if (bytes.toString("ascii", offset, offset + 4) !== "MTrk") throw new Error(`Track ${trackIndex + 1} is missing MTrk header.`);
+    const trackLength = readU32(bytes, offset + 4);
+    offset += 8;
+    const end = offset + trackLength;
+    if (end > bytes.length) throw new Error(`Track ${trackIndex + 1} length exceeds file size.`);
+    tracks.push({ events: parseTrack(bytes, offset, end) });
+    offset = end;
+  }
+
+  if (offset !== bytes.length) throw new Error("Unexpected trailing bytes after final track.");
+  return { format, trackCount, division, tracks };
+}
+
+function parseTrack(bytes, start, end) {
+  const events = [];
+  let offset = start;
+  let tick = 0;
+  let runningStatus = null;
+  while (offset < end) {
+    const delta = readVarLen(bytes, offset);
+    tick += delta.value;
+    offset = delta.next;
+
+    let status = bytes[offset];
+    if (status < 0x80) {
+      if (runningStatus == null) throw new Error("Running status used before a status byte.");
+      status = runningStatus;
+    } else {
+      offset += 1;
+      if (status < 0xf0) runningStatus = status;
+    }
+
+    if (status === 0xff) {
+      const metaType = bytes[offset];
+      offset += 1;
+      const length = readVarLen(bytes, offset);
+      const dataStart = length.next;
+      offset = dataStart + length.value;
+      events.push({ kind: "meta", tick, metaType, data: [...bytes.slice(dataStart, offset)] });
+      continue;
+    }
+
+    if (status === 0xf0 || status === 0xf7) {
+      const length = readVarLen(bytes, offset);
+      offset = length.next + length.value;
+      events.push({ kind: "sysex", tick });
+      continue;
+    }
+
+    const eventType = status & 0xf0;
+    const dataBytes = eventType === 0xc0 || eventType === 0xd0 ? 1 : 2;
+    const data = [...bytes.slice(offset, offset + dataBytes)];
+    offset += dataBytes;
+    events.push({ kind: "midi", tick, eventType, channel: status & 0x0f, data });
+  }
+  return events;
+}
+
+function detectConductorTrack(parsed) {
+  if (!parsed.tracks.length) return -1;
+  const firstTrack = parsed.tracks[0];
+  const nonEndEvents = firstTrack.events.filter((event) => !(event.kind === "meta" && event.metaType === 0x2f));
+  if (!nonEndEvents.length) return -1;
+  const conductorOnly = nonEndEvents.every((event) => event.kind === "meta" && (event.metaType === 0x51 || event.metaType === 0x58));
+  return conductorOnly ? 0 : -1;
+}
+
+function hasTempo30(parsed) {
+  return parsed.tracks.some((track) => track.events.some((event) => (
+    event.kind === "meta"
+    && event.metaType === 0x51
+    && event.data.length === 3
+    && event.data.every((byte, index) => byte === TEMPO_30_BYTES[index])
+  )));
+}
+
+function printMessages(...groups) {
+  groups.flat().filter(Boolean).forEach((message) => {
+    console.error(`  - ${message}`);
+  });
+}
+
+function readU16(bytes, offset) {
+  return (bytes[offset] << 8) | bytes[offset + 1];
+}
+
+function readU32(bytes, offset) {
+  return bytes[offset] * 0x1000000 + ((bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]);
+}
+
+function readVarLen(bytes, offset) {
+  let value = 0;
+  let next = offset;
+  for (let i = 0; i < 4; i += 1) {
+    const byte = bytes[next];
+    if (byte == null) throw new Error("Unexpected end of variable-length value.");
+    next += 1;
+    value = (value << 7) | (byte & 0x7f);
+    if ((byte & 0x80) === 0) return { value, next };
+  }
+  throw new Error("Variable-length value is too long.");
+}
+
+main();

@@ -2,7 +2,7 @@
 
 A local, browser-based MIDI fugue generator for Amy's Fishtail gravity-counterpoint idea.
 
-The first build is a static web app. It generates ordinary `.mid` files plus a JSON manifest and text report. It does not need live MIDI and does not send anything to a server.
+The first build is a static web app. It generates ordinary `.mid` files plus a JSON manifest and text report. It does not need live MIDI, and generated pieces/settings are created in the browser. The WebGL torus visual loads Three.js from a public CDN unless that dependency is vendored locally later.
 
 ## Run
 
@@ -17,6 +17,22 @@ Then open `http://localhost:8787`.
 Live demo target after publishing: `https://amycin.github.io/amy-cin-fishtail/`.
 
 For web hosting, ownership notes, and optional custom entropy-server wiring, see `PUBLISHING.md`.
+
+## Validation
+
+Run the built-in MIDI export smoke checks:
+
+```bash
+node scripts/validate-midi.js --smoke
+```
+
+Validate downloaded MIDI files:
+
+```bash
+node scripts/validate-midi.js ~/Downloads/amy-cin-fishtail-*.mid
+```
+
+Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports when you want voice tracks to contain only note on/off events. Bend MIDI should be validated without that flag because pitch-bend and controller setup data are expected there.
 
 ## Current Features
 
