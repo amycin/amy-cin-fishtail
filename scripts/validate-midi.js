@@ -257,6 +257,14 @@ function runRefrainAndSuspensionTests() {
       }
 
       const piece = buildFeaturePiece();
+      const phrasePlans = piece.manifest.sections.map((section) => section.phrasePlan);
+      const directMemory = (() => {
+        const memory = makeDubBassMemory();
+        const section = { bars: 4, key: "G", mode: "mixolydian", meter: "4/4", cadence: "dub_suspension" };
+        const first = makeDubBassMemoryCell(section, 0, METERS["4/4"], modePersonality("mixolydian"), () => 0.9, memory);
+        const second = makeDubBassMemoryCell(section, 1, METERS["4/4"], modePersonality("mixolydian"), () => 0, memory);
+        return { first, second, memory };
+      })();
       const overlongSoprano = suspensionSummary({ voice: "soprano", midi: 72 });
       const bassPedal = suspensionSummary({ voice: "bass", midi: 48, pedal: true });
       const bassBadPedal = suspensionSummary({ voice: "bass", midi: 50, pedal: true });
@@ -278,6 +286,36 @@ function runRefrainAndSuspensionTests() {
             && piece.manifest.refrain.dubby_treatments >= 2
             && piece.manifest.pedal_voices.bass === true
             && piece.report.includes("Refrain development"),
+        },
+        {
+          name: "dub groove shapes note timing",
+          ok: piece.manifest.dub_groove.enabled
+            && piece.manifest.dub_groove.groove_events > 0
+            && piece.manifest.dub_groove.skank_touches > 0
+            && piece.manifest.dub_groove.bass_pulses > 0
+            && piece.manifest.dub_groove.max_offset_ticks > 0
+            && piece.events.some((event) => event.grooveRole === "skank-touch" && event.grooveOffsetTicks < 0)
+            && piece.events.some((event) => event.grooveRole === "bass-pulse"),
+        },
+        {
+          name: "mode personality and phrase arcs",
+          ok: modePersonality("mixolydian").aura === "dub earth"
+            && phrasePlans.some((plan) => plan?.aura === "dub earth")
+            && phrasePlans.every((plan) => Array.isArray(plan?.lead_path) && plan.lead_path.length >= 1)
+            && phrasePlans.at(-1).cadence_intensity > phrasePlans[0].cadence_intensity,
+        },
+        {
+          name: "dub bass memory can reuse cells",
+          ok: directMemory.first.length === directMemory.second.length
+            && directMemory.memory.newCells >= 1
+            && directMemory.memory.reused >= 1,
+        },
+        {
+          name: "sweetness checker is affirming",
+          ok: piece.manifest.sweetness?.affirming === true
+            && Number.isInteger(piece.manifest.sweetness.score)
+            && piece.manifest.sweetness.notes.some((note) => note.includes("Gemma says:"))
+            && piece.report.includes("Sweetness check"),
         },
         {
           name: "overlong soprano suspension warns",

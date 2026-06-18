@@ -159,6 +159,10 @@ const VELOCITY_LOW = 127;
 const VELOCITY_HIGH = 90;
 const VELOCITY_TILT_DB_PER_OCTAVE = 3;
 const FUGUE_STYLE_ID = "fishtail_fugue";
+const DUB_SKANK_EARLY_MS = [12, 34];
+const DUB_SWING_LATE_MS = [8, 26];
+const DUB_BASS_LATE_MS = [4, 18];
+const DUB_MIN_NOTE_TICKS = 24;
 
 const AMY_DUB_RATIOS = [
   ["1/1", 1 / 1, 1.0, "home"],
@@ -253,6 +257,92 @@ const MODES = {
       10: { targets: [9, 8, 7], direction: "down", label: "flat seventh falls" },
       8: { targets: [7], direction: "down", label: "flat sixth falls" },
     },
+  },
+};
+
+const MODE_PERSONALITIES = {
+  major: {
+    aura: "bright",
+    colorOffsets: [4, 9, 11],
+    cadenceWeights: { authentic: 1.4, plagal: 1.1 },
+    stableBoost: 1.2,
+    stepBoost: 0.5,
+    restBias: -0.02,
+    cadenceIntensity: 0.76,
+  },
+  ionian: {
+    aura: "modal bright",
+    colorOffsets: [2, 5, 9],
+    cadenceWeights: { plagal: 1.35, modal: 1.15, authentic: 0.85 },
+    stableBoost: 0.8,
+    stepBoost: 0.9,
+    restBias: 0.02,
+    cadenceIntensity: 0.62,
+  },
+  mixolydian: {
+    aura: "dub earth",
+    colorOffsets: [10, 5, 7],
+    cadenceWeights: { plagal: 1.55, dub_suspension: 1.6, modal: 1.1 },
+    stableBoost: 1,
+    stepBoost: 0.4,
+    restBias: 0.03,
+    dubAffinity: 1.35,
+    cadenceIntensity: 0.66,
+  },
+  lydian: {
+    aura: "shimmer",
+    colorOffsets: [6, 9, 11],
+    cadenceWeights: { modal: 1.35, plagal: 1.25, authentic: 0.85 },
+    stableBoost: 0.7,
+    stepBoost: 0.6,
+    restBias: 0.04,
+    dubAffinity: 1.12,
+    cadenceIntensity: 0.58,
+  },
+  dorian: {
+    aura: "smooth lift",
+    colorOffsets: [3, 9, 10],
+    cadenceWeights: { modal: 1.35, minor_authentic: 1.05, plagal: 1.15 },
+    stableBoost: 0.9,
+    stepBoost: 1.2,
+    restBias: 0.04,
+    cadenceIntensity: 0.6,
+  },
+  aeolian: {
+    aura: "soft shadow",
+    colorOffsets: [3, 8, 10],
+    cadenceWeights: { modal: 1.35, minor_authentic: 0.95 },
+    stableBoost: 0.9,
+    stepBoost: 1.15,
+    restBias: 0.05,
+    cadenceIntensity: 0.56,
+  },
+  harmonic_minor: {
+    aura: "devotional",
+    colorOffsets: [3, 8, 11],
+    cadenceWeights: { minor_authentic: 1.6 },
+    stableBoost: 1.15,
+    stepBoost: 0.75,
+    restBias: -0.01,
+    cadenceIntensity: 0.82,
+  },
+  gravity_melodic_minor: {
+    aura: "living minor",
+    colorOffsets: [3, 9, 10, 11, 8],
+    cadenceWeights: { minor_authentic: 1.25, modal: 1.2, dub_suspension: 1.1 },
+    stableBoost: 0.95,
+    stepBoost: 1.25,
+    restBias: 0.04,
+    cadenceIntensity: 0.68,
+  },
+  phrygian: {
+    aura: "ancient",
+    colorOffsets: [1, 5, 10],
+    cadenceWeights: { modal: 1.55, minor_authentic: 0.75 },
+    stableBoost: 0.85,
+    stepBoost: 1.05,
+    restBias: 0.08,
+    cadenceIntensity: 0.5,
   },
 };
 
@@ -717,9 +807,7 @@ async function randomiseForm(kind) {
   for (let i = 0; i < sectionCount; i += 1) {
     if (i > 0) currentKey = chooseNextKey(rng, currentKey, currentMode, kind, strange);
     currentMode = chooseNextMode(rng, currentMode, kind, strange);
-    const cadence = isMinorMode(currentMode)
-      ? weightedChoice(rng, [["minor_authentic", 5], ["modal", 2], ["dub_suspension", 1]])
-      : weightedChoice(rng, [["authentic", 4], ["plagal", 2], ["modal", 1], ["dub_suspension", 2]]);
+    const cadence = chooseCadenceForMode(rng, currentMode, dubMode, i, sectionCount);
     const roleTreatment = chooseRandomSectionRoleTreatment(rng, i, sectionCount, dubMode, kind);
     sections.push({
       bars: randomFormBars(rng, kind, dubMode),
@@ -776,6 +864,30 @@ function chooseRandomSectionRoleTreatment(rng, index, sectionCount, dubMode, kin
   if (role === "normal") return { role, treatment: "straight" };
   const treatment = weightedChoice(rng, treatmentWeightsForRole(role, { dubMode, wide }));
   return { role, treatment };
+}
+
+function chooseCadenceForMode(rng, modeId, dubMode, sectionIndex = 0, sectionCount = 1) {
+  const profile = modePersonality(modeId);
+  const finalSection = sectionIndex === sectionCount - 1;
+  const pairs = isMinorMode(modeId)
+    ? [["minor_authentic", 5], ["modal", 2.2], ["dub_suspension", 1]]
+    : [["authentic", 4], ["plagal", 2.2], ["modal", 1.2], ["dub_suspension", 2]];
+  const weighted = pairs.map(([cadence, weight]) => {
+    let shaped = weight * (profile.cadenceWeights?.[cadence] || 1);
+    if (dubMode && cadence === "dub_suspension") shaped *= 1.15 + (profile.dubAffinity || 0) * 0.35;
+    if (dubMode && cadence === "plagal") shaped *= 1.15;
+    if (finalSection && (cadence === "authentic" || cadence === "minor_authentic")) shaped *= 1.35;
+    if (!finalSection && cadence === "modal") shaped *= 1.15;
+    return [cadence, shaped];
+  });
+  return weightedChoice(rng, weighted);
+}
+
+function modePersonality(modeOrId) {
+  const modeId = typeof modeOrId === "string"
+    ? modeOrId
+    : Object.entries(MODES).find(([, mode]) => mode === modeOrId)?.[0];
+  return MODE_PERSONALITIES[modeId] || MODE_PERSONALITIES.major;
 }
 
 function treatmentWeightsForRole(role, { dubMode, wide }) {
@@ -1091,6 +1203,156 @@ function summarizeRefrainState(refrainState) {
     fallbacks: refrainState.fallbacks,
     transforms: refrainState.transforms,
   };
+}
+
+function makeDubBassMemory() {
+  return {
+    lastCell: null,
+    cells: new Map(),
+    reused: 0,
+    newCells: 0,
+    dropBars: 0,
+  };
+}
+
+function makePhrasePlan(section, sectionIndex, sectionCount, activeVoices, meter, settings, rng, dubBassMemory) {
+  const profile = modePersonality(section.mode);
+  const leadOffset = Math.floor(hashUnit(settings.seed, sectionIndex, section.key, section.mode) * activeVoices.length);
+  const phraseSpan = section.bars >= 8 ? 2 : 1;
+  const leadByBar = [];
+  const answerByBar = [];
+  const arcByBar = [];
+  const bassDropBars = new Set();
+
+  for (let bar = 0; bar < section.bars; bar += 1) {
+    const phraseIndex = Math.floor(bar / phraseSpan);
+    const lead = activeVoices[mod(leadOffset + phraseIndex, activeVoices.length)];
+    const answer = activeVoices[mod(leadOffset + phraseIndex + 1, activeVoices.length)];
+    leadByBar.push(lead);
+    answerByBar.push(answer);
+    arcByBar.push(bar < section.bars * 0.45 ? 1 : bar > section.bars * 0.72 ? -1 : 0);
+    if (settings.dubMode && section.bars >= 4 && bar > 0 && bar < section.bars - 1 && mod(bar + sectionIndex, 4) === 3) {
+      bassDropBars.add(bar);
+    }
+  }
+
+  const cadenceIntensity = cadenceIntensityForSection(section, sectionIndex, sectionCount, settings, profile);
+  const dubBassCell = settings.dubMode
+    ? makeDubBassMemoryCell(section, sectionIndex, meter, profile, rng, dubBassMemory)
+    : null;
+  if (settings.dubMode) dubBassMemory.dropBars += bassDropBars.size;
+
+  return {
+    profile,
+    leadByBar,
+    answerByBar,
+    arcByBar,
+    cadenceIntensity,
+    bassDropBars,
+    dubBassCell,
+  };
+}
+
+function cadenceIntensityForSection(section, sectionIndex, sectionCount, settings, profile) {
+  let intensity = profile.cadenceIntensity ?? 0.65;
+  if (sectionIndex === 0) intensity -= 0.08;
+  if (sectionIndex === sectionCount - 1) intensity += 0.22;
+  if (section.role === "refrain") intensity += 0.08;
+  if (section.role === "development") intensity -= 0.05;
+  if (section.cadence === "dub_suspension" || section.cadence === "modal") intensity -= settings.dubMode ? 0.06 : 0.02;
+  if (settings.dubMode && sectionIndex !== sectionCount - 1) intensity -= 0.06;
+  return clamp(intensity, 0.35, 1);
+}
+
+function summarizePhrasePlan(plan) {
+  return {
+    aura: plan.profile.aura,
+    cadence_intensity: Number(plan.cadenceIntensity.toFixed(3)),
+    lead_path: [...new Set(plan.leadByBar)],
+    bass_drop_bars: [...plan.bassDropBars].map((bar) => bar + 1),
+    dub_bass_cell: plan.dubBassCell ? [...plan.dubBassCell] : null,
+  };
+}
+
+function phraseRoleForContext(context) {
+  const plan = context.phrasePlan;
+  if (!plan) return "field";
+  const bar = Math.min(plan.leadByBar.length - 1, Math.max(0, context.barIndex));
+  if (plan.leadByBar[bar] === context.voice) return "lead";
+  if (plan.answerByBar[bar] === context.voice) return "answer";
+  return "field";
+}
+
+function phraseArcDirection(context) {
+  const plan = context.phrasePlan;
+  if (!plan) return 0;
+  return plan.arcByBar[Math.min(plan.arcByBar.length - 1, Math.max(0, context.barIndex))] || 0;
+}
+
+function makeDubBassMemoryCell(section, sectionIndex, meter, profile, rng, memory) {
+  const key = `${section.mode}:${meter.numerator}/${meter.denominator}:${noteToPc(section.key)}`;
+  const stored = memory.cells.get(key);
+  const canReuse = stored || memory.lastCell;
+  const reuse = canReuse && rng() < 0.62;
+  let cell = reuse ? [...fitBassCell(stored || memory.lastCell, meter)] : defaultDubBassPattern(section, meter, profile);
+  if (reuse) memory.reused += 1;
+  else memory.newCells += 1;
+
+  const color = dubBassColorOffsetForMode(section.mode);
+  if (rng() < 0.42) cell[mod(sectionIndex + 1, cell.length)] = color;
+  if (rng() < 0.34) cell[mod(sectionIndex + 2, cell.length)] = 7;
+  if (rng() < 0.28) cell = rotateArray(cell, 1);
+
+  memory.lastCell = [...cell];
+  memory.cells.set(key, [...cell]);
+  return cell;
+}
+
+function fitBassCell(cell, meter) {
+  const length = dubBassPatternLength(meter);
+  const source = cell?.length ? cell : [0, 0, 7, 5];
+  return Array.from({ length }, (_, index) => source[index % source.length]);
+}
+
+function defaultDubBassPattern(section, meter, profile = modePersonality(section.mode)) {
+  const selector = mod(noteToPc(section.key) + Math.round((profile.dubAffinity || 0) * 7), 4);
+  const color = dubBassColorOffsetForMode(section.mode);
+  if (meter.denominator === 8) {
+    return [
+      [0, 0, 7, 0, 5, 7],
+      [0, 7, color, 7, 5, 7],
+      [0, 0, 5, 7, color, 7],
+      [0, 5, 7, 0, 7, 5],
+    ][selector];
+  }
+  if (meter.numerator === 3) {
+    return [
+      [0, 0, 7],
+      [0, 5, 7],
+      [0, color, 7],
+      [0, 7, 5],
+    ][selector];
+  }
+  return [
+    [0, 0, 7, 5],
+    [0, 7, 0, color],
+    [0, 5, 7, 0],
+    [0, 0, color, 7],
+  ][selector];
+}
+
+function dubBassPatternLength(meter) {
+  if (meter.denominator === 8) return 6;
+  if (meter.numerator === 3) return 3;
+  return 4;
+}
+
+function dubBassColorOffsetForMode(modeId) {
+  const mode = MODES[modeId] || MODES.major;
+  if (mode.offsets.includes(10)) return 10;
+  if (mode.offsets.includes(9)) return 9;
+  if (mode.offsets.includes(6)) return 6;
+  return mode.cadenceQuality === "minor" ? 3 : 5;
 }
 
 function makeSuspensionStats() {
@@ -1509,6 +1771,7 @@ function buildPiece(settings, rng) {
   const reports = [];
   const refrainState = makeRefrainState(activeVoices);
   const suspensionStats = makeSuspensionStats();
+  const dubBassMemory = makeDubBassMemory();
   let currentTick = 0;
   let totalBars = 0;
   let avoidedParallels = 0;
@@ -1521,11 +1784,12 @@ function buildPiece(settings, rng) {
     const barTicks = meter.numerator * meter.pulse;
     const steps = section.bars * meter.numerator;
     const sectionStartTick = currentTick;
+    const phrasePlan = makePhrasePlan(section, sectionIndex, settings.sections.length, activeVoices, meter, settings, rng, dubBassMemory);
     const refrainPlan = isFugueStyle(settings)
       ? { kind: "normal", treatment: section.treatment || "straight" }
       : planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, rng);
     const fugueSectionPlan = fugueSummary?.sections?.[sectionIndex] || null;
-    sectionMeta.push({ ...section, startTick: currentTick, barTicks, numerator: meter.numerator, denominator: meter.denominator, refrainPlan: summarizeRefrainPlan(refrainPlan), fuguePlan: summarizeFugueSectionPlan(fugueSectionPlan) });
+    sectionMeta.push({ ...section, startTick: currentTick, barTicks, numerator: meter.numerator, denominator: meter.denominator, refrainPlan: summarizeRefrainPlan(refrainPlan), fuguePlan: summarizeFugueSectionPlan(fugueSectionPlan), phrasePlan: summarizePhrasePlan(phrasePlan) });
     reports.push(`${sectionIndex + 1}. ${section.bars} bars in ${section.key} ${mode.label}, ${section.meter}, ${CADENCES[section.cadence].label}, ${SECTION_ROLES[section.role]}${section.role === "normal" ? "" : `/${sectionTreatmentLabel(section.role, section.treatment)}`}`);
 
     const entries = planEntries(activeVoices, steps, meter, rng, settings);
@@ -1573,6 +1837,7 @@ function buildPiece(settings, rng) {
           fugueSummary,
           fugueMaterial,
           fugueSectionPlan,
+          phrasePlan,
           suspensionStats,
           settings,
           rng,
@@ -1600,7 +1865,7 @@ function buildPiece(settings, rng) {
 
     if (!isFugueStyle(settings)) maybeCaptureRefrainSource(refrainState, section, sectionIndex, steps, meter, activeVoices, noteGrid);
     activeVoices.forEach((voice) => {
-      const events = gridToEvents(noteGrid[voice], voice, sectionStartTick, meter.pulse, settings);
+      const events = gridToEvents(noteGrid[voice], voice, sectionStartTick, meter.pulse, settings, section, phrasePlan);
       tracks[voice].events.push(...events);
       noteGrid[voice] = [];
     });
@@ -1612,8 +1877,10 @@ function buildPiece(settings, rng) {
   const midiBytes = writeMidiFile({ tracks, sectionMeta, settings, totalTicks: currentTick });
   const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick);
   const refrainSummary = summarizeRefrainState(refrainState);
-  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, refrainSummary, fugueSummary }, audit);
-  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, refrainSummary, fugueSummary }, audit);
+  const dubGrooveSummary = summarizeDubGroove(settings, events, dubBassMemory);
+  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, refrainSummary, fugueSummary, dubGrooveSummary }, audit);
+  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, refrainSummary, fugueSummary, dubGrooveSummary, sweetness }, audit);
+  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, refrainSummary, fugueSummary, dubGrooveSummary, sweetness }, audit);
 
   return {
     settings,
@@ -1671,8 +1938,9 @@ function chooseVoiceEvent(context) {
   const debt = context.debts[voice];
   const canRest = !cadenceStage && !debt && step > 0 && !fugueNeedsVoice(context);
   if (canRest && shouldRestForRefrain(context)) return { rest: true };
-  const baseRestChance = canRest ? (0.05 + settings.breathing * 0.22 - settings.density * 0.08) : 0;
-  const restChance = fugueRestChance(context, dubRestChance(context, baseRestChance));
+  const profile = modePersonality(section.mode);
+  const baseRestChance = canRest ? clamp(0.05 + settings.breathing * 0.22 - settings.density * 0.08 + (profile.restBias || 0), 0, 0.86) : 0;
+  const restChance = phraseRestChance(context, fugueRestChance(context, dubRestChance(context, baseRestChance)));
   if (rng() < restChance && shouldVoiceBreathe(context)) return { rest: true };
 
   const offsets = cadenceStage
@@ -1707,12 +1975,20 @@ function shouldVoiceBreathe(context) {
   if (fugueNeedsVoice(context)) return false;
   const phraseEdge = step % meter.numerator === meter.numerator - 1;
   if (settings.dubMode) {
-    if (voice === "bass") return phraseEdge && rng() < settings.breathing * 0.24;
+    if (voice === "bass") return isDubBassDrop(context) || (phraseEdge && rng() < 0.2 + settings.breathing * 0.42);
     if (context.strong && !context.cadenceStage) return true;
     if (isDubSkankVoice(voice) && isDubOffbeat(context)) return rng() < 0.38;
   }
   const voiceBias = voice === "soprano" || voice === "bass" ? 1.25 : 0.88;
   return phraseEdge || rng() < settings.breathing * voiceBias;
+}
+
+function phraseRestChance(context, baseRestChance) {
+  if (!baseRestChance || fugueNeedsVoice(context)) return baseRestChance;
+  const role = phraseRoleForContext(context);
+  if (role === "lead") return baseRestChance * 0.45;
+  if (role === "answer") return baseRestChance * 0.72;
+  return clamp(baseRestChance + context.settings.breathing * 0.055, 0, 0.88);
 }
 
 function fugueRestChance(context, baseRestChance) {
@@ -1728,7 +2004,10 @@ function fugueRestChance(context, baseRestChance) {
 function dubRestChance(context, baseRestChance) {
   const { settings, voice, strong, cadenceStage } = context;
   if (!settings.dubMode || cadenceStage) return baseRestChance;
-  if (voice === "bass") return baseRestChance * 0.18;
+  if (voice === "bass") {
+    if (isDubBassDrop(context)) return clamp(0.34 + settings.breathing * 0.34 - settings.density * 0.12, 0.18, 0.82);
+    return strong ? baseRestChance * 0.12 : clamp(baseRestChance * 0.55 + 0.015, 0, 0.24);
+  }
   if (isDubSkankVoice(voice)) {
     return strong ? clamp(baseRestChance + 0.32, 0, 0.84) : clamp(baseRestChance * 0.32, 0, 0.42);
   }
@@ -1744,15 +2023,26 @@ function isDubOffbeat(context) {
   return !context.strong && context.step % context.meter.numerator > 0;
 }
 
+function isDubBassDrop(context) {
+  return Boolean(
+    context.settings.dubMode
+    && context.voice === "bass"
+    && !context.cadenceStage
+    && context.phrasePlan?.bassDropBars?.has(context.barIndex)
+  );
+}
+
 function cadenceOffsets(context) {
   const { cadenceStage, section, mode, voiceIndex, activeVoices } = context;
   const cadence = CADENCES[section.cadence] || CADENCES.authentic;
   const qualityThird = mode.cadenceQuality === "minor" ? 3 : 4;
+  const profile = modePersonality(section.mode);
+  const intensity = context.phrasePlan?.cadenceIntensity ?? profile.cadenceIntensity ?? 0.65;
   let chord;
   if (cadenceStage === "opening" || cadenceStage === "final" || cadenceStage === "cadence-final") {
-    chord = [0, 7, qualityThird, 12];
+    chord = intensity > 0.78 ? [0, 7, qualityThird, 12, 0, 7] : [0, 7, qualityThird, 12, ...profile.colorOffsets.slice(0, 1)];
   } else {
-    chord = cadence.prep;
+    chord = intensity > 0.72 ? [...cadence.prep, 7, 2] : [...cadence.prep, ...profile.colorOffsets.slice(0, 2), ...mode.stable];
   }
   const index = mapVoiceToChordIndex(voiceIndex, activeVoices.length);
   return [chord[index % chord.length], chord[(index + 1) % chord.length], chord[0]];
@@ -1890,7 +2180,10 @@ function motifOrFieldOffsets(context) {
     const variationShift = weightedChoice(rng, [[0, 4], [7, 2.5], [-5, 1.6], [12, 0.8], [-12, 0.6]]);
     return [mod(fragment + variationShift, 12), mod(fragment, 12), ...mode.stable];
   }
-  const pool = strong ? [...mode.stable, ...mode.stable, 0, 7] : [...mode.offsets, ...mode.stable];
+  const profile = modePersonality(section.mode);
+  const pool = strong
+    ? [...mode.stable, ...mode.stable, 0, 7, ...profile.colorOffsets.slice(0, 1)]
+    : [...mode.offsets, ...mode.stable, ...profile.colorOffsets, ...profile.colorOffsets.slice(0, settings.dubMode ? 2 : 1)];
   if (mode.tendencies && rng() < 0.24 + settings.strangeness * 0.22) {
     pool.push(...Object.keys(mode.tendencies).map(Number));
   }
@@ -1988,30 +2281,9 @@ function dubBassPrimaryOffset(context) {
 }
 
 function dubBassPattern(context) {
-  const { meter, barIndex, section } = context;
-  const selector = mod(barIndex + noteToPc(section.key), 4);
-  if (meter.denominator === 8) {
-    return [
-      [0, 0, 7, 0, 5, 7],
-      [0, 7, 10, 7, 5, 7],
-      [0, 0, 5, 7, 10, 7],
-      [0, 5, 7, 0, 7, 5],
-    ][selector];
-  }
-  if (meter.numerator === 3) {
-    return [
-      [0, 0, 7],
-      [0, 5, 7],
-      [0, 10, 7],
-      [0, 7, 5],
-    ][selector];
-  }
-  return [
-    [0, 0, 7, 5],
-    [0, 7, 0, 10],
-    [0, 5, 7, 0],
-    [0, 0, 10, 7],
-  ][selector];
+  if (context.phrasePlan?.dubBassCell?.length) return context.phrasePlan.dubBassCell;
+  const { meter, section } = context;
+  return defaultDubBassPattern(section, meter, modePersonality(section.mode));
 }
 
 function dubBassApproachOffsets(previous, primary, context) {
@@ -2216,18 +2488,33 @@ function allowsDubRuleBend(context, motion) {
 function scoreCandidate(candidate, context) {
   const { mode, strong, lastPitches, voice, settings } = context;
   const offset = mod(candidate.symbolicOffset, 12);
+  const profile = modePersonality(context.section.mode);
   let score = 1;
   const fugueTarget = fugueTargetOffset(context);
   if (fugueTarget != null && offset === mod(fugueTarget, 12)) score += currentFugueEntry(context) ? 16 : 7;
-  if (mode.stable.includes(offset)) score += strong ? 8 : 3;
+  if (mode.stable.includes(offset)) score += (strong ? 8 : 3) + (profile.stableBoost || 0);
+  if (profile.colorOffsets?.includes(offset)) score += strong ? 0.7 : 1.8;
   if (offset === 0) score += strong ? 5 : 1.2;
   if (offset === 7) score += 3;
   if (mode.tendencies && mode.tendencies[offset]) score += settings.strangeness * 2;
   if (lastPitches[voice] != null) {
     const motion = Math.abs(candidate.midi - lastPitches[voice]);
+    const direction = Math.sign(candidate.midi - lastPitches[voice]);
+    const phraseDirection = phraseArcDirection(context);
     if (motion <= 2) score += 4;
+    if (motion <= 2) score += profile.stepBoost || 0;
     if (motion <= 5) score += 1.5;
+    if (phraseDirection && direction === phraseDirection && motion <= 7) score += 1.1;
     if (motion >= 8) score -= 4;
+  }
+  const phraseRole = phraseRoleForContext(context);
+  if (phraseRole === "lead") score += profile.colorOffsets?.includes(offset) ? 1.4 : 0.55;
+  if (phraseRole === "answer" && mode.stable.includes(offset)) score += 0.8;
+  if (phraseRole === "field" && strong && mode.stable.includes(offset)) score += 1.2;
+  if (context.cadenceStage) {
+    const intensity = context.phrasePlan?.cadenceIntensity ?? profile.cadenceIntensity ?? 0.65;
+    if (offset === 0) score += intensity * 4;
+    if (mode.stable.includes(offset)) score += intensity * 2;
   }
   const holdState = context.holdStates?.[voice];
   if (holdState?.suspendedSince != null && lastPitches[voice] != null) {
@@ -2258,24 +2545,33 @@ function applyTendencyDebt(chosen, context) {
   if (tendency) debts[voice] = tendency;
 }
 
-function gridToEvents(grid, voice, sectionStartTick, pulseTicks, settings) {
+function gridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan) {
   const events = [];
   let active = null;
   let startStep = 0;
   for (let i = 0; i <= grid.length; i += 1) {
     const current = grid[i] || null;
-    const same = active && current && current.midi === active.midi;
+    const same = active && current && current.midi === active.midi && !shouldRearticulateDubRepeat(voice, i, section, settings);
     if (same) continue;
     if (active) {
-      events.push(makeNoteEvent(active, voice, sectionStartTick + startStep * pulseTicks, (i - startStep) * pulseTicks, settings));
+      events.push(makeNoteEvent(active, voice, sectionStartTick + startStep * pulseTicks, (i - startStep) * pulseTicks, settings, { startStep, endStep: i }));
     }
     active = current;
     startStep = i;
   }
-  return events;
+  return applyDubGroove(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan);
 }
 
-function makeNoteEvent(note, voice, tick, duration, settings) {
+function shouldRearticulateDubRepeat(voice, step, section, settings) {
+  if (!settings.dubMode || !section || step <= 0) return false;
+  const meter = METERS[section.meter] || METERS["4/4"];
+  const pulseInBar = step % meter.numerator;
+  const strong = pulseInBar === 0 || meter.accents.includes(pulseInBar);
+  if (voice === "bass") return true;
+  return isDubSkankVoice(voice) && !strong && pulseInBar > 0;
+}
+
+function makeNoteEvent(note, voice, tick, duration, settings, meta = {}) {
   const tunedFrequency = settings.rootFreq * ratioForMidi(note.midi, settings);
   let midi = note.midi;
   let bend = null;
@@ -2291,6 +2587,12 @@ function makeNoteEvent(note, voice, tick, duration, settings) {
   return {
     tick,
     duration: Math.max(PPQ / 4, duration),
+    gridTick: tick,
+    gridDuration: duration,
+    startStep: meta.startStep ?? null,
+    endStep: meta.endStep ?? null,
+    grooveOffsetTicks: 0,
+    grooveRole: null,
     midi,
     carrierMidi: note.midi,
     symbolicOffset: mod(note.symbolicOffset, 12),
@@ -2301,6 +2603,55 @@ function makeNoteEvent(note, voice, tick, duration, settings) {
     velocity,
     bend,
   };
+}
+
+function applyDubGroove(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan) {
+  if (!settings.dubMode || !events.length || !section) return events;
+  const meter = METERS[section.meter] || METERS["4/4"];
+  const sectionEndTick = sectionStartTick + section.bars * meter.numerator * pulseTicks;
+  const shaped = events.map((event) => {
+    const startStep = event.startStep ?? Math.round((event.tick - sectionStartTick) / pulseTicks);
+    const pulseInBar = mod(startStep, meter.numerator);
+    const strong = pulseInBar === 0 || meter.accents.includes(pulseInBar);
+    const offbeat = !strong && pulseInBar > 0;
+    const unit = hashUnit(settings.seed, voice, section.key, section.mode, event.gridTick, event.midi);
+    let offsetTicks = 0;
+    let duration = event.duration;
+    let grooveRole = null;
+
+    if (isDubSkankVoice(voice) && offbeat) {
+      offsetTicks = -msToTicks(lerp(DUB_SKANK_EARLY_MS[0], DUB_SKANK_EARLY_MS[1], unit), settings);
+      duration = Math.min(duration, Math.round(pulseTicks * lerp(0.14, 0.31, unit)));
+      grooveRole = "skank-touch";
+    } else if (voice === "bass") {
+      if (!strong) offsetTicks = msToTicks(lerp(DUB_BASS_LATE_MS[0], DUB_BASS_LATE_MS[1], unit), settings);
+      duration = Math.min(duration, Math.round(pulseTicks * lerp(strong ? 0.68 : 0.48, strong ? 0.94 : 0.76, unit)));
+      grooveRole = "bass-pulse";
+    } else if (offbeat) {
+      offsetTicks = msToTicks(lerp(DUB_SWING_LATE_MS[0], DUB_SWING_LATE_MS[1], unit), settings);
+      duration = Math.min(duration, Math.round(duration * lerp(0.78, 0.94, unit)));
+      grooveRole = "dub-stroll";
+    }
+
+    const tick = clamp(event.tick + offsetTicks, sectionStartTick, Math.max(sectionStartTick, sectionEndTick - 1));
+    return {
+      ...event,
+      tick,
+      duration: Math.max(DUB_MIN_NOTE_TICKS, duration),
+      grooveOffsetTicks: tick - event.gridTick,
+      grooveRole,
+      phraseRole: phrasePlan ? (phrasePlan.leadByBar[Math.floor(startStep / meter.numerator)] === voice ? "lead" : phrasePlan.answerByBar[Math.floor(startStep / meter.numerator)] === voice ? "answer" : "field") : null,
+    };
+  }).sort((a, b) => a.tick - b.tick || a.gridTick - b.gridTick);
+
+  for (let i = 0; i < shaped.length; i += 1) {
+    const next = shaped[i + 1];
+    const maxEnd = next ? next.tick : sectionEndTick;
+    if (shaped[i].tick + shaped[i].duration > maxEnd) {
+      shaped[i].duration = Math.max(1, maxEnd - shaped[i].tick);
+    }
+  }
+  return shaped.filter((event) => event.duration > 0);
 }
 
 function velocityForPitch(midi) {
@@ -2457,6 +2808,98 @@ function concatBytes(chunks) {
   return out;
 }
 
+function summarizeDubGroove(settings, events, memory) {
+  const grooveEvents = events.filter((event) => event.grooveRole);
+  const skankTouches = grooveEvents.filter((event) => event.grooveRole === "skank-touch").length;
+  const bassPulses = grooveEvents.filter((event) => event.grooveRole === "bass-pulse").length;
+  const maxOffset = grooveEvents.reduce((max, event) => Math.max(max, Math.abs(event.grooveOffsetTicks || 0)), 0);
+  return {
+    enabled: Boolean(settings.dubMode),
+    feel: settings.dubMode ? "gentle swaggering stroll" : "grid",
+    groove_events: grooveEvents.length,
+    skank_touches: skankTouches,
+    bass_pulses: bassPulses,
+    max_offset_ticks: maxOffset,
+    bass_memory_reused: memory.reused,
+    bass_memory_new: memory.newCells,
+    bass_drop_bars: memory.dropBars,
+  };
+}
+
+function checkSweetness(settings, sectionMeta, events, stats, audit) {
+  const totalTicks = Math.max(1, sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0));
+  const activeVoices = VOICE_ORDER.slice(4 - settings.voices);
+  const byVoice = Object.fromEntries(activeVoices.map((voice) => [voice, events.filter((event) => event.voice === voice)]));
+  const totalSoundingTicks = events.reduce((sum, event) => sum + event.duration, 0);
+  const restSpace = clamp(1 - totalSoundingTicks / Math.max(1, totalTicks * activeVoices.length), 0, 1);
+  const bassCoverage = byVoice.bass ? clamp(byVoice.bass.reduce((sum, event) => sum + event.duration, 0) / totalTicks, 0, 1) : 0;
+  const leadEvents = events.filter((event) => event.phraseRole === "lead").length;
+  const groove = stats.dubGrooveSummary || summarizeDubGroove(settings, events, makeDubBassMemory());
+  const notes = [];
+  let score = 88;
+
+  if (restSpace > 0.18 && restSpace < 0.62) {
+    score += 5;
+    notes.push("Gemma says: the phrases have air around them, which is kind to the listener.");
+  } else if (restSpace <= 0.18) {
+    score -= 7;
+    notes.push("Gemma says: this one is quite full; a little more silence could make the glow easier to hear.");
+  } else {
+    score -= 3;
+    notes.push("Gemma says: this one is very spacious; the quiet is doing a lot of work.");
+  }
+
+  if (settings.dubMode) {
+    if (groove.skank_touches > 0) {
+      score += 4;
+      notes.push("Gemma says: the offbeat touches are clipped and polite, with a little porch-rain swagger.");
+    }
+    if (groove.bass_pulses > 0) {
+      score += 4;
+      notes.push("Gemma says: the bass is pulsing instead of blocking the doorway.");
+    }
+    if (bassCoverage > 0.9) {
+      score -= 4;
+      notes.push("Gemma says: the bass is wonderfully present; one or two more gaps might make it even deeper.");
+    } else if (bassCoverage < 0.32) {
+      score -= 3;
+      notes.push("Gemma says: the low end is very airy here; it may want one more warm root/fifth answer.");
+    }
+    if (groove.bass_memory_reused > 0) {
+      score += 3;
+      notes.push("Gemma says: the bass remembers itself, which helps the groove feel like home.");
+    }
+  }
+
+  if (leadEvents > 0) {
+    score += 3;
+    notes.push("Gemma says: the voices are taking turns instead of all speaking at once.");
+  }
+  if (audit.summary.parallelPerfects > 0) {
+    score -= settings.dubMode ? 1 : 4;
+    notes.push("Gemma says: the checker heard a strong parallel moment and wrote it down gently.");
+  }
+  if (audit.summary.overlongSuspensions > 0) {
+    score -= 3;
+    notes.push("Gemma says: a held note lingered; the surrounding harmony still knows where home is.");
+  }
+  if (!notes.length) notes.push("Gemma says: balanced, calm, and ready to be listened to.");
+
+  const finalScore = clamp(Math.round(score), 1, 100);
+  return {
+    affirming: true,
+    score: finalScore,
+    label: finalScore >= 90 ? "glowing" : finalScore >= 76 ? "settled" : finalScore >= 62 ? "interesting" : "wants a little air",
+    metrics: {
+      rest_space: Number(restSpace.toFixed(3)),
+      bass_coverage: Number(bassCoverage.toFixed(3)),
+      lead_events: leadEvents,
+      groove_events: groove.groove_events,
+    },
+    notes: notes.slice(0, 6),
+  };
+}
+
 function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
   return {
     title: "amy_cin fishtail generator v0",
@@ -2491,6 +2934,8 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
     },
     refrain: stats.refrainSummary,
     fugue: stats.fugueSummary || null,
+    dub_groove: stats.dubGrooveSummary,
+    sweetness: stats.sweetness,
     intonation: {
       root_note: settings.rootNote,
       root_midi: settings.rootMidi,
@@ -2545,6 +2990,9 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       ratio: event.ratioName,
       hz: Number(event.tunedFrequency.toFixed(4)),
       velocity: event.velocity,
+      groove_role: event.grooveRole,
+      groove_offset_ticks: event.grooveOffsetTicks,
+      phrase_role: event.phraseRole,
     })),
   };
 }
@@ -2626,6 +3074,9 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`  Grid checks: ${audit.summary.gridChecks}`);
   lines.push(`  Strong-beat vertical checks: ${audit.summary.strongBeatChecks}`);
   lines.push(`  Velocity curve checks: ${audit.summary.velocityChecks}`);
+  if (settings.dubMode) {
+    lines.push(`  Dub groove events: ${audit.summary.dubGrooveEvents} (${audit.summary.dubSkankTouches} skank touches, ${audit.summary.dubBassPulses} bass pulses)`);
+  }
   lines.push(`  Suspension checks: ${audit.summary.suspensionChecks}`);
   lines.push(`  Suspensions detected/resolved: ${audit.summary.suspensionsDetected}/${audit.summary.suspensionsResolved}`);
   lines.push(`  Overlong suspensions: ${audit.summary.overlongSuspensions}`);
@@ -2650,6 +3101,13 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   }
   if (!audit.issues.length && !audit.warnings.length) {
     lines.push("  No timing, range, overlap, cadence, tendency, or parallel-perfect warnings found in the generated event stream.");
+  }
+  lines.push("");
+  lines.push("Sweetness check");
+  lines.push(`  Feel: ${stats.sweetness.label} (${stats.sweetness.score}/100)`);
+  stats.sweetness.notes.forEach((note) => lines.push(`  ${note}`));
+  if (settings.dubMode) {
+    lines.push(`  Hidden DUB stroll: ${stats.dubGrooveSummary.groove_events} shaped notes, ${stats.dubGrooveSummary.bass_memory_reused} remembered bass cells, ${stats.dubGrooveSummary.bass_drop_bars} bass air windows.`);
   }
   lines.push("");
   lines.push("Harmonic minor behavior");
@@ -2710,6 +3168,9 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     refrainReturns: 0,
     refrainDevelopments: 0,
     dubbyRefrains: 0,
+    dubGrooveEvents: 0,
+    dubSkankTouches: 0,
+    dubBassPulses: 0,
   };
   const activeVoices = VOICE_ORDER.slice(4 - settings.voices);
   const byVoice = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
@@ -2752,7 +3213,12 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     if (!Number.isInteger(event.tick) || event.tick < 0) pushIssue(`${event.voice} has invalid tick ${event.tick}.`);
     if (!Number.isInteger(event.duration) || event.duration <= 0) pushIssue(`${event.voice} has invalid duration ${event.duration}.`);
     if (event.tick + event.duration > totalTicks) pushIssue(`${event.voice} note starting at ${describeTickLocation(event.tick, sectionMeta, settings)} extends past the piece end.`);
-    if (event.tick % (PPQ / 4) !== 0 || event.duration % (PPQ / 4) !== 0) {
+    const offAuditGrid = event.tick % (PPQ / 4) !== 0 || event.duration % (PPQ / 4) !== 0;
+    if (offAuditGrid && settings.dubMode && event.grooveRole) {
+      summary.dubGrooveEvents += 1;
+      if (event.grooveRole === "skank-touch") summary.dubSkankTouches += 1;
+      if (event.grooveRole === "bass-pulse") summary.dubBassPulses += 1;
+    } else if (offAuditGrid) {
       pushWarning(`${event.voice} note at ${describeTickLocation(event.tick, sectionMeta, settings)} is off the 16th-note audit grid.`);
     }
     if (event.midi < 0 || event.midi > 127) pushIssue(`${event.voice} outputs invalid MIDI note ${event.midi}.`);
@@ -3828,6 +4294,24 @@ function mod(value, base) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function lerp(min, max, amount) {
+  return min + (max - min) * amount;
+}
+
+function msToTicks(ms, settings) {
+  return Math.max(1, Math.round((ms / 1000) * (settings.tempo / 60) * PPQ));
+}
+
+function hashUnit(...parts) {
+  const text = parts.map((part) => String(part)).join(":");
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 0xffffffff;
 }
 
 function weightedChoice(rng, pairs) {
