@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=27">
+    <link rel="stylesheet" href="styles.css?v=28">
   </head>
   <body>
     <main class="shell">
@@ -67,6 +67,13 @@
                   <option value="4" selected>4</option>
                 </select>
               </label>
+              <div class="pedal-field" aria-label="Pedal voice controls">
+                <span>Pedal voices</span>
+                <label><input id="pedalBassInput" type="checkbox"> Bass</label>
+                <label><input id="pedalTenorInput" type="checkbox"> Tenor</label>
+                <label><input id="pedalAltoInput" type="checkbox"> Alto</label>
+                <label><input id="pedalSopranoInput" type="checkbox"> Soprano</label>
+              </div>
               <label>
                 Tempo
                 <input id="tempoInput" type="text" value="30.0000" readonly>
@@ -212,6 +219,12 @@
               </section>
 
               <section>
+                <h3>Refrains And Suspensions</h3>
+                <p>Each form row can be Normal, Refrain, or Development. The first Refrain captures a whole-section source; later Refrains can return straight or dubby, and Developments can reshape it gently or through bass/skank dub treatment.</p>
+                <p>Pedal voice switches allow intentional tonic/fifth drones. Other long held notes are treated as suspensions: they are encouraged to resolve by step, checked after generation, and reported gently if they hang around too long.</p>
+              </section>
+
+              <section>
                 <h3>Credits And Ownership</h3>
                 <p>Project identity, musical concept, tuning direction, and Fishtail design: Amy McBride / amy_cin. Artwork by Ocular Debris. Copyright (c) 2026 Amy McBride. All rights reserved. This version was vibe coded with Codex, collaborating as Lambda Echo. Three.js is used for the WebGL torus visual and is acknowledged in <code>CREDITS.md</code>.</p>
                 <p>The source currently runs as a static web app: HTML, CSS, JavaScript, and image assets. Keep the credits file with the project when publishing it.</p>
@@ -280,6 +293,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=36"></script>
+    <script src="src/app.js?v=37"></script>
   </body>
 </html>

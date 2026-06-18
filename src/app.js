@@ -154,10 +154,22 @@ const CADENCES = {
   dub_suspension: { label: "Dub suspension", prep: [10, 5, 7], final: [0, 4, 7] },
 };
 
+const SECTION_ROLES = {
+  normal: "Normal",
+  refrain: "Refrain",
+  development: "Development",
+};
+
+const SECTION_TREATMENTS = {
+  straight: "Straight",
+  gentle: "Gentle",
+  dubby: "Dubby",
+};
+
 const DEFAULT_SECTIONS = [
-  { bars: 6, key: "F", mode: "mixolydian", meter: "3/4", cadence: "plagal" },
-  { bars: 8, key: "D", mode: "gravity_melodic_minor", meter: "6/8", cadence: "authentic" },
-  { bars: 24, key: "F", mode: "mixolydian", meter: "3/4", cadence: "dub_suspension" },
+  { bars: 6, key: "F", mode: "mixolydian", meter: "3/4", cadence: "plagal", role: "normal", treatment: "straight" },
+  { bars: 8, key: "D", mode: "gravity_melodic_minor", meter: "6/8", cadence: "authentic", role: "normal", treatment: "straight" },
+  { bars: 24, key: "F", mode: "mixolydian", meter: "3/4", cadence: "dub_suspension", role: "normal", treatment: "straight" },
 ];
 
 const state = {
@@ -182,6 +194,7 @@ const state = {
   bootGlitchUntil: Date.now() + 2400,
   audioContext: null,
   referenceAnchorA4Hz: DEFAULT_A4_HZ,
+  pedalTouched: false,
 };
 
 window.fishtailApp = { state, version: "v0" };
@@ -211,6 +224,8 @@ document.addEventListener("DOMContentLoaded", () => {
   hydrateSelects();
   updateBendReference(false);
   updateBendControls();
+  applyPedalDefaults(true);
+  updatePedalControls();
   updateTempoControls();
   renderSections();
   bindEvents();
@@ -229,6 +244,10 @@ function bindElements() {
     "strangenessInput",
     "styleInput",
     "voicesInput",
+    "pedalBassInput",
+    "pedalTenorInput",
+    "pedalAltoInput",
+    "pedalSopranoInput",
     "tempoInput",
     "embedTempoInput",
     "dubModeInput",
@@ -284,11 +303,20 @@ function hydrateSelects() {
 function bindEvents() {
   document.addEventListener("pointerdown", requestMotionPermissionOnce, { once: true, passive: true });
   els.addSectionButton.addEventListener("click", () => {
-    state.sections.push({ bars: 8, key: "C", mode: "major", meter: "4/4", cadence: "authentic" });
+    state.sections.push({
+      bars: 8,
+      key: "C",
+      mode: "major",
+      meter: "4/4",
+      cadence: "authentic",
+      role: "normal",
+      treatment: "straight",
+    });
     renderSections();
   });
   els.gentleRollButton.addEventListener("click", () => randomiseForm("gentle"));
   els.wildRollButton.addEventListener("click", () => randomiseForm("wild"));
+  els.voicesInput.addEventListener("change", updatePedalControls);
   els.outputModeInput.addEventListener("change", () => {
     updateBendControls();
     refreshTorusTuning();
@@ -307,7 +335,15 @@ function bindEvents() {
   els.rootNoteInput.addEventListener("change", () => updateBendReference(true));
   els.dubModeInput.addEventListener("change", () => {
     updateDubModeUi();
+    applyPedalDefaults(false);
+    updatePedalControls();
     animateFor(1200);
+  });
+  pedalInputs().forEach((input) => {
+    input.addEventListener("change", () => {
+      state.pedalTouched = true;
+      updatePedalControls();
+    });
   });
   els.generateButton.addEventListener("click", generatePiece);
   els.downloadMidiButton.addEventListener("click", () => downloadLast("midi"));
@@ -392,6 +428,42 @@ function updateDubModeUi() {
   }
 }
 
+function pedalInputs() {
+  return [els.pedalBassInput, els.pedalTenorInput, els.pedalAltoInput, els.pedalSopranoInput].filter(Boolean);
+}
+
+function activeVoiceNames(count = parseInt(els.voicesInput?.value, 10) || 4) {
+  return VOICE_ORDER.slice(4 - clamp(count, 2, 4));
+}
+
+function pedalInputForVoice(voice) {
+  return {
+    bass: els.pedalBassInput,
+    tenor: els.pedalTenorInput,
+    alto: els.pedalAltoInput,
+    soprano: els.pedalSopranoInput,
+  }[voice];
+}
+
+function applyPedalDefaults(force) {
+  if (!force && state.pedalTouched) return;
+  const dubDefault = Boolean(els.dubModeInput?.checked);
+  VOICE_ORDER.forEach((voice) => {
+    const input = pedalInputForVoice(voice);
+    if (input) input.checked = dubDefault && voice === "bass";
+  });
+}
+
+function updatePedalControls() {
+  const active = new Set(activeVoiceNames());
+  VOICE_ORDER.forEach((voice) => {
+    const input = pedalInputForVoice(voice);
+    if (!input) return;
+    input.disabled = !active.has(voice);
+    input.closest("label")?.classList.toggle("is-disabled", input.disabled);
+  });
+}
+
 function updateBendReference(overwrite) {
   const rootPc = noteToPc(els.rootNoteInput.value || "A");
   const rootMidi = 60 + rootPc;
@@ -438,15 +510,19 @@ function selectedReferenceMidi() {
 function renderSections() {
   els.sectionTable.innerHTML = "";
   state.sections.forEach((section, index) => {
+    const normalized = normalizeSection(section);
+    state.sections[index] = normalized;
     const row = document.createElement("div");
     row.className = "section-row";
     row.innerHTML = `
       <div class="row-index">${String(index + 1).padStart(2, "0")}</div>
-      <label>Bars<input type="number" min="1" max="64" value="${section.bars}" data-field="bars"></label>
-      <label>Key<select data-field="key">${KEY_NAMES.map((key) => optionHtml(key, key, key === section.key)).join("")}</select></label>
-      <label>Mode<select data-field="mode">${Object.entries(MODES).map(([id, mode]) => optionHtml(id, mode.label, id === section.mode)).join("")}</select></label>
-      <label>Meter<select data-field="meter">${Object.keys(METERS).map((meter) => optionHtml(meter, meter, meter === section.meter)).join("")}</select></label>
-      <label>Cadence<select data-field="cadence">${Object.entries(CADENCES).map(([id, cadence]) => optionHtml(id, cadence.label, id === section.cadence)).join("")}</select></label>
+      <label>Bars<input type="number" min="1" max="64" value="${normalized.bars}" data-field="bars"></label>
+      <label>Key<select data-field="key">${KEY_NAMES.map((key) => optionHtml(key, key, key === normalized.key)).join("")}</select></label>
+      <label>Mode<select data-field="mode">${Object.entries(MODES).map(([id, mode]) => optionHtml(id, mode.label, id === normalized.mode)).join("")}</select></label>
+      <label>Meter<select data-field="meter">${Object.keys(METERS).map((meter) => optionHtml(meter, meter, meter === normalized.meter)).join("")}</select></label>
+      <label>Cadence<select data-field="cadence">${Object.entries(CADENCES).map(([id, cadence]) => optionHtml(id, cadence.label, id === normalized.cadence)).join("")}</select></label>
+      <label>Role<select data-field="role">${Object.entries(SECTION_ROLES).map(([id, label]) => optionHtml(id, label, id === normalized.role)).join("")}</select></label>
+      <label>Treatment<select data-field="treatment">${treatmentOptionsForRole(normalized.role).map(([id, label]) => optionHtml(id, label, id === normalized.treatment)).join("")}</select></label>
       <button class="icon-button" type="button" data-remove="${index}" title="Remove section">-</button>
     `;
     row.querySelectorAll("[data-field]").forEach((input) => {
@@ -464,6 +540,28 @@ function renderSections() {
     });
     els.sectionTable.append(row);
   });
+}
+
+function normalizeSection(section) {
+  const role = SECTION_ROLES[section.role] ? section.role : "normal";
+  const defaultTreatment = role === "development" ? "gentle" : "straight";
+  const allowedTreatments = treatmentOptionsForRole(role).map(([id]) => id);
+  const treatment = allowedTreatments.includes(section.treatment) ? section.treatment : defaultTreatment;
+  return {
+    bars: clamp(parseInt(section.bars, 10) || 1, 1, 64),
+    key: KEY_NAMES.includes(section.key) ? section.key : "C",
+    mode: MODES[section.mode] ? section.mode : "major",
+    meter: METERS[section.meter] ? section.meter : "4/4",
+    cadence: CADENCES[section.cadence] ? section.cadence : "authentic",
+    role,
+    treatment,
+  };
+}
+
+function treatmentOptionsForRole(role) {
+  if (role === "development") return [["gentle", SECTION_TREATMENTS.gentle], ["dubby", SECTION_TREATMENTS.dubby]];
+  if (role === "refrain") return [["straight", SECTION_TREATMENTS.straight], ["dubby", SECTION_TREATMENTS.dubby]];
+  return [["straight", SECTION_TREATMENTS.straight]];
 }
 
 function optionHtml(value, label, selected) {
@@ -496,6 +594,8 @@ async function randomiseForm(kind) {
       mode: currentMode,
       meter: chooseMeter(rng, kind, strange),
       cadence,
+      role: "normal",
+      treatment: "straight",
     });
   }
 
@@ -682,10 +782,12 @@ async function generatePiece() {
 }
 
 function readSettings(seed) {
+  const voices = clamp(parseInt(els.voicesInput.value, 10) || 4, 2, 4);
   return {
     seed,
-    sections: structuredClone(state.sections),
-    voices: clamp(parseInt(els.voicesInput.value, 10) || 4, 2, 4),
+    sections: state.sections.map(normalizeSection),
+    voices,
+    pedalVoices: readPedalVoices(voices),
     tempo: clamp(parseFloat(els.tempoInput.value) || 72, 30, 220),
     includeTempoMap: Boolean(els.embedTempoInput.checked),
     dubMode: Boolean(els.dubModeInput.checked),
@@ -707,13 +809,292 @@ function readSettings(seed) {
   };
 }
 
+function readPedalVoices(voiceCount) {
+  const active = new Set(activeVoiceNames(voiceCount));
+  return Object.fromEntries(VOICE_ORDER.map((voice) => {
+    const input = pedalInputForVoice(voice);
+    return [voice, Boolean(input?.checked && active.has(voice))];
+  }));
+}
+
+function normalizePedalVoices(pedalVoices = {}, voiceCount = 4, dubMode = false) {
+  const active = new Set(VOICE_ORDER.slice(4 - clamp(voiceCount, 2, 4)));
+  return Object.fromEntries(VOICE_ORDER.map((voice) => [
+    voice,
+    active.has(voice) && Boolean(pedalVoices[voice] ?? (dubMode && voice === "bass")),
+  ]));
+}
+
+function makeRefrainState(activeVoices) {
+  return {
+    activeVoices,
+    source: null,
+    returns: 0,
+    developments: 0,
+    dubby: 0,
+    fallbacks: 0,
+    transforms: [],
+  };
+}
+
+function planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, rng) {
+  if (section.role === "normal") return { kind: "normal", treatment: "straight" };
+  if (section.role === "refrain" && !refrainState.source) {
+    return { kind: "capture", treatment: section.treatment, sectionIndex };
+  }
+  if (!refrainState.source) {
+    refrainState.fallbacks += 1;
+    return { kind: "fallback", treatment: section.treatment, sectionIndex };
+  }
+  const kind = section.role === "development" ? "development" : "return";
+  const treatment = section.treatment || (kind === "development" ? "gentle" : "straight");
+  const plan = {
+    kind,
+    treatment,
+    sectionIndex,
+    source: refrainState.source,
+    sourceSteps: refrainState.source.steps,
+    targetSteps: steps,
+    voiceShift: kind === "development" ? randomInt(rng, 0, Math.max(0, activeVoices.length - 1)) : 0,
+    reverse: kind === "development" && treatment === "gentle" && rng() < 0.32,
+    stretch: refrainState.source.steps / Math.max(1, steps),
+  };
+  if (kind === "development") refrainState.developments += 1;
+  else refrainState.returns += 1;
+  if (treatment === "dubby") refrainState.dubby += 1;
+  refrainState.transforms.push(summarizeRefrainPlan(plan));
+  return plan;
+}
+
+function summarizeRefrainPlan(plan) {
+  return {
+    kind: plan.kind,
+    treatment: plan.treatment,
+    source_steps: plan.sourceSteps || null,
+    target_steps: plan.targetSteps || null,
+    voice_shift: plan.voiceShift || 0,
+    reverse: Boolean(plan.reverse),
+  };
+}
+
+function maybeCaptureRefrainSource(refrainState, section, sectionIndex, steps, meter, activeVoices, noteGrid) {
+  if (refrainState.source || section.role !== "refrain") return;
+  refrainState.source = {
+    sectionIndex,
+    key: section.key,
+    mode: section.mode,
+    meter: section.meter,
+    bars: section.bars,
+    steps,
+    numerator: meter.numerator,
+    voices: activeVoices,
+    grid: Object.fromEntries(activeVoices.map((voice) => [
+      voice,
+      noteGrid[voice].map((note) => note ? {
+        midi: note.midi,
+        symbolicOffset: mod(note.symbolicOffset, 12),
+        literalPc: note.literalPc,
+        symbolicName: note.symbolicName,
+      } : null),
+    ])),
+  };
+}
+
+function summarizeRefrainState(refrainState) {
+  return {
+    has_source: Boolean(refrainState.source),
+    source_section: refrainState.source ? refrainState.source.sectionIndex + 1 : null,
+    source_steps: refrainState.source?.steps || 0,
+    returns: refrainState.returns,
+    developments: refrainState.developments,
+    dubby_treatments: refrainState.dubby,
+    fallbacks: refrainState.fallbacks,
+    transforms: refrainState.transforms,
+  };
+}
+
+function makeSuspensionStats() {
+  return {
+    checks: 0,
+    detected: 0,
+    resolved: 0,
+    overlongPrevented: 0,
+    pedalHolds: 0,
+    resuspendPrevented: 0,
+    exceptions: 0,
+  };
+}
+
+function makeHoldState() {
+  return {
+    midi: null,
+    symbolicOffset: null,
+    startedStep: 0,
+    suspendedSince: null,
+    lastChordKey: "",
+    lastChordValid: false,
+    countedSuspension: false,
+  };
+}
+
+function currentChordOffsets(context) {
+  const cadence = CADENCES[context.section.cadence] || CADENCES.authentic;
+  const qualityThird = context.mode.cadenceQuality === "minor" ? 3 : 4;
+  if (context.cadenceStage === "cadence-prep") return cadence.prep.map((offset) => mod(offset, 12));
+  if (context.cadenceStage === "opening" || context.cadenceStage === "final" || context.cadenceStage === "cadence-final") {
+    return [0, qualityThird, 7];
+  }
+  return context.mode.stable.map((offset) => mod(offset, 12));
+}
+
+function chordKeyForContext(context) {
+  return currentChordOffsets(context).slice().sort((a, b) => a - b).join(".");
+}
+
+function isChordOffset(offset, context) {
+  return currentChordOffsets(context).includes(mod(offset, 12));
+}
+
+function isPedalVoice(context) {
+  return Boolean(context.settings.pedalVoices?.[context.voice]);
+}
+
+function isPedalOffset(offset) {
+  return mod(offset, 12) === 0 || mod(offset, 12) === 7;
+}
+
+function suspensionLimitBars(voice) {
+  if (voice === "soprano") return 1;
+  return 2;
+}
+
+function holdBarsForCandidate(context) {
+  const stateForVoice = context.holdStates?.[context.voice];
+  if (!stateForVoice || stateForVoice.midi == null) return 0;
+  return (context.step - stateForVoice.startedStep + 1) / context.meter.numerator;
+}
+
+function canKeepLongHold(candidate, context, stateForVoice) {
+  const offset = mod(candidate.symbolicOffset, 12);
+  if (isChordOffset(offset, context)) return true;
+  if (isPedalVoice(context) && isPedalOffset(offset)) {
+    context.suspensionStats.pedalHolds += 1;
+    return true;
+  }
+  const suspendedSince = stateForVoice.suspendedSince ?? context.step;
+  const suspensionBars = (context.step - suspendedSince + 1) / context.meter.numerator;
+  const limit = suspensionLimitBars(context.voice);
+  if (suspensionBars <= limit) return true;
+  if (context.rng() < 0.08) {
+    context.suspensionStats.exceptions += 1;
+    return true;
+  }
+  context.suspensionStats.overlongPrevented += 1;
+  return false;
+}
+
+function nearestStepChordToneExists(previousMidi, context) {
+  const [low, high] = VOICE_RANGES[context.voice];
+  return [-2, -1, 1, 2].some((move) => {
+    const midi = previousMidi + move;
+    if (midi < low || midi > high) return false;
+    const offset = mod((midi % 12) - noteToPc(context.section.key), 12);
+    return isChordOffset(offset, context);
+  });
+}
+
+function isGoodSuspensionResolution(candidate, context, previousMidi) {
+  return Math.abs(candidate.midi - previousMidi) <= 2 && isChordOffset(candidate.symbolicOffset, context);
+}
+
+function updateSuspensionState(result, context) {
+  const stateForVoice = context.holdStates[context.voice];
+  if (!stateForVoice) return;
+  if (!result) {
+    if (stateForVoice.suspendedSince != null) {
+      context.resolvedBlocks[context.voice] = { midi: stateForVoice.midi, untilStep: context.step + context.meter.numerator };
+    }
+    context.holdStates[context.voice] = makeHoldState();
+    return;
+  }
+
+  const offset = mod(result.symbolicOffset, 12);
+  const chordValid = isChordOffset(offset, context);
+  const chordKey = chordKeyForContext(context);
+  const samePitch = stateForVoice.midi === result.midi;
+  context.suspensionStats.checks += 1;
+
+  if (!samePitch) {
+    if (stateForVoice.suspendedSince != null && isGoodSuspensionResolution(result, context, stateForVoice.midi)) {
+      context.suspensionStats.resolved += 1;
+      context.resolvedBlocks[context.voice] = { midi: stateForVoice.midi, untilStep: context.step + context.meter.numerator };
+    }
+    context.holdStates[context.voice] = {
+      midi: result.midi,
+      symbolicOffset: offset,
+      startedStep: context.step,
+      suspendedSince: null,
+      lastChordKey: chordKey,
+      lastChordValid: chordValid,
+      countedSuspension: false,
+    };
+    return;
+  }
+
+  if (stateForVoice.lastChordKey !== chordKey && stateForVoice.lastChordValid && !chordValid) {
+    stateForVoice.suspendedSince = stateForVoice.suspendedSince ?? context.step;
+    if (!stateForVoice.countedSuspension) {
+      context.suspensionStats.detected += 1;
+      stateForVoice.countedSuspension = true;
+    }
+  }
+  stateForVoice.symbolicOffset = offset;
+  stateForVoice.lastChordKey = chordKey;
+  stateForVoice.lastChordValid = chordValid;
+}
+
+function refrainSourceNote(context) {
+  const source = context.refrainPlan?.kind && context.refrainPlan.kind !== "normal" && context.refrainPlan.kind !== "capture" && context.refrainPlan.kind !== "fallback"
+    ? context.refrainPlan.source || null
+    : null;
+  return source ? mappedRefrainNote(context, source) : null;
+}
+
+function mappedRefrainNote(context, source = context.refrainPlan?.source) {
+  if (!source) return null;
+  const voice = mappedRefrainVoice(context, source);
+  const grid = source.grid[voice] || [];
+  if (!grid.length) return null;
+  const mappedStep = mappedRefrainStep(context, source);
+  return grid[mappedStep] || null;
+}
+
+function mappedRefrainVoice(context, source = context.refrainPlan?.source) {
+  const voices = source?.voices || context.activeVoices;
+  const index = Math.max(0, voices.indexOf(context.voice));
+  const shifted = mod(index + (context.refrainPlan?.voiceShift || 0), voices.length || 1);
+  return voices[shifted] || context.voice;
+}
+
+function mappedRefrainStep(context, source = context.refrainPlan?.source) {
+  if (!source?.steps) return 0;
+  const ratio = context.step / Math.max(1, context.steps);
+  let sourceStep = Math.floor(ratio * source.steps);
+  if (context.refrainPlan?.reverse) sourceStep = source.steps - 1 - sourceStep;
+  return clamp(sourceStep, 0, source.steps - 1);
+}
+
 function buildPiece(settings, rng) {
+  settings.sections = settings.sections.map(normalizeSection);
+  settings.pedalVoices = normalizePedalVoices(settings.pedalVoices, settings.voices, settings.dubMode);
   const activeVoices = VOICE_ORDER.slice(4 - settings.voices);
   const tracks = Object.fromEntries(activeVoices.map((voice, index) => [voice, { name: voice, channel: index, events: [] }]));
   const sectionMeta = [];
   const noteGrid = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
   const debts = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
   const reports = [];
+  const refrainState = makeRefrainState(activeVoices);
+  const suspensionStats = makeSuspensionStats();
   let currentTick = 0;
   let totalBars = 0;
   let avoidedParallels = 0;
@@ -727,13 +1108,16 @@ function buildPiece(settings, rng) {
     const barTicks = meter.numerator * meter.pulse;
     const steps = section.bars * meter.numerator;
     const sectionStartTick = currentTick;
-    sectionMeta.push({ ...section, startTick: currentTick, barTicks, numerator: meter.numerator, denominator: meter.denominator });
-    reports.push(`${sectionIndex + 1}. ${section.bars} bars in ${section.key} ${mode.label}, ${section.meter}, ${CADENCES[section.cadence].label}`);
+    const refrainPlan = planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, rng);
+    sectionMeta.push({ ...section, startTick: currentTick, barTicks, numerator: meter.numerator, denominator: meter.denominator, refrainPlan: summarizeRefrainPlan(refrainPlan) });
+    reports.push(`${sectionIndex + 1}. ${section.bars} bars in ${section.key} ${mode.label}, ${section.meter}, ${CADENCES[section.cadence].label}, ${SECTION_ROLES[section.role]}${section.role === "normal" ? "" : `/${SECTION_TREATMENTS[section.treatment]}`}`);
 
     const entries = planEntries(activeVoices, steps, meter, rng, settings);
     const lastPitches = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
     const lastLeaps = Object.fromEntries(activeVoices.map((voice) => [voice, 0]));
     const lastOffsets = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
+    const holdStates = Object.fromEntries(activeVoices.map((voice) => [voice, makeHoldState()]));
+    const resolvedBlocks = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
 
     for (let step = 0; step < steps; step += 1) {
       const pulseInBar = step % meter.numerator;
@@ -763,9 +1147,13 @@ function buildPiece(settings, rng) {
           lastPitches,
           lastLeaps,
           lastOffsets,
+          holdStates,
+          resolvedBlocks,
           debts,
           subject,
           entries,
+          refrainPlan,
+          suspensionStats,
           settings,
           rng,
         };
@@ -773,11 +1161,13 @@ function buildPiece(settings, rng) {
         if (result.rest) {
           chosen[voice] = null;
           noteGrid[voice].push(null);
+          updateSuspensionState(null, context);
           rests += 1;
           return;
         }
         chosen[voice] = result;
         noteGrid[voice].push(result);
+        updateSuspensionState(result, context);
         lastLeaps[voice] = lastPitches[voice] == null ? 0 : result.midi - lastPitches[voice];
         lastPitches[voice] = result.midi;
         lastOffsets[voice] = mod(result.symbolicOffset, 12);
@@ -788,6 +1178,7 @@ function buildPiece(settings, rng) {
       currentTick += meter.pulse;
     }
 
+    maybeCaptureRefrainSource(refrainState, section, sectionIndex, steps, meter, activeVoices, noteGrid);
     activeVoices.forEach((voice) => {
       const events = gridToEvents(noteGrid[voice], voice, sectionStartTick, meter.pulse, settings);
       tracks[voice].events.push(...events);
@@ -800,8 +1191,9 @@ function buildPiece(settings, rng) {
   const events = activeVoices.flatMap((voice) => tracks[voice].events.map((event) => ({ ...event, voice })));
   const midiBytes = writeMidiFile({ tracks, sectionMeta, settings, totalTicks: currentTick });
   const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick);
-  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests }, audit);
-  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports }, audit);
+  const refrainSummary = summarizeRefrainState(refrainState);
+  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, refrainSummary }, audit);
+  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, refrainSummary }, audit);
 
   return {
     settings,
@@ -857,6 +1249,7 @@ function chooseVoiceEvent(context) {
   const { settings, rng, strong, cadenceStage, voice, mode, section, step, entries, subject } = context;
   const debt = context.debts[voice];
   const canRest = !cadenceStage && !debt && step > 0;
+  if (canRest && shouldRestForRefrain(context)) return { rest: true };
   const baseRestChance = canRest ? (0.05 + settings.breathing * 0.22 - settings.density * 0.08) : 0;
   const restChance = dubRestChance(context, baseRestChance);
   if (rng() < restChance && shouldVoiceBreathe(context)) return { rest: true };
@@ -941,6 +1334,8 @@ function mapVoiceToChordIndex(voiceIndex, voiceCount) {
 
 function motifOrFieldOffsets(context) {
   const { subject, entries, voice, step, mode, strong, rng, settings, section } = context;
+  const refrainOffsets = offsetsFromRefrain(context);
+  if (refrainOffsets.length) return refrainOffsets;
   if (settings.dubMode && voice === "bass") return dubBassOffsets(context);
   if (settings.dubMode && isDubSkankVoice(voice) && isDubOffbeat(context) && rng() < 0.72) return dubSkankOffsets(context);
 
@@ -962,6 +1357,73 @@ function motifOrFieldOffsets(context) {
     pool.push(...Object.keys(mode.tendencies).map(Number));
   }
   return pool;
+}
+
+function shouldRestForRefrain(context) {
+  const plan = context.refrainPlan;
+  if (!plan || plan.kind === "normal" || plan.kind === "capture" || plan.kind === "fallback") return false;
+  const source = plan.source;
+  if (!source) return false;
+  const sourceNote = mappedRefrainNote(context, source);
+  if (sourceNote) return false;
+  if (plan.treatment === "dubby") return context.voice !== "bass" && context.rng() < 0.74;
+  if (plan.kind === "development") return context.rng() < 0.48 + context.settings.breathing * 0.22;
+  return context.rng() < 0.82;
+}
+
+function offsetsFromRefrain(context) {
+  const plan = context.refrainPlan;
+  if (!plan || plan.kind === "normal" || plan.kind === "capture" || plan.kind === "fallback" || context.cadenceStage) return [];
+  const sourceNote = mappedRefrainNote(context, plan.source);
+  if (!sourceNote) return [];
+  const sourceOffset = mod(sourceNote.symbolicOffset, 12);
+  const transformed = transformRefrainOffset(sourceOffset, context);
+  const modeOffset = nearestModeOffset(transformed, context.mode);
+
+  if (plan.treatment === "dubby") {
+    if (context.voice === "bass") {
+      return [modeOffset, ...dubBassOffsets(context), sourceOffset, 0, 7];
+    }
+    if (isDubSkankVoice(context.voice) && isDubOffbeat(context)) {
+      return [modeOffset, ...dubSkankOffsets(context), sourceOffset];
+    }
+    if (context.voice === "soprano" && context.rng() < 0.45) {
+      return [modeOffset, sourceOffset, ...context.mode.stable];
+    }
+    return [modeOffset, ...context.mode.stable, sourceOffset];
+  }
+
+  if (plan.kind === "development") {
+    return [modeOffset, sourceOffset, ...context.mode.stable, nearestModeOffset(mod(sourceOffset + 7, 12), context.mode)];
+  }
+
+  return [modeOffset, sourceOffset, ...context.mode.stable];
+}
+
+function transformRefrainOffset(offset, context) {
+  const plan = context.refrainPlan;
+  if (!plan || plan.kind === "return") return offset;
+  let transformed = offset;
+  if (plan.kind === "development") {
+    if (context.voiceIndex % 2 === 1) transformed = mod(12 - transformed, 12);
+    if (!context.strong && context.step % 2 === 1) transformed = mod(transformed + 7, 12);
+    if (plan.treatment === "dubby" && context.voice === "bass") transformed = [0, 7, 5, 10].includes(mod(transformed, 12)) ? transformed : 0;
+  }
+  return transformed;
+}
+
+function nearestModeOffset(offset, mode) {
+  const allowed = [...new Set([...mode.offsets, ...mode.stable, 0, 7].map((item) => mod(item, 12)))];
+  let best = allowed[0] ?? mod(offset, 12);
+  let bestDistance = Infinity;
+  allowed.forEach((candidate) => {
+    const distance = circularDistance(candidate, offset);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  });
+  return best;
 }
 
 function dubBassOffsets(context) {
@@ -1117,6 +1579,25 @@ function validateCandidate(candidate, context) {
 
   const leapLimit = settings.dubMode && voice === "bass" ? 14 : 12;
   if (previous != null && Math.abs(candidate.midi - previous) > leapLimit) return { ok: false };
+
+  const holdState = context.holdStates?.[voice];
+  if (previous != null && holdState) {
+    const samePitch = candidate.midi === previous;
+    const block = context.resolvedBlocks?.[voice];
+    if (block && block.midi === candidate.midi && context.step < block.untilStep && !isChordOffset(candidate.symbolicOffset, context)) {
+      context.suspensionStats.resuspendPrevented += 1;
+      return { ok: false };
+    }
+    if (samePitch) {
+      const holdBars = holdBarsForCandidate(context);
+      const canPedal = isPedalVoice(context) && isPedalOffset(candidate.symbolicOffset);
+      if (holdBars > 2 && !canPedal && !isChordOffset(candidate.symbolicOffset, context)) return { ok: false };
+      if (holdState.suspendedSince != null && !canKeepLongHold(candidate, context, holdState)) return { ok: false };
+    } else if (holdState.suspendedSince != null && nearestStepChordToneExists(previous, context) && !isGoodSuspensionResolution(candidate, context, previous)) {
+      return { ok: false };
+    }
+  }
+
   if (previous != null && Math.abs(lastLeaps[voice]) >= 7) {
     const recovery = candidate.midi - previous;
     const dubBassBounce = settings.dubMode
@@ -1207,6 +1688,12 @@ function scoreCandidate(candidate, context) {
     if (motion <= 2) score += 4;
     if (motion <= 5) score += 1.5;
     if (motion >= 8) score -= 4;
+  }
+  const holdState = context.holdStates?.[voice];
+  if (holdState?.suspendedSince != null && lastPitches[voice] != null) {
+    const suspensionBars = (context.step - holdState.suspendedSince + 1) / context.meter.numerator;
+    if (isGoodSuspensionResolution(candidate, context, lastPitches[voice])) score += suspensionBars >= 1.5 ? 14 : 8;
+    if (candidate.midi === lastPitches[voice] && suspensionBars >= 1.5) score -= 12;
   }
   if (settings.dubMode) {
     if (voice === "bass") {
@@ -1449,6 +1936,20 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       dub_gravity: settings.dubMode,
       dub_checker_note: settings.dubMode ? dubRelaxLine(settings.seed) : null,
     },
+    pedal_voices: settings.pedalVoices,
+    suspension_control: {
+      mode: "musical_gravity",
+      expressive_exception_chance: 0.08,
+      generation_summary: stats.suspensionStats,
+      audit_summary: {
+        checks: audit.summary.suspensionChecks,
+        detected: audit.summary.suspensionsDetected,
+        resolved: audit.summary.suspensionsResolved,
+        overlong: audit.summary.overlongSuspensions,
+        pedal_holds: audit.summary.pedalHolds,
+      },
+    },
+    refrain: stats.refrainSummary,
     intonation: {
       root_note: settings.rootNote,
       root_midi: settings.rootMidi,
@@ -1519,6 +2020,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`Reference pitch: ${settings.referenceNote} = ${settings.referenceHz.toFixed(4)} Hz`);
   lines.push(`Fishtail tempo: 60 * ${settings.referenceHz.toFixed(4)} / ${settings.tempoDivisor}`);
   lines.push(`Voices: ${settings.voices}`);
+  lines.push(`Pedal voices: ${Object.entries(settings.pedalVoices || {}).filter(([, enabled]) => enabled).map(([voice]) => voice).join(", ") || "none"}`);
   lines.push(`Pitch map: ${settings.resolution}`);
   lines.push(`Output: ${outputModeLabel(settings.outputMode)}`);
   lines.push(`Velocity curve: pitch feel, ${VELOCITY_LOW} at ${midiName(VELOCITY_PITCH_LOW)} down to ${VELOCITY_HIGH} at ${midiName(VELOCITY_PITCH_HIGH)} with a ${VELOCITY_TILT_DB_PER_OCTAVE} dB/octave tilt.`);
@@ -1541,12 +2043,28 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`  Rests/breaths placed: ${stats.rests}`);
   lines.push(`  Tendency resolutions completed: ${stats.resolvedTendencies}`);
   lines.push(`  Parallel perfect candidates rejected: ${stats.avoidedParallels}`);
+  lines.push(`  Suspension gravity: ${stats.suspensionStats.detected} detected, ${stats.suspensionStats.resolved} resolved, ${stats.suspensionStats.overlongPrevented} overlong candidates prevented, ${stats.suspensionStats.pedalHolds} pedal holds allowed.`);
+  lines.push("");
+  lines.push("Refrain development");
+  if (stats.refrainSummary.has_source) {
+    lines.push(`  Source refrain: section ${stats.refrainSummary.source_section}, ${stats.refrainSummary.source_steps} grid steps.`);
+    lines.push(`  Returns: ${stats.refrainSummary.returns}`);
+    lines.push(`  Developments: ${stats.refrainSummary.developments}`);
+    lines.push(`  Dubby treatments: ${stats.refrainSummary.dubby_treatments}`);
+  } else {
+    lines.push("  No refrain source marked in this form.");
+  }
+  if (stats.refrainSummary.fallbacks) lines.push(`  Development fallback sections without source: ${stats.refrainSummary.fallbacks}`);
   lines.push("");
   lines.push("Output checker");
   lines.push(`  MIDI bytes: ${audit.summary.midiBytes}`);
   lines.push(`  Grid checks: ${audit.summary.gridChecks}`);
   lines.push(`  Strong-beat vertical checks: ${audit.summary.strongBeatChecks}`);
   lines.push(`  Velocity curve checks: ${audit.summary.velocityChecks}`);
+  lines.push(`  Suspension checks: ${audit.summary.suspensionChecks}`);
+  lines.push(`  Suspensions detected/resolved: ${audit.summary.suspensionsDetected}/${audit.summary.suspensionsResolved}`);
+  lines.push(`  Overlong suspensions: ${audit.summary.overlongSuspensions}`);
+  lines.push(`  Pedal holds: ${audit.summary.pedalHolds}`);
   lines.push(`  Status: ${audit.ok ? "passed" : "review notes below"}`);
   if (settings.dubMode) {
     lines.push(`  Dub checker: ${dubRelaxLine(settings.seed)}`);
@@ -1619,11 +2137,22 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     cadenceChecks: 0,
     tendencyChecks: 0,
     velocityChecks: 0,
+    suspensionChecks: 0,
+    suspensionsDetected: 0,
+    suspensionsResolved: 0,
+    overlongSuspensions: 0,
+    pedalHolds: 0,
+    refrainReturns: 0,
+    refrainDevelopments: 0,
+    dubbyRefrains: 0,
   };
   const activeVoices = VOICE_ORDER.slice(4 - settings.voices);
   const byVoice = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
   const pushIssue = (message) => pushLimited(issues, message);
   const pushWarning = (message) => pushLimited(warnings, message);
+  summary.refrainReturns = sectionMeta.filter((section) => section.refrainPlan?.kind === "return").length;
+  summary.refrainDevelopments = sectionMeta.filter((section) => section.refrainPlan?.kind === "development").length;
+  summary.dubbyRefrains = sectionMeta.filter((section) => section.refrainPlan?.treatment === "dubby").length;
 
   if (midiBytes.length < 22) pushIssue("MIDI file is unexpectedly small.");
   if (String.fromCharCode(...midiBytes.slice(0, 4)) !== "MThd") {
@@ -1687,6 +2216,8 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     }
   });
 
+  auditSuspensionTimeline(settings, sectionMeta, byVoice, activeVoices, summary, pushWarning);
+
   sectionMeta.forEach((section) => {
     const mode = MODES[section.mode];
     const sectionEnd = section.startTick + section.bars * section.barTicks;
@@ -1748,6 +2279,88 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     issues,
     warnings,
     summary,
+  };
+}
+
+function auditSuspensionTimeline(settings, sectionMeta, byVoice, activeVoices, summary, pushWarning) {
+  sectionMeta.forEach((section) => {
+    const mode = MODES[section.mode];
+    const steps = section.bars * section.numerator;
+    const pulse = section.barTicks / section.numerator;
+    activeVoices.forEach((voice) => {
+      let stateForVoice = makeHoldState();
+      let warnedOverlong = false;
+      for (let step = 0; step < steps; step += 1) {
+        const tick = section.startTick + step * pulse;
+        const note = snapshotAtTick(byVoice, [voice], tick)[0];
+        if (!note) {
+          stateForVoice = makeHoldState();
+          warnedOverlong = false;
+          continue;
+        }
+        const context = contextForSectionStep(section, mode, step, settings, voice);
+        const offset = mod((note.carrierMidi ?? note.midi) - noteToPc(section.key), 12);
+        const chordValid = isChordOffset(offset, context);
+        const chordKey = chordKeyForContext(context);
+        const samePitch = stateForVoice.midi === (note.carrierMidi ?? note.midi);
+        summary.suspensionChecks += 1;
+
+        if (!samePitch) {
+          if (stateForVoice.suspendedSince != null && Math.abs((note.carrierMidi ?? note.midi) - stateForVoice.midi) <= 2 && chordValid) {
+            summary.suspensionsResolved += 1;
+          }
+          stateForVoice = {
+            midi: note.carrierMidi ?? note.midi,
+            symbolicOffset: offset,
+            startedStep: step,
+            suspendedSince: null,
+            lastChordKey: chordKey,
+            lastChordValid: chordValid,
+            countedSuspension: false,
+          };
+          warnedOverlong = false;
+          continue;
+        }
+
+        if (stateForVoice.lastChordKey !== chordKey && stateForVoice.lastChordValid && !chordValid) {
+          stateForVoice.suspendedSince = stateForVoice.suspendedSince ?? step;
+          if (!stateForVoice.countedSuspension) {
+            summary.suspensionsDetected += 1;
+            stateForVoice.countedSuspension = true;
+          }
+        }
+
+        const holdBars = (step - stateForVoice.startedStep + 1) / section.numerator;
+        const suspensionBars = stateForVoice.suspendedSince == null ? 0 : (step - stateForVoice.suspendedSince + 1) / section.numerator;
+        const pedalAllowed = settings.pedalVoices?.[voice] && isPedalOffset(offset);
+        if (pedalAllowed && holdBars > 2) summary.pedalHolds += 1;
+        const overlongSuspension = stateForVoice.suspendedSince != null && suspensionBars > suspensionLimitBars(voice) && !pedalAllowed;
+        const overlongTie = holdBars > 2 && !chordValid && !pedalAllowed;
+        if ((overlongSuspension || overlongTie) && !warnedOverlong) {
+          summary.overlongSuspensions += 1;
+          pushWarning(`${voice} held ${midiName(note.carrierMidi ?? note.midi)} too long as a non-chord suspension around ${describeTickLocation(tick, sectionMeta, settings)}.`);
+          warnedOverlong = true;
+        }
+
+        stateForVoice.symbolicOffset = offset;
+        stateForVoice.lastChordKey = chordKey;
+        stateForVoice.lastChordValid = chordValid;
+      }
+    });
+  });
+}
+
+function contextForSectionStep(section, mode, step, settings, voice) {
+  const meter = METERS[section.meter];
+  const steps = section.bars * section.numerator;
+  return {
+    section,
+    mode,
+    meter,
+    step,
+    cadenceStage: getCadenceStage(step, steps, section.numerator),
+    voice,
+    settings,
   };
 }
 

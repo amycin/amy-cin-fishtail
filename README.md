@@ -43,6 +43,8 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.
 - Optional Dub Gravity switch for steadier root/fifth bass, offbeat middle-voice skank gestures, more breathing room, black/green terminal visuals, and rare deliberate rule bends that are still reported by the checker.
+- Whole-section refrain roles with straight/dubby returns and gentle/dubby developments.
+- Suspension gravity with per-voice pedal controls, stepwise resolution pressure, and checker reporting for overlong held notes.
 - Slower staged generation pass with a final output checker for timing, range, cadence, tendency-tone, overlap, and parallel-perfect warnings.
 - Clean Equal Temperament and Amy Dub Intonation MIDI exports: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When Tempo map is on, a separate conductor track writes BPM and time signatures for DAWs that read them. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes.
 - Multiple single-voice Bend MIDI output for pitch-bend experiments.

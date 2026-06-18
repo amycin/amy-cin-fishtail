@@ -18,6 +18,7 @@ function main() {
   if (smoke) {
     failed = !runSmokeTests();
     failed = !runParallelRuleTests() || failed;
+    failed = !runRefrainAndSuspensionTests() || failed;
   }
 
   for (const filePath of args) {
@@ -57,9 +58,11 @@ function runSmokeTests() {
     const velocityReportOk = piece.report.includes("Velocity curve:");
     const velocityManifestOk = piece.manifest.velocity_curve?.low_velocity === 127 && piece.manifest.velocity_curve?.high_velocity === 90;
     const reassuranceOk = piece.audit.issues.length + piece.audit.warnings.length === 0 || piece.report.includes("Gemma says:");
-    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk && velocityOk && velocityReportOk && velocityManifestOk && reassuranceOk ? "ok" : "failed";
+    const suspensionManifestOk = piece.manifest.suspension_control?.mode === "musical_gravity";
+    const refrainManifestOk = piece.manifest.refrain && typeof piece.manifest.refrain.has_source === "boolean";
+    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk && velocityOk && velocityReportOk && velocityManifestOk && reassuranceOk && suspensionManifestOk && refrainManifestOk ? "ok" : "failed";
     console.log(`${status} ${test.name}: tracks=${result.trackCount}, notes=${result.notes}, tempos=${result.tempos}, warnings=${piece.audit.warnings.length}`);
-    if (!result.ok || piece.audit.issues.length || !dubReportOk || !velocityOk || !velocityReportOk || !velocityManifestOk || !reassuranceOk) {
+    if (!result.ok || piece.audit.issues.length || !dubReportOk || !velocityOk || !velocityReportOk || !velocityManifestOk || !reassuranceOk || !suspensionManifestOk || !refrainManifestOk) {
       ok = false;
       printMessages(
         result.issues,
@@ -70,6 +73,8 @@ function runSmokeTests() {
         velocityReportOk ? [] : ["Generation report is missing the velocity curve note."],
         velocityManifestOk ? [] : ["Manifest is missing the expected 127-to-90 velocity curve block."],
         reassuranceOk ? [] : ["Generation report is missing Gemma reassurance after checker notes."],
+        suspensionManifestOk ? [] : ["Manifest is missing suspension control metadata."],
+        refrainManifestOk ? [] : ["Manifest is missing refrain metadata."],
       );
     }
   }
@@ -191,6 +196,109 @@ function runParallelRuleTests() {
   return ok;
 }
 
+function runRefrainAndSuspensionTests() {
+  const context = makeAppContext();
+  const results = vm.runInContext(`
+    (() => {
+      function buildFeaturePiece() {
+        const settings = {
+          seed: "validation-refrain-features",
+          voices: 4,
+          tempo: 30,
+          includeTempoMap: true,
+          referenceNote: "A4",
+          referenceMidi: 69,
+          referenceHz: 432,
+          referenceAnchorA4Hz: 432,
+          tempoDivisor: 864,
+          breathing: 0.74,
+          density: 0.26,
+          strangeness: 0.16,
+          generationStyle: "fugue",
+          resolution: "literal",
+          outputMode: "equal",
+          dubMode: true,
+          pedalVoices: { bass: true, tenor: false, alto: false, soprano: false },
+          rootPc: 9,
+          rootNote: "A4",
+          rootMidi: 69,
+          rootFreq: 432,
+          sections: [
+            { bars: 2, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "refrain", treatment: "straight" },
+            { bars: 2, key: "G", mode: "mixolydian", meter: "4/4", cadence: "dub_suspension", role: "refrain", treatment: "dubby" },
+            { bars: 2, key: "A", mode: "gravity_melodic_minor", meter: "3/4", cadence: "minor_authentic", role: "development", treatment: "gentle" },
+            { bars: 2, key: "F", mode: "mixolydian", meter: "3/4", cadence: "plagal", role: "development", treatment: "dubby" },
+          ],
+        };
+        return buildPiece(settings, makeRng(settings.seed));
+      }
+
+      function suspensionSummary({ voice = "soprano", midi = 72, durationSteps = 16, pedal = false, split = null }) {
+        const section = { bars: 4, key: "C", mode: "major", meter: "4/4", cadence: "authentic", startTick: 0, barTicks: 1920, numerator: 4, denominator: 4 };
+        const settings = { tempo: 60, voices: 4, pedalVoices: { bass: pedal, tenor: false, alto: false, soprano: false } };
+        const byVoice = { bass: [], tenor: [], alto: [], soprano: [] };
+        if (split) {
+          byVoice[voice] = split.map((event) => ({ ...event, voice }));
+        } else {
+          byVoice[voice] = [{ tick: 0, duration: durationSteps * 480, midi, carrierMidi: midi, voice }];
+        }
+        const summary = { suspensionChecks: 0, suspensionsDetected: 0, suspensionsResolved: 0, overlongSuspensions: 0, pedalHolds: 0 };
+        const warnings = [];
+        auditSuspensionTimeline(settings, [section], byVoice, [voice], summary, (message) => warnings.push(message));
+        return { summary, warnings };
+      }
+
+      const piece = buildFeaturePiece();
+      const overlongSoprano = suspensionSummary({ voice: "soprano", midi: 72 });
+      const bassPedal = suspensionSummary({ voice: "bass", midi: 48, pedal: true });
+      const bassBadPedal = suspensionSummary({ voice: "bass", midi: 50, pedal: true });
+      const resolved = suspensionSummary({
+        voice: "soprano",
+        split: [
+          { tick: 0, duration: 12 * 480, midi: 72, carrierMidi: 72 },
+          { tick: 12 * 480, duration: 4 * 480, midi: 74, carrierMidi: 74 },
+        ],
+      });
+
+      return [
+        {
+          name: "refrain metadata",
+          ok: piece.manifest.refrain.has_source
+            && piece.manifest.refrain.returns >= 1
+            && piece.manifest.refrain.developments >= 2
+            && piece.manifest.refrain.dubby_treatments >= 2
+            && piece.manifest.pedal_voices.bass === true
+            && piece.report.includes("Refrain development"),
+        },
+        {
+          name: "overlong soprano suspension warns",
+          ok: overlongSoprano.summary.suspensionsDetected >= 1 && overlongSoprano.summary.overlongSuspensions >= 1 && overlongSoprano.warnings.length >= 1,
+        },
+        {
+          name: "bass tonic pedal allowed",
+          ok: bassPedal.summary.pedalHolds >= 1 && bassPedal.summary.overlongSuspensions === 0 && bassPedal.warnings.length === 0,
+        },
+        {
+          name: "bass non-pedal pitch warns",
+          ok: bassBadPedal.summary.overlongSuspensions >= 1 && bassBadPedal.warnings.length >= 1,
+        },
+        {
+          name: "stepwise suspension resolution counted",
+          ok: resolved.summary.suspensionsDetected >= 1 && resolved.summary.suspensionsResolved >= 1,
+        },
+      ];
+    })()
+  `, context);
+
+  let ok = true;
+  for (const result of results) {
+    const status = result.ok ? "ok" : "failed";
+    console.log(`${status} feature ${result.name}`);
+    if (!result.ok) ok = false;
+  }
+  return ok;
+}
+
 function makeAppContext() {
   const context = {
     console,
@@ -237,6 +345,7 @@ function buildSmokePiece(context, test) {
     resolution: test.resolution,
     outputMode: test.outputMode,
     dubMode: Boolean(test.dubMode),
+    pedalVoices: { bass: Boolean(test.dubMode), tenor: false, alto: false, soprano: false },
     rootPc: 9,
     rootNote: "A4",
     rootMidi: 69,
