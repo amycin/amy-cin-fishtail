@@ -42,6 +42,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Reference-pitch menu and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A4 = 432 Hz and `n = 864`, giving 30.0000 BPM.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.
+- Optional Dub Gravity switch for steadier root/fifth bass, offbeat middle-voice skank gestures, more breathing room, black/green terminal visuals, and rare deliberate rule bends that are still reported by the checker.
 - Slower staged generation pass with a final output checker for timing, range, cadence, tendency-tone, overlap, and parallel-perfect warnings.
 - Clean Equal Temperament and Amy Dub Intonation MIDI exports: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When Tempo map is on, a separate conductor track writes BPM and time signatures for DAWs that read them. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes.
 - Multiple single-voice Bend MIDI output for pitch-bend experiments.
@@ -69,6 +70,7 @@ Rule ideas currently represented in the prototype:
 - Harmonic minor gravity: the raised leading tone resolves upward to tonic.
 - Gravity melodic minor: raised sixth tends upward, leading tone rises to tonic, flat seventh falls, and flat sixth falls to fifth.
 - Breath/rest gravity: the voices are allowed to leave space so another voice can answer.
+- Dub gravity: when the DUB switch is on, the bass favors grounded repeated roots and fifths, inner voices can answer with offbeat skank-like chords, and the generator may occasionally allow a parallel perfect motion while still logging it as a checker warning.
 
 Amy Dub ratio slots, chromatic from the selected root:
 

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=24">
+    <link rel="stylesheet" href="styles.css?v=26">
   </head>
   <body>
     <main class="shell">
@@ -79,6 +79,13 @@
                 <span>Tempo data</span>
                 <span class="switch-control">
                   <input id="embedTempoInput" type="checkbox" checked>
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
+              </label>
+              <label class="switch-label dub-switch" title="Dub Gravity: grounded bass, offbeat skank, roomier rule gravity">
+                <span>DUB</span>
+                <span class="switch-control">
+                  <input id="dubModeInput" type="checkbox">
                   <span class="switch-track" aria-hidden="true"></span>
                 </span>
               </label>
@@ -196,6 +203,7 @@
               <section>
                 <h3>Modes And Gravity</h3>
                 <p>Major, harmonic minor, modal scales, and gravity melodic minor are available. Gravity melodic minor allows extra minor-key passing tones with tendency rules: leading tones rise, raised sixths lift, flat sevenths fall, and flat sixths resolve down.</p>
+                <p><strong>Dub Gravity</strong> keeps the counterpoint engine but biases the bass toward repeated root/fifth gravity, gives middle voices offbeat skank gestures, makes the upper voices breathe more, and allows the occasional parallel-perfect error to pass through while still reporting it in the checker. The interface also shifts into a black and green terminal-style view while DUB is armed.</p>
               </section>
 
               <section>
@@ -267,6 +275,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=32"></script>
+    <script src="src/app.js?v=34"></script>
   </body>
 </html>

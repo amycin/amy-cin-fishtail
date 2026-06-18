@@ -82,6 +82,169 @@ select {
   transform: scale(1.03);
 }
 
+body.dub-mode {
+  color-scheme: dark;
+  --ink: #dfffe8;
+  --muted: #8fe7aa;
+  --panel: rgba(0, 18, 8, 0.84);
+  --panel-strong: rgba(0, 28, 12, 0.92);
+  --line: rgba(74, 255, 131, 0.28);
+  --line-hot: rgba(117, 255, 120, 0.78);
+  --rose: #b7ff4d;
+  --orange: #39ff88;
+  --amber: #d5ff73;
+  --cyan: #00ffc8;
+  --green: #39ff88;
+  --paper: #021008;
+  --cream: #03180a;
+  --tech: #39ff88;
+  --tech-soft: rgba(57, 255, 136, 0.22);
+  --shadow: rgba(0, 0, 0, 0.62);
+  background:
+    radial-gradient(circle at 50% 34%, rgba(57, 255, 136, 0.16), transparent 34%),
+    radial-gradient(circle at 86% 10%, rgba(0, 255, 200, 0.1), transparent 30%),
+    linear-gradient(145deg, #000302 0%, #001108 54%, #020704 100%);
+}
+
+body.dub-mode .instrument {
+  border-color: rgba(57, 255, 136, 0.34);
+  background:
+    linear-gradient(90deg, rgba(57, 255, 136, 0.08) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(57, 255, 136, 0.06) 1px, transparent 1px),
+    radial-gradient(circle at 50% 26%, rgba(57, 255, 136, 0.08), transparent 38%),
+    rgba(0, 9, 4, 0.92);
+  background-size: 38px 38px, 38px 38px, auto, auto;
+  box-shadow: 0 24px 86px rgba(0, 0, 0, 0.68), inset 0 0 80px rgba(57, 255, 136, 0.06);
+}
+
+body.dub-mode .instrument::after {
+  border-color: rgba(183, 255, 77, 0.2);
+  box-shadow: inset 0 0 140px rgba(0, 255, 200, 0.08);
+}
+
+body.dub-mode .art-layer {
+  opacity: 0.14;
+  filter: saturate(0.72) hue-rotate(78deg) contrast(1.24);
+  mix-blend-mode: screen;
+}
+
+body.dub-mode .topbar {
+  border-bottom-color: rgba(57, 255, 136, 0.26);
+  background: linear-gradient(180deg, rgba(0, 20, 8, 0.9), rgba(0, 9, 4, 0.6));
+}
+
+body.dub-mode .eyebrow,
+body.dub-mode .row-index,
+body.dub-mode .tempo-slider-field span {
+  color: #b7ff4d;
+  text-shadow: 0 0 10px rgba(183, 255, 77, 0.28);
+}
+
+body.dub-mode .status-cluster span,
+body.dub-mode .feedback-link,
+body.dub-mode .panel-head span,
+body.dub-mode .switch-label,
+body.dub-mode select,
+body.dub-mode input[type="number"],
+body.dub-mode input[type="text"] {
+  color: var(--ink);
+  border-color: rgba(57, 255, 136, 0.3);
+  background: rgba(0, 20, 8, 0.72);
+  box-shadow: inset 0 0 18px rgba(57, 255, 136, 0.04);
+}
+
+body.dub-mode .panel,
+body.dub-mode .help-card {
+  border-color: rgba(57, 255, 136, 0.28);
+  background:
+    linear-gradient(90deg, rgba(57, 255, 136, 0.06) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(57, 255, 136, 0.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(0, 24, 10, 0.92), rgba(0, 11, 5, 0.86));
+  background-size: 24px 24px, 24px 24px, auto;
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.44), inset 0 0 24px rgba(57, 255, 136, 0.035);
+}
+
+body.dub-mode .section-row,
+body.dub-mode .help-body section,
+body.dub-mode pre {
+  border-color: rgba(57, 255, 136, 0.18);
+  background: rgba(0, 14, 6, 0.64);
+}
+
+body.dub-mode .help-body p,
+body.dub-mode .help-body li,
+body.dub-mode .help-body code,
+body.dub-mode pre {
+  color: #dfffe8;
+}
+
+body.dub-mode button,
+body.dub-mode .icon-button {
+  color: var(--ink);
+  border-color: rgba(57, 255, 136, 0.36);
+  background: rgba(0, 24, 10, 0.78);
+}
+
+body.dub-mode button:hover:not(:disabled),
+body.dub-mode .feedback-link:hover {
+  border-color: rgba(183, 255, 77, 0.58);
+  background: rgba(57, 255, 136, 0.14);
+}
+
+body.dub-mode button:disabled {
+  color: rgba(223, 255, 232, 0.58);
+  border-color: rgba(57, 255, 136, 0.18);
+  background: rgba(0, 14, 6, 0.58);
+}
+
+body.dub-mode .switch-track {
+  border-color: rgba(57, 255, 136, 0.34);
+  background: rgba(0, 12, 5, 0.84);
+  box-shadow: inset 0 0 12px rgba(57, 255, 136, 0.12);
+}
+
+body.dub-mode .switch-track::after {
+  background: linear-gradient(135deg, #eaffef, #39ff88);
+  box-shadow: 0 0 12px rgba(57, 255, 136, 0.4);
+}
+
+body.dub-mode .generator-core {
+  border-bottom-color: rgba(57, 255, 136, 0.2);
+  background:
+    linear-gradient(90deg, rgba(57, 255, 136, 0.12) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(57, 255, 136, 0.09) 1px, transparent 1px),
+    radial-gradient(circle at 50% 50%, rgba(57, 255, 136, 0.1), transparent 46%),
+    linear-gradient(120deg, #000302, #001108);
+  background-size: 22px 22px, 22px 22px, auto, auto;
+}
+
+body.dub-mode .primary-button,
+body.dub-mode button.primary-button.is-generating {
+  color: #eaffef;
+  border-color: rgba(183, 255, 77, 0.62);
+  background: linear-gradient(135deg, rgba(57, 255, 136, 0.22), rgba(0, 255, 200, 0.12), rgba(183, 255, 77, 0.16));
+  box-shadow: inset 0 0 18px rgba(57, 255, 136, 0.12), 0 0 18px rgba(57, 255, 136, 0.12);
+}
+
+body.dub-mode .dub-switch {
+  color: #eaffef;
+  border-color: rgba(183, 255, 77, 0.44);
+  background: linear-gradient(135deg, rgba(57, 255, 136, 0.22), rgba(0, 255, 200, 0.08));
+}
+
+body.dub-mode .dub-switch .switch-control input:checked + .switch-track {
+  border-color: rgba(183, 255, 77, 0.7);
+  background: linear-gradient(90deg, rgba(57, 255, 136, 0.4), rgba(183, 255, 77, 0.28));
+  box-shadow: inset 0 0 16px rgba(57, 255, 136, 0.24), 0 0 18px rgba(57, 255, 136, 0.22);
+}
+
+body.dub-mode .dice {
+  color: #001108;
+  border-color: rgba(183, 255, 77, 0.32);
+  background: linear-gradient(145deg, rgba(223, 255, 232, 0.9), rgba(57, 255, 136, 0.96) 45%, rgba(183, 255, 77, 0.78));
+  filter: drop-shadow(0 10px 18px rgba(57, 255, 136, 0.2));
+}
+
 .topbar,
 .control-grid,
 .output-panel {
@@ -382,6 +545,27 @@ input[type="range"] {
 .switch-control input:focus-visible + .switch-track {
   outline: 2px solid rgba(38, 179, 193, 0.62);
   outline-offset: 3px;
+}
+
+.dub-switch {
+  color: #a9362d;
+  border-color: rgba(227, 93, 71, 0.34);
+  background: linear-gradient(135deg, rgba(255, 246, 209, 0.66), rgba(255, 220, 142, 0.48));
+}
+
+.dub-switch > span:first-child {
+  font-weight: 860;
+  letter-spacing: 0;
+}
+
+.dub-switch .switch-control input:checked + .switch-track {
+  border-color: rgba(227, 93, 71, 0.6);
+  background: linear-gradient(90deg, rgba(232, 80, 58, 0.4), rgba(248, 177, 61, 0.42));
+  box-shadow: inset 0 0 14px rgba(232, 80, 58, 0.24), 0 0 16px rgba(248, 177, 61, 0.18);
+}
+
+.dub-switch .switch-control input:checked + .switch-track::after {
+  background: linear-gradient(135deg, #fff7da, #f26044);
 }
 
 .dice-row {

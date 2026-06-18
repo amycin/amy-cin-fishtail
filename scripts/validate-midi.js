@@ -41,6 +41,7 @@ function runSmokeTests() {
     { name: "equal-tempo-off", outputMode: "equal", resolution: "literal", includeTempoMap: false, expectedTracks: 4, expectTempo30: false, allowBendEvents: false },
     { name: "amy-dub-carriers", outputMode: "retuner", resolution: "nearest-ratio", includeTempoMap: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: false },
     { name: "bend-midi", outputMode: "bend", resolution: "nearest-ratio", includeTempoMap: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: true },
+    { name: "dub-gravity", outputMode: "retuner", resolution: "nearest-ratio", includeTempoMap: true, dubMode: true, expectedTracks: 5, expectTempo30: true, allowBendEvents: false },
   ];
 
   let ok = true;
@@ -51,11 +52,12 @@ function runSmokeTests() {
       expectedTracks: test.expectedTracks,
       expectTempo30: test.expectTempo30,
     });
-    const status = result.ok && piece.audit.issues.length === 0 ? "ok" : "failed";
+    const dubReportOk = !test.dubMode || piece.report.includes("Dub checker:");
+    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk ? "ok" : "failed";
     console.log(`${status} ${test.name}: tracks=${result.trackCount}, notes=${result.notes}, tempos=${result.tempos}, warnings=${piece.audit.warnings.length}`);
-    if (!result.ok || piece.audit.issues.length) {
+    if (!result.ok || piece.audit.issues.length || !dubReportOk) {
       ok = false;
-      printMessages(result.issues, result.warnings, piece.audit.issues);
+      printMessages(result.issues, result.warnings, piece.audit.issues, dubReportOk ? [] : ["Dub Gravity report is missing the Dub checker note."]);
     }
   }
   return ok;
@@ -69,7 +71,7 @@ function runParallelRuleTests() {
       const sectionMeta = [{ key: "C", mode: "major", bars: 1, startTick: 0, barTicks: 480, numerator: 1, denominator: 4 }];
       const settings = { tempo: 60 };
 
-      function candidateResult({ previousLower, previousUpper, currentLower, currentUpper, strong }) {
+      function candidateResult({ previousLower, previousUpper, currentLower, currentUpper, strong, dubMode = false, rngValue = 0.99 }) {
         return validateCandidate(
           { midi: currentUpper, symbolicOffset: mod(currentUpper, 12) },
           {
@@ -81,6 +83,9 @@ function runParallelRuleTests() {
             debts: {},
             voice: "soprano",
             strong,
+            cadenceStage: null,
+            settings: { dubMode, strangeness: 0 },
+            rng: () => rngValue,
           },
         );
       }
@@ -123,6 +128,13 @@ function runParallelRuleTests() {
           expectedType: "direct-perfect",
         },
         {
+          name: "dub allows a rare parallel fifth",
+          args: { previousLower: 48, previousUpper: 55, currentLower: 50, currentUpper: 57, strong: false, dubMode: true, rngValue: 0 },
+          expectViolation: true,
+          expectCandidateReject: false,
+          expectedType: "parallel-perfect",
+        },
+        {
           name: "contrary motion into fifth",
           args: { previousLower: 48, previousUpper: 59, currentLower: 50, currentUpper: 57, strong: true },
           expectViolation: false,
@@ -141,6 +153,7 @@ function runParallelRuleTests() {
           candidateRejected: candidate.ok === false && Boolean(candidate.parallelReject),
           checkerWarned: checked.summary.parallelPerfects > 0 && checked.warnings.length > 0,
           expectViolation: test.expectViolation,
+          expectCandidateReject: test.expectCandidateReject ?? test.expectViolation,
           warnings: checked.warnings,
         };
       });
@@ -150,14 +163,14 @@ function runParallelRuleTests() {
   let ok = true;
   for (const result of results) {
     const classifierOk = result.classifierType === result.expectedType;
-    const candidateOk = result.candidateRejected === result.expectViolation;
+    const candidateOk = result.candidateRejected === result.expectCandidateReject;
     const checkerOk = result.checkerWarned === result.expectViolation;
     const status = classifierOk && candidateOk && checkerOk ? "ok" : "failed";
     console.log(`${status} parallel-rule ${result.name}: classifier=${result.classifierType || "none"}, candidateRejected=${result.candidateRejected}, checkerWarned=${result.checkerWarned}`);
     if (status !== "ok") {
       ok = false;
       printMessages([
-        `Expected classifier ${result.expectedType || "none"}, candidateRejected ${result.expectViolation}, checkerWarned ${result.expectViolation}.`,
+        `Expected classifier ${result.expectedType || "none"}, candidateRejected ${result.expectCandidateReject}, checkerWarned ${result.expectViolation}.`,
         ...result.warnings,
       ]);
     }
@@ -210,6 +223,7 @@ function buildSmokePiece(context, test) {
     generationStyle: "fugue",
     resolution: test.resolution,
     outputMode: test.outputMode,
+    dubMode: Boolean(test.dubMode),
     rootPc: 9,
     rootNote: "A4",
     rootMidi: 69,

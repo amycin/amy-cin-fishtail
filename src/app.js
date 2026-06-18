@@ -8,6 +8,14 @@ const GENERATE_MIN_MS = 4200;
 const WORMHOLE_CYCLE_MS = 36000;
 const WORMHOLE_U_SEGMENTS = 24;
 const WORMHOLE_V_SEGMENTS = 7;
+const DUB_RELAX_LINES = [
+  "Relax: Dub Gravity is active, the bass is holding the room.",
+  "Take it easy: the checker found the groove and left the smoke in.",
+  "Irie: rare rule bends are being reported, not hidden.",
+  "Breathe: the skank is allowed to answer between the pillars.",
+  "Low and steady: bass gravity is carrying the message.",
+  "Easy now: the machine is in dub mode and the checker is listening softly.",
+];
 const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const KEY_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const REFERENCE_NOTE_NAMES = buildReferenceNoteNames(2, 6);
@@ -193,6 +201,7 @@ document.addEventListener("DOMContentLoaded", () => {
   updateTempoControls();
   renderSections();
   bindEvents();
+  updateDubModeUi();
   setupMotionInput();
   initTorusCore();
   drawCore();
@@ -209,6 +218,7 @@ function bindElements() {
     "voicesInput",
     "tempoInput",
     "embedTempoInput",
+    "dubModeInput",
     "referenceNoteInput",
     "referenceFreqInput",
     "tempoDivisorInput",
@@ -282,6 +292,10 @@ function bindEvents() {
   });
   els.tempoDivisorInput.addEventListener("input", updateTempoControls);
   els.rootNoteInput.addEventListener("change", () => updateBendReference(true));
+  els.dubModeInput.addEventListener("change", () => {
+    updateDubModeUi();
+    animateFor(1200);
+  });
   els.generateButton.addEventListener("click", generatePiece);
   els.downloadMidiButton.addEventListener("click", () => downloadLast("midi"));
   els.downloadJsonButton.addEventListener("click", () => downloadLast("json"));
@@ -353,6 +367,16 @@ function updateBendControls() {
     node.hidden = !showBendReference;
   });
   if (showBendReference) updateBendReference(false);
+}
+
+function updateDubModeUi() {
+  const enabled = Boolean(els.dubModeInput?.checked);
+  document.body?.classList.toggle("dub-mode", enabled);
+  if (enabled) {
+    els.statusLabel.textContent = "DUB armed";
+  } else if (els.statusLabel.textContent === "DUB armed") {
+    els.statusLabel.textContent = "Ready";
+  }
 }
 
 function updateBendReference(overwrite) {
@@ -651,6 +675,7 @@ function readSettings(seed) {
     voices: clamp(parseInt(els.voicesInput.value, 10) || 4, 2, 4),
     tempo: clamp(parseFloat(els.tempoInput.value) || 72, 30, 220),
     includeTempoMap: Boolean(els.embedTempoInput.checked),
+    dubMode: Boolean(els.dubModeInput.checked),
     referenceNote: els.referenceNoteInput.value || "A4",
     referenceMidi: selectedReferenceMidi(),
     referenceHz: currentReferenceHz(),
@@ -695,6 +720,7 @@ function buildPiece(settings, rng) {
     const entries = planEntries(activeVoices, steps, meter, rng, settings);
     const lastPitches = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
     const lastLeaps = Object.fromEntries(activeVoices.map((voice) => [voice, 0]));
+    const lastOffsets = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
 
     for (let step = 0; step < steps; step += 1) {
       const pulseInBar = step % meter.numerator;
@@ -723,6 +749,7 @@ function buildPiece(settings, rng) {
           upperVoice,
           lastPitches,
           lastLeaps,
+          lastOffsets,
           debts,
           subject,
           entries,
@@ -740,6 +767,7 @@ function buildPiece(settings, rng) {
         noteGrid[voice].push(result);
         lastLeaps[voice] = lastPitches[voice] == null ? 0 : result.midi - lastPitches[voice];
         lastPitches[voice] = result.midi;
+        lastOffsets[voice] = mod(result.symbolicOffset, 12);
         if (result.resolvedDebt) resolvedTendencies += 1;
         avoidedParallels += result.parallelRejects;
       });
@@ -816,7 +844,8 @@ function chooseVoiceEvent(context) {
   const { settings, rng, strong, cadenceStage, voice, mode, section, step, entries, subject } = context;
   const debt = context.debts[voice];
   const canRest = !cadenceStage && !debt && step > 0;
-  const restChance = canRest ? (0.05 + settings.breathing * 0.22 - settings.density * 0.08) : 0;
+  const baseRestChance = canRest ? (0.05 + settings.breathing * 0.22 - settings.density * 0.08) : 0;
+  const restChance = dubRestChance(context, baseRestChance);
   if (rng() < restChance && shouldVoiceBreathe(context)) return { rest: true };
 
   const offsets = cadenceStage
@@ -849,8 +878,32 @@ function chooseVoiceEvent(context) {
 function shouldVoiceBreathe(context) {
   const { voice, step, meter, rng, settings } = context;
   const phraseEdge = step % meter.numerator === meter.numerator - 1;
+  if (settings.dubMode) {
+    if (voice === "bass") return phraseEdge && rng() < settings.breathing * 0.24;
+    if (context.strong && !context.cadenceStage) return true;
+    if (isDubSkankVoice(voice) && isDubOffbeat(context)) return rng() < 0.38;
+  }
   const voiceBias = voice === "soprano" || voice === "bass" ? 1.25 : 0.88;
   return phraseEdge || rng() < settings.breathing * voiceBias;
+}
+
+function dubRestChance(context, baseRestChance) {
+  const { settings, voice, strong, cadenceStage } = context;
+  if (!settings.dubMode || cadenceStage) return baseRestChance;
+  if (voice === "bass") return baseRestChance * 0.18;
+  if (isDubSkankVoice(voice)) {
+    return strong ? clamp(baseRestChance + 0.32, 0, 0.84) : clamp(baseRestChance * 0.32, 0, 0.42);
+  }
+  if (voice === "soprano") return strong ? clamp(baseRestChance + 0.2, 0, 0.78) : clamp(baseRestChance + 0.08, 0, 0.72);
+  return clamp(baseRestChance + 0.08, 0, 0.72);
+}
+
+function isDubSkankVoice(voice) {
+  return voice === "tenor" || voice === "alto";
+}
+
+function isDubOffbeat(context) {
+  return !context.strong && context.step % context.meter.numerator > 0;
 }
 
 function cadenceOffsets(context) {
@@ -875,6 +928,9 @@ function mapVoiceToChordIndex(voiceIndex, voiceCount) {
 
 function motifOrFieldOffsets(context) {
   const { subject, entries, voice, step, mode, strong, rng, settings, section } = context;
+  if (settings.dubMode && voice === "bass") return dubBassOffsets(context);
+  if (settings.dubMode && isDubSkankVoice(voice) && isDubOffbeat(context) && rng() < 0.72) return dubSkankOffsets(context);
+
   const entryStart = entries[voice];
   const inSubject = step >= entryStart && step < entryStart + subject.length;
   if (inSubject && rng() > settings.breathing * 0.18) {
@@ -895,10 +951,88 @@ function motifOrFieldOffsets(context) {
   return pool;
 }
 
+function dubBassOffsets(context) {
+  const primary = dubBassPrimaryOffset(context);
+  const previous = context.lastOffsets?.bass;
+  const pulseInBar = context.step % context.meter.numerator;
+  const phraseEdge = pulseInBar === context.meter.numerator - 1;
+  const third = context.mode.cadenceQuality === "minor" ? 3 : 4;
+  const color = context.mode.offsets.includes(10) ? 10 : context.mode.offsets.includes(9) ? 9 : 5;
+  const pool = [primary, primary, primary, primary, 0, 0, 7, 7, 5, ...context.mode.stable];
+
+  if (previous != null) {
+    pool.push(...dubBassApproachOffsets(previous, primary, context));
+    if (previous === primary) pool.push(7, 5, color);
+  }
+  if (phraseEdge) pool.push(5, 7, color, third);
+  if (context.strong) pool.push(0, 0, primary);
+  return pool;
+}
+
+function dubBassPrimaryOffset(context) {
+  const pattern = dubBassPattern(context);
+  return mod(pattern[context.step % pattern.length], 12);
+}
+
+function dubBassPattern(context) {
+  const { meter, barIndex, section } = context;
+  const selector = mod(barIndex + noteToPc(section.key), 4);
+  if (meter.denominator === 8) {
+    return [
+      [0, 0, 7, 0, 5, 7],
+      [0, 7, 10, 7, 5, 7],
+      [0, 0, 5, 7, 10, 7],
+      [0, 5, 7, 0, 7, 5],
+    ][selector];
+  }
+  if (meter.numerator === 3) {
+    return [
+      [0, 0, 7],
+      [0, 5, 7],
+      [0, 10, 7],
+      [0, 7, 5],
+    ][selector];
+  }
+  return [
+    [0, 0, 7, 5],
+    [0, 7, 0, 10],
+    [0, 5, 7, 0],
+    [0, 0, 10, 7],
+  ][selector];
+}
+
+function dubBassApproachOffsets(previous, primary, context) {
+  const modeOffsets = context.mode.offsets.map((offset) => mod(offset, 12));
+  const candidates = [
+    primary,
+    mod(primary + 2, 12),
+    mod(primary - 2, 12),
+    mod(primary + 5, 12),
+    mod(primary - 5, 12),
+    7,
+    5,
+    10,
+  ].filter((offset) => modeOffsets.includes(offset) || context.mode.stable.includes(offset) || offset === 10);
+  candidates.sort((a, b) => circularDistance(previous, a) - circularDistance(previous, b));
+  return [candidates[0] ?? primary, candidates[1] ?? primary, primary];
+}
+
+function dubSkankOffsets(context) {
+  const third = context.mode.cadenceQuality === "minor" ? 3 : 4;
+  const color = context.mode.offsets.includes(10) ? 10 : context.mode.offsets.includes(11) ? 11 : 9;
+  return [third, 7, 5, color, 0, ...context.mode.stable];
+}
+
 function shuffledWeightedOffsets(offsets, mode, strong, settings, rng) {
-  const unique = [...new Set(offsets.map((offset) => mod(offset, 12)))];
+  const counts = new Map();
+  offsets.forEach((offset) => {
+    const normalized = mod(offset, 12);
+    counts.set(normalized, (counts.get(normalized) || 0) + 1);
+  });
+  const unique = [...counts.keys()];
   const weighted = unique.map((offset) => {
     let weight = 1;
+    weight += (counts.get(offset) - 1) * 1.6;
     if (mode.stable.includes(offset)) weight += strong ? 5 : 2;
     if (offset === 0 || offset === 7) weight += 2;
     if (mode.tendencies && mode.tendencies[offset]) weight += settings.strangeness * 2.2;
@@ -956,7 +1090,7 @@ function ratioResolutionScore(midi, offset, tonicPc, settings) {
 }
 
 function validateCandidate(candidate, context) {
-  const { chosen, voiceIndex, activeVoices, lastPitches, lastLeaps, debts, voice, strong } = context;
+  const { chosen, voiceIndex, activeVoices, lastPitches, lastLeaps, debts, voice, strong, settings } = context;
   const previous = lastPitches[voice];
   const debt = debts[voice];
   let resolvedDebt = false;
@@ -968,10 +1102,15 @@ function validateCandidate(candidate, context) {
     resolvedDebt = true;
   }
 
-  if (previous != null && Math.abs(candidate.midi - previous) > 12) return { ok: false };
+  const leapLimit = settings.dubMode && voice === "bass" ? 14 : 12;
+  if (previous != null && Math.abs(candidate.midi - previous) > leapLimit) return { ok: false };
   if (previous != null && Math.abs(lastLeaps[voice]) >= 7) {
     const recovery = candidate.midi - previous;
-    if (Math.sign(recovery) === Math.sign(lastLeaps[voice]) || Math.abs(recovery) > 2) return { ok: false };
+    const dubBassBounce = settings.dubMode
+      && voice === "bass"
+      && Math.sign(recovery) !== Math.sign(lastLeaps[voice])
+      && Math.abs(recovery) <= 7;
+    if (!dubBassBounce && (Math.sign(recovery) === Math.sign(lastLeaps[voice]) || Math.abs(recovery) > 2)) return { ok: false };
   }
 
   for (let i = 0; i < activeVoices.length; i += 1) {
@@ -997,6 +1136,7 @@ function validateCandidate(candidate, context) {
         strong,
       });
       if (motion) {
+        if (allowsDubRuleBend(context, motion)) continue;
         return { ok: false, parallelReject: true };
       }
     }
@@ -1033,6 +1173,14 @@ function classifyParallelPerfectMotion({ previousLower, previousUpper, currentLo
   return null;
 }
 
+function allowsDubRuleBend(context, motion) {
+  const { settings, cadenceStage, rng, voice } = context;
+  if (!settings.dubMode || cadenceStage) return false;
+  const baseChance = motion.type === "direct-perfect" ? 0.18 : 0.09;
+  const bassWeight = voice === "bass" ? 1.25 : 1;
+  return rng() < baseChance * bassWeight * (0.85 + settings.strangeness * 0.7);
+}
+
 function scoreCandidate(candidate, context) {
   const { mode, strong, lastPitches, voice, settings } = context;
   const offset = mod(candidate.symbolicOffset, 12);
@@ -1046,6 +1194,19 @@ function scoreCandidate(candidate, context) {
     if (motion <= 2) score += 4;
     if (motion <= 5) score += 1.5;
     if (motion >= 8) score -= 4;
+  }
+  if (settings.dubMode) {
+    if (voice === "bass") {
+      const primary = dubBassPrimaryOffset(context);
+      if (offset === primary) score += strong ? 9 : 6;
+      if (offset === 0 || offset === 7) score += 4;
+      if (lastPitches[voice] != null && candidate.midi === lastPitches[voice]) score += 5;
+    }
+    if (isDubSkankVoice(voice) && isDubOffbeat(context)) {
+      const third = mode.cadenceQuality === "minor" ? 3 : 4;
+      if ([third, 5, 7, 10, 11].includes(offset)) score += 4.5;
+    }
+    if (voice === "soprano" && !strong && mode.stable.includes(offset)) score += 2;
   }
   score -= (candidate.resolutionCents || 0) / 35;
   return Math.max(0.1, score);
@@ -1263,6 +1424,8 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
     generation_style: {
       id: settings.generationStyle,
       label: generationStyleLabel(settings.generationStyle),
+      dub_gravity: settings.dubMode,
+      dub_checker_note: settings.dubMode ? dubRelaxLine(settings.seed) : null,
     },
     intonation: {
       root_note: settings.rootNote,
@@ -1316,6 +1479,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push("");
   lines.push(`Seed: ${settings.seed}`);
   lines.push(`Style: ${generationStyleLabel(settings.generationStyle)}`);
+  lines.push(`Dub Gravity: ${settings.dubMode ? "on" : "off"}`);
   lines.push(`Tempo: ${settings.tempo.toFixed(4)} BPM`);
   lines.push(`MIDI tempo map: ${settings.includeTempoMap ? "on" : "off"}`);
   lines.push(`Reference pitch: ${settings.referenceNote} = ${settings.referenceHz.toFixed(4)} Hz`);
@@ -1348,6 +1512,9 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`  Grid checks: ${audit.summary.gridChecks}`);
   lines.push(`  Strong-beat vertical checks: ${audit.summary.strongBeatChecks}`);
   lines.push(`  Status: ${audit.ok ? "passed" : "review notes below"}`);
+  if (settings.dubMode) {
+    lines.push(`  Dub checker: ${dubRelaxLine(settings.seed)}`);
+  }
   if (audit.issues.length) {
     lines.push("  Issues");
     audit.issues.forEach((issue) => lines.push(`    - ${issue}`));
@@ -1377,6 +1544,15 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push("  Three.js is MIT licensed and acknowledged in CREDITS.md.");
   lines.push("  See CREDITS.md for theory and software inspirations.");
   return lines.join("\n");
+}
+
+function dubRelaxLine(seed) {
+  const text = String(seed || "dub");
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return DUB_RELAX_LINES[Math.abs(hash) % DUB_RELAX_LINES.length];
 }
 
 function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTicks) {
@@ -1757,6 +1933,31 @@ function generationStyleLabel(style) {
   return "Fugue";
 }
 
+function isDubModeVisual() {
+  return Boolean(els.dubModeInput?.checked);
+}
+
+function torusPalette(dubVisual = isDubModeVisual()) {
+  if (dubVisual) {
+    return {
+      torus: 0x36ff78,
+      torusActive: 0xc7ff6a,
+      negative: 0x00ffc8,
+      web: 0x78ff9a,
+      markerA: 0x39ff88,
+      markerB: 0xb7ff4d,
+    };
+  }
+  return {
+    torus: 0x29a9c7,
+    torusActive: 0xc7357f,
+    negative: 0xc7357f,
+    web: 0xc7357f,
+    markerA: 0x35a2b8,
+    markerB: 0xd72e7f,
+  };
+}
+
 function makeWormholeLineGeometry(THREE, uSegments, vSegments) {
   const lineCount = uSegments * vSegments * 2;
   const geometry = new THREE.BufferGeometry();
@@ -1924,6 +2125,7 @@ function renderTorusFrame(width, height, phase) {
   if (torusCore.lastOutputMode !== els.outputModeInput?.value) refreshTorusTuning();
 
   const now = Date.now();
+  const palette = torusPalette();
   const activeBoost = getGenerateEnvelope(now);
   const bootGlitch = Math.max(0, (state.bootGlitchUntil - now) / 2400);
   const motionAge = now - state.motionLastAt;
@@ -1957,14 +2159,17 @@ function renderTorusFrame(width, height, phase) {
   torusCore.group.rotation.z = idleLevel * Math.sin(time * 0.18) * 0.04 + activeBoost * Math.sin(time * 0.72) * 0.065 + state.motionTiltX * 0.05 + twitch * 1.6;
   torusCore.torus.rotation.z = idleLevel * Math.sin(time * 0.34) * 0.08 + activeBoost * Math.sin(time * 0.95) * 0.14 + bootGlitch * Math.sin(time * 8.2) * 0.035;
   torusCore.torus.material.opacity = 0.26 + idleBreath * 0.07 + negativeSpaceOpacity * 0.08 + activeBoost * 0.22 + bootGlitch * 0.16;
-  torusCore.torus.material.color.setHex((activeBoost > 0.28 || bootGlitch > 0.08) ? 0xc7357f : 0x29a9c7);
+  torusCore.torus.material.color.setHex((activeBoost > 0.28 || bootGlitch > 0.08) ? palette.torusActive : palette.torus);
   if (torusCore.negativeWire) {
     torusCore.negativeWire.rotation.copy(torusCore.torus.rotation);
     torusCore.negativeWire.material.opacity = negativeSpaceOpacity * 0.22 + activeBoost * 0.08 + bootGlitch * 0.06;
+    torusCore.negativeWire.material.color.setHex(palette.negative);
   }
   const scaffoldFocus = 1 - focusZoom * 0.46;
   torusCore.ratioLoop.material.opacity = (0.34 + activeBoost * 0.24 + bootGlitch * 0.18 + negativeSpaceOpacity * 0.08) * scaffoldFocus;
   torusCore.ratioWeb.material.opacity = (0.26 + activeBoost * 0.26 + bootGlitch * 0.18 + negativeSpaceOpacity * 0.08) * scaffoldFocus;
+  torusCore.ratioLoop.material.color.setHex(palette.web);
+  torusCore.ratioWeb.material.color.setHex(palette.web);
 
   torusCore.ratioMarkers.forEach((marker) => {
     const base = marker.userData.basePosition;
@@ -1980,6 +2185,9 @@ function renderTorusFrame(width, height, phase) {
     );
     marker.scale.setScalar(1 + idleLevel * Math.max(0, Math.sin(phase * 0.016 + slot)) * 0.06 + Math.max(activeBoost, bootGlitch) * Math.max(0, Math.sin(phase * 0.04 + slot)) * 0.18 - rimFold * 0.08);
     marker.material.opacity = 0.86 - focusZoom * 0.34 + activeBoost * 0.08;
+    const markerColor = ratioColorHex(slot, isDubModeVisual());
+    marker.material.color.setHex(markerColor);
+    marker.material.emissive.setHex(markerColor);
   });
   updateRatioConnectorGeometry();
 
@@ -2088,8 +2296,9 @@ function updateRatioConnectorGeometry() {
   torusCore.ratioWeb.geometry.attributes.position.needsUpdate = true;
 }
 
-function ratioColorHex(slot) {
-  return slot % 2 ? 0xd72e7f : 0x35a2b8;
+function ratioColorHex(slot, dubVisual = false) {
+  const palette = torusPalette(dubVisual);
+  return slot % 2 ? palette.markerB : palette.markerA;
 }
 
 function drawCore() {
@@ -2107,7 +2316,8 @@ function drawCore() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "rgba(255, 248, 220, 0.08)";
+  const dubVisual = isDubModeVisual();
+  ctx.fillStyle = dubVisual ? "rgba(0, 8, 3, 0.22)" : "rgba(255, 248, 220, 0.08)";
   ctx.fillRect(0, 0, width, height);
   const cx = width / 2;
   const cy = height / 2;
@@ -2116,10 +2326,10 @@ function drawCore() {
 
   const voidGlow = state.negativeSpaceOpacity || 0;
   const halo = ctx.createRadialGradient(cx, cy, 8, cx, cy, Math.min(width, height) * (0.34 + voidGlow * 0.12));
-  halo.addColorStop(0, `rgba(215, 46, 127, ${0.08 + voidGlow * 0.12})`);
-  halo.addColorStop(0.28, `rgba(41, 169, 199, ${0.08 + voidGlow * 0.08})`);
-  halo.addColorStop(0.55, "rgba(53, 162, 184, 0.06)");
-  halo.addColorStop(1, "rgba(255, 209, 102, 0)");
+  halo.addColorStop(0, dubVisual ? `rgba(183, 255, 77, ${0.1 + voidGlow * 0.16})` : `rgba(215, 46, 127, ${0.08 + voidGlow * 0.12})`);
+  halo.addColorStop(0.28, dubVisual ? `rgba(48, 255, 126, ${0.12 + voidGlow * 0.1})` : `rgba(41, 169, 199, ${0.08 + voidGlow * 0.08})`);
+  halo.addColorStop(0.55, dubVisual ? "rgba(0, 255, 200, 0.06)" : "rgba(53, 162, 184, 0.06)");
+  halo.addColorStop(1, dubVisual ? "rgba(0, 0, 0, 0)" : "rgba(255, 209, 102, 0)");
   ctx.fillStyle = halo;
   ctx.fillRect(0, 0, width, height);
 
@@ -2134,9 +2344,10 @@ function drawCore() {
 function drawGravityWaveField(ctx, width, height, phase) {
   const cx = width / 2;
   const cy = height / 2;
+  const dubVisual = isDubModeVisual();
   ctx.save();
   ctx.lineWidth = 0.56;
-  ctx.globalAlpha = 0.42 + state.animationVisualLevel * 0.3;
+  ctx.globalAlpha = (dubVisual ? 0.58 : 0.42) + state.animationVisualLevel * 0.3;
 
   for (let y = -18; y <= height + 18; y += 18) {
     ctx.beginPath();
@@ -2145,7 +2356,7 @@ function drawGravityWaveField(ctx, width, height, phase) {
       if (x === -16) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
     }
-    ctx.strokeStyle = "rgba(41, 169, 199, 0.38)";
+    ctx.strokeStyle = dubVisual ? "rgba(57, 255, 136, 0.42)" : "rgba(41, 169, 199, 0.38)";
     ctx.stroke();
   }
 
@@ -2156,7 +2367,7 @@ function drawGravityWaveField(ctx, width, height, phase) {
       if (y === -16) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
     }
-    ctx.strokeStyle = "rgba(61, 183, 178, 0.26)";
+    ctx.strokeStyle = dubVisual ? "rgba(183, 255, 77, 0.24)" : "rgba(61, 183, 178, 0.26)";
     ctx.stroke();
   }
 
@@ -2166,6 +2377,7 @@ function drawGravityWaveField(ctx, width, height, phase) {
 function drawApertureLens(ctx, width, height, phase) {
   const focus = state.focusZoom || 0;
   const voidGlow = state.negativeSpaceOpacity || 0;
+  const dubVisual = isDubModeVisual();
   const intensity = Math.max(focus, voidGlow * 0.72);
   if (intensity <= 0.025) return;
 
@@ -2177,13 +2389,15 @@ function drawApertureLens(ctx, width, height, phase) {
   ctx.globalAlpha = 0.18 + intensity * 0.36;
   ctx.lineWidth = 0.62;
   ctx.shadowBlur = 12 + intensity * 18;
-  ctx.shadowColor = `rgba(215, 46, 127, ${0.12 + intensity * 0.18})`;
+  ctx.shadowColor = dubVisual ? `rgba(57, 255, 136, ${0.18 + intensity * 0.22})` : `rgba(215, 46, 127, ${0.12 + intensity * 0.18})`;
 
   for (let ring = 0; ring < 4; ring += 1) {
     const radius = base * (1 + ring * 0.42 + Math.sin(phase * 0.012 + ring) * 0.035);
     ctx.beginPath();
     ctx.ellipse(cx, cy, radius * (1.55 + wobble), radius * (0.58 - wobble * 0.18), Math.sin(phase * 0.006) * 0.08, 0, Math.PI * 2);
-    ctx.strokeStyle = ring % 2 ? "rgba(215, 46, 127, 0.32)" : "rgba(41, 169, 199, 0.34)";
+    ctx.strokeStyle = dubVisual
+      ? (ring % 2 ? "rgba(183, 255, 77, 0.32)" : "rgba(57, 255, 136, 0.36)")
+      : (ring % 2 ? "rgba(215, 46, 127, 0.32)" : "rgba(41, 169, 199, 0.34)");
     ctx.stroke();
   }
 
@@ -2201,7 +2415,7 @@ function drawApertureLens(ctx, width, height, phase) {
       cx + Math.cos(angle) * outer,
       cy + Math.sin(angle) * outer * 0.58,
     );
-    ctx.strokeStyle = "rgba(41, 169, 199, 0.36)";
+    ctx.strokeStyle = dubVisual ? "rgba(0, 255, 200, 0.32)" : "rgba(41, 169, 199, 0.36)";
     ctx.stroke();
   }
 
@@ -2229,16 +2443,19 @@ function drawProjectedTorusFallback(ctx, width, height, phase) {
   const rx = Math.min(width, height) * 0.32;
   const ry = rx * 0.42;
   const tilt = Math.sin(phase * 0.008) * 0.14;
+  const dubVisual = isDubModeVisual();
 
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(tilt);
   ctx.shadowBlur = state.animationVisualLevel > 0.02 ? 18 : 10;
-  ctx.shadowColor = "rgba(215, 46, 127, 0.28)";
+  ctx.shadowColor = dubVisual ? "rgba(57, 255, 136, 0.34)" : "rgba(215, 46, 127, 0.28)";
   for (let ring = -4; ring <= 4; ring += 1) {
     ctx.beginPath();
     ctx.ellipse(0, ring * 3.1, rx + Math.cos(phase * 0.018 + ring) * 3, ry + ring * 1.2, 0, 0, Math.PI * 2);
-    ctx.strokeStyle = ring % 2 ? "rgba(215, 46, 127, 0.22)" : "rgba(53, 162, 184, 0.28)";
+    ctx.strokeStyle = dubVisual
+      ? (ring % 2 ? "rgba(183, 255, 77, 0.24)" : "rgba(57, 255, 136, 0.32)")
+      : (ring % 2 ? "rgba(215, 46, 127, 0.22)" : "rgba(53, 162, 184, 0.28)");
     ctx.lineWidth = 0.72;
     ctx.stroke();
   }
