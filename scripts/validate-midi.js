@@ -12,7 +12,8 @@ const TEMPO_30_BYTES = [0x1e, 0x84, 0x80];
 function main() {
   const args = process.argv.slice(2);
   const strictNoteVoices = takeFlag(args, "--strict-note-voices");
-  const smoke = takeFlag(args, "--smoke") || args.length === 0;
+  const batchCount = takeOptionInt(args, "--batch", 0);
+  const smoke = takeFlag(args, "--smoke") || (args.length === 0 && batchCount === 0);
 
   let failed = false;
   if (smoke) {
@@ -20,6 +21,9 @@ function main() {
     failed = !runParallelRuleTests() || failed;
     failed = !runRefrainAndSuspensionTests() || failed;
     failed = !runFugueTests() || failed;
+  }
+  if (batchCount > 0) {
+    failed = !runBatchFallbackSafety(batchCount) || failed;
   }
 
   for (const filePath of args) {
@@ -34,6 +38,15 @@ function takeFlag(args, flag) {
   if (index === -1) return false;
   args.splice(index, 1);
   return true;
+}
+
+function takeOptionInt(args, flag, fallback) {
+  const index = args.indexOf(flag);
+  if (index === -1) return fallback;
+  const raw = args[index + 1];
+  args.splice(index, raw == null ? 1 : 2);
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function runSmokeTests() {
@@ -89,6 +102,97 @@ function runSmokeTests() {
     }
   }
   return ok;
+}
+
+function runBatchFallbackSafety(count) {
+  const context = makeAppContext();
+  const profiles = [
+    { name: "counterpoint", generationStyle: "counterpoint", outputMode: "equal", resolution: "literal", dubMode: false },
+    { name: "invention", generationStyle: "invention", outputMode: "equal", resolution: "literal", dubMode: false },
+    { name: "fugue", generationStyle: "fishtail_fugue", outputMode: "equal", resolution: "literal", dubMode: false },
+    { name: "dub-fugue", generationStyle: "fishtail_fugue", outputMode: "retuner", resolution: "nearest-ratio", dubMode: true },
+  ];
+  const totals = Object.fromEntries(profiles.map((profile) => [profile.name, makeBatchTotals()]));
+  let ok = true;
+
+  for (let index = 0; index < count; index += 1) {
+    const profile = profiles[index % profiles.length];
+    const piece = buildBatchPiece(context, profile, index);
+    const result = validateMidiBytes(Buffer.from(piece.midiBytes), {
+      allowBendEvents: profile.outputMode === "bend",
+      expectedTracks: 5,
+      expectTempo30: true,
+    });
+    const fallback = piece.manifest.fallback_safety || {};
+    const total = totals[profile.name];
+    total.pieces += 1;
+    total.notes += piece.events.length;
+    total.warnings += piece.audit.warnings.length;
+    total.parallelWarnings += piece.audit.summary.parallelPerfects || 0;
+    total.validated += fallback.validated || 0;
+    total.relationOnly += fallback.relationOnly || 0;
+    total.verticalRelaxed += fallback.verticalRelaxed || 0;
+    total.spacingRelaxed += fallback.spacingRelaxed || 0;
+    total.noParallelOnly += fallback.noParallelOnly || 0;
+    total.emergencyRests += fallback.emergencyRests || 0;
+    total.parallelBlocked += fallback.parallelBlocked || 0;
+
+    const pieceOk = result.ok && piece.audit.issues.length === 0 && fallback.mode === "validated_fallbacks_no_unchecked_parallel_perfects";
+    if (!pieceOk) {
+      ok = false;
+      total.failed = true;
+      printMessages([
+        `Batch ${profile.name} seed ${index} failed structural validation.`,
+        ...result.issues,
+        ...piece.audit.issues,
+      ]);
+    }
+  }
+
+  let nonDubNotes = 0;
+  let nonDubNoParallelOnly = 0;
+  let nonDubEmergencyRests = 0;
+  let nonDubCheckerParallels = 0;
+  for (const profile of profiles.filter((item) => !item.dubMode)) {
+    const total = totals[profile.name];
+    nonDubNotes += total.notes;
+    nonDubNoParallelOnly += total.noParallelOnly;
+    nonDubEmergencyRests += total.emergencyRests;
+    nonDubCheckerParallels += total.parallelWarnings;
+  }
+  const noParallelLimit = Math.max(3, Math.ceil(nonDubNotes * 0.0025));
+  let nonDubThresholdFailed = false;
+  if (nonDubEmergencyRests > 0 || nonDubNoParallelOnly > noParallelLimit || nonDubCheckerParallels > 0) {
+    ok = false;
+    nonDubThresholdFailed = true;
+    printMessages([
+      `Non-DUB fallback safety exceeded threshold: noParallelOnly=${nonDubNoParallelOnly}/${noParallelLimit}, emergencyRests=${nonDubEmergencyRests}, checkerParallels=${nonDubCheckerParallels}.`,
+    ]);
+  }
+
+  Object.entries(totals).forEach(([name, total]) => {
+    const profile = profiles.find((item) => item.name === name);
+    const status = total.failed || (nonDubThresholdFailed && !profile.dubMode) ? "review" : "ok";
+    console.log(`${status} batch ${name}: pieces=${total.pieces}, notes=${total.notes}, fallback validated=${total.validated}, relation=${total.relationOnly}, vertical=${total.verticalRelaxed}, spacing=${total.spacingRelaxed}, noParallel=${total.noParallelOnly}, rests=${total.emergencyRests}, blocked=${total.parallelBlocked}, checkerParallels=${total.parallelWarnings}`);
+  });
+  return ok;
+}
+
+function makeBatchTotals() {
+  return {
+    pieces: 0,
+    failed: false,
+    notes: 0,
+    warnings: 0,
+    parallelWarnings: 0,
+    validated: 0,
+    relationOnly: 0,
+    verticalRelaxed: 0,
+    spacingRelaxed: 0,
+    noParallelOnly: 0,
+    emergencyRests: 0,
+    parallelBlocked: 0,
+  };
 }
 
 function runParallelRuleTests() {
@@ -687,6 +791,41 @@ function buildSmokePiece(context, test) {
     (() => {
       const settings = {
         ...globalThis.__fishtailSmoke,
+        sections: structuredClone(DEFAULT_SECTIONS),
+      };
+      return buildPiece(settings, makeRng(settings.seed));
+    })()
+  `, context);
+}
+
+function buildBatchPiece(context, profile, index) {
+  context.__fishtailBatch = {
+    seed: `batch-${profile.name}-${String(index).padStart(4, "0")}`,
+    voices: 4,
+    tempo: 30,
+    includeTempoMap: true,
+    referenceNote: "A4",
+    referenceMidi: 69,
+    referenceHz: 432,
+    referenceAnchorA4Hz: 432,
+    tempoDivisor: 864,
+    breathing: 0.7,
+    density: 0.3,
+    strangeness: 0.18,
+    generationStyle: profile.generationStyle,
+    resolution: profile.resolution,
+    outputMode: profile.outputMode,
+    dubMode: Boolean(profile.dubMode),
+    pedalVoices: { bass: Boolean(profile.dubMode), tenor: false, alto: false, soprano: false },
+    rootPc: 9,
+    rootNote: "A4",
+    rootMidi: 69,
+    rootFreq: 432,
+  };
+  return vm.runInContext(`
+    (() => {
+      const settings = {
+        ...globalThis.__fishtailBatch,
         sections: structuredClone(DEFAULT_SECTIONS),
       };
       return buildPiece(settings, makeRng(settings.seed));

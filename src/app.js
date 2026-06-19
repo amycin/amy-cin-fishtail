@@ -1219,6 +1219,8 @@ function makeFallbackStats() {
   return {
     validated: 0,
     relationOnly: 0,
+    verticalRelaxed: 0,
+    spacingRelaxed: 0,
     noParallelOnly: 0,
     emergencyRests: 0,
     parallelBlocked: 0,
@@ -1816,6 +1818,7 @@ function buildPiece(settings, rng) {
       const strong = pulseInBar === 0 || meter.accents.includes(pulseInBar);
       const cadenceStage = getCadenceStage(step, steps, meter.numerator);
       const chosen = {};
+      const previousPitches = { ...lastPitches };
 
       activeVoices.forEach((voice, voiceIndex) => {
         const lowerVoice = voiceIndex > 0 ? activeVoices[voiceIndex - 1] : null;
@@ -1834,6 +1837,7 @@ function buildPiece(settings, rng) {
           voiceIndex,
           activeVoices,
           chosen,
+          previousPitches,
           lowerVoice,
           upperVoice,
           lastPitches,
@@ -1966,7 +1970,7 @@ function chooseVoiceEvent(context) {
     const resolved = resolvePitch(offset, context);
     const validation = validateCandidate(resolved, context);
     parallelRejects += validation.parallelReject ? 1 : 0;
-    if (validation.ok) candidates.push({ ...resolved, score: scoreCandidate(resolved, context), resolvedDebt: validation.resolvedDebt, parallelRejects });
+    if (validation.ok) candidates.push({ ...resolved, score: scoreCandidate(resolved, context), resolvedDebt: validation.resolvedDebt });
     if (candidates.length > 8) break;
   }
 
@@ -1979,15 +1983,14 @@ function chooseVoiceEvent(context) {
   const chosen = weightedChoice(rng, candidates.slice(0, 5).map((candidate, index) => [candidate, 6 - index]));
   if (chosen.resolvedDebt) context.debts[voice] = null;
   applyTendencyDebt(chosen, context);
-  return chosen;
+  return { ...chosen, parallelRejects };
 }
 
 function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest = false) {
-  const offsets = fallbackOffsetsForContext(context);
+  const fallbacks = fallbackCandidatesForContext(context);
   let parallelRejects = initialParallelRejects;
 
-  for (const offset of offsets) {
-    const fallback = resolvePitch(offset, context);
+  for (const fallback of fallbacks) {
     const validation = validateCandidate(fallback, context);
     parallelRejects += validation.parallelReject ? 1 : 0;
     if (validation.ok) {
@@ -1998,8 +2001,7 @@ function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest =
 
   if (canRest) return fallbackRest(context, parallelRejects);
 
-  for (const offset of offsets) {
-    const fallback = resolvePitch(offset, context);
+  for (const fallback of fallbacks) {
     const relation = validateCandidateRelations(fallback, context, { allowDubBend: true });
     if (relation.parallelReject) parallelRejects += 1;
     if (relation.ok) {
@@ -2008,8 +2010,25 @@ function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest =
     }
   }
 
-  for (const offset of offsets) {
-    const fallback = resolvePitch(offset, context);
+  for (const fallback of fallbacks) {
+    const relation = validateCandidateRelations(fallback, context, { allowDubBend: true, allowVerticalDissonance: true });
+    if (relation.parallelReject) parallelRejects += 1;
+    if (relation.ok) {
+      noteFallbackStat(context, "verticalRelaxed");
+      return { ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "vertical-relaxed" };
+    }
+  }
+
+  for (const fallback of fallbacks) {
+    const relation = validateCandidateRelations(fallback, context, { allowDubBend: true, allowWideSpacing: true });
+    if (relation.parallelReject) parallelRejects += 1;
+    if (relation.ok) {
+      noteFallbackStat(context, "spacingRelaxed");
+      return { ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "spacing-relaxed" };
+    }
+  }
+
+  for (const fallback of fallbacks) {
     const parallel = parallelPerfectAgainstChosen(fallback, context, { allowDubBend: true });
     if (parallel?.blocked) {
       parallelRejects += 1;
@@ -2021,6 +2040,20 @@ function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest =
   }
 
   return fallbackRest(context, parallelRejects);
+}
+
+function fallbackCandidatesForContext(context) {
+  const seen = new Set();
+  const candidates = [];
+  fallbackOffsetsForContext(context).forEach((offset) => {
+    resolvePitchOptions(offset, context, 6).forEach((candidate) => {
+      const key = `${candidate.midi}:${mod(candidate.symbolicOffset, 12)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      candidates.push(candidate);
+    });
+  });
+  return candidates;
 }
 
 function fallbackOffsetsForContext(context) {
@@ -2409,30 +2442,39 @@ function shuffledWeightedOffsets(offsets, mode, strong, settings, rng) {
 }
 
 function resolvePitch(offset, context) {
+  return resolvePitchOptions(offset, context, 1)[0];
+}
+
+function resolvePitchOptions(offset, context, limit = 1) {
   const { section, voice, lastPitches, settings } = context;
   const [low, high] = VOICE_RANGES[voice];
   const prefer = lastPitches[voice] ?? Math.round((low + high) / 2);
   const tonicPc = noteToPc(section.key);
   const literalPc = mod(tonicPc + offset, 12);
-  let best = null;
+  const options = [];
 
   for (let midi = low; midi <= high; midi += 1) {
     const pcDistance = circularDistance(midi % 12, literalPc);
     if (settings.resolution === "literal" || settings.outputMode === "equal") {
       if (midi % 12 !== literalPc) continue;
       const score = -Math.abs(midi - prefer);
-      if (!best || score > best.score) best = { midi, symbolicOffset: offset, literalPc, resolutionCents: 0, score };
+      options.push({ midi, symbolicOffset: offset, literalPc, resolutionCents: 0, score });
       continue;
     }
 
     const ratioScore = ratioResolutionScore(midi, offset, tonicPc, settings);
     const score = -(ratioScore.cents + Math.abs(midi - prefer) * 4 + pcDistance * 7);
-    if (!best || score > best.score) {
-      best = { midi, symbolicOffset: offset, literalPc, resolutionCents: ratioScore.cents, targetRatio: ratioScore.targetRatio, score };
-    }
+    options.push({ midi, symbolicOffset: offset, literalPc, resolutionCents: ratioScore.cents, targetRatio: ratioScore.targetRatio, score });
   }
 
-  const resolved = best || { midi: nearestMidiForPc(literalPc, low, high, prefer), symbolicOffset: offset, literalPc, resolutionCents: 0 };
+  if (!options.length) {
+    options.push({ midi: nearestMidiForPc(literalPc, low, high, prefer), symbolicOffset: offset, literalPc, resolutionCents: 0, score: -999 });
+  }
+  options.sort((a, b) => b.score - a.score);
+  return options.slice(0, Math.max(1, limit)).map((resolved) => decorateResolvedPitch(resolved, settings, literalPc));
+}
+
+function decorateResolvedPitch(resolved, settings, literalPc) {
   return {
     ...resolved,
     noteName: midiName(resolved.midi),
@@ -2452,7 +2494,7 @@ function ratioResolutionScore(midi, offset, tonicPc, settings) {
 
 function validateCandidate(candidate, context) {
   const { chosen, voiceIndex, activeVoices, lastPitches, lastLeaps, debts, voice, strong, settings } = context;
-  const previous = lastPitches[voice];
+  const previous = previousPitchForVoice(context, voice);
   const debt = debts[voice];
   let resolvedDebt = false;
 
@@ -2499,7 +2541,7 @@ function validateCandidate(candidate, context) {
   return { ok: true, resolvedDebt };
 }
 
-function validateCandidateRelations(candidate, context, { allowDubBend = true } = {}) {
+function validateCandidateRelations(candidate, context, { allowDubBend = true, allowVerticalDissonance = false, allowWideSpacing = false } = {}) {
   const { chosen, voiceIndex, activeVoices, strong } = context;
   for (let i = 0; i < activeVoices.length; i += 1) {
     const otherVoice = activeVoices[i];
@@ -2509,8 +2551,8 @@ function validateCandidateRelations(candidate, context, { allowDubBend = true } 
     if (i > voiceIndex && candidate.midi >= other.midi) return { ok: false, reason: "voice-order" };
     const interval = mod(candidate.midi - other.midi, 12);
     const absInterval = Math.abs(candidate.midi - other.midi);
-    if (strong && !isVerticalConsonance(interval, otherVoice === "bass")) return { ok: false, reason: "vertical-dissonance" };
-    if (absInterval > 28) return { ok: false, reason: "spacing" };
+    if (strong && !allowVerticalDissonance && !isVerticalConsonance(interval, otherVoice === "bass")) return { ok: false, reason: "vertical-dissonance" };
+    if (!allowWideSpacing && absInterval > 28) return { ok: false, reason: "spacing" };
   }
 
   const parallel = parallelPerfectAgainstChosen(candidate, context, { allowDubBend });
@@ -2519,14 +2561,14 @@ function validateCandidateRelations(candidate, context, { allowDubBend = true } 
 }
 
 function parallelPerfectAgainstChosen(candidate, context, { allowDubBend = true } = {}) {
-  const { chosen, voiceIndex, activeVoices, lastPitches, voice, strong } = context;
+  const { chosen, voiceIndex, activeVoices, voice, strong } = context;
   let allowed = null;
   for (let i = 0; i < activeVoices.length; i += 1) {
     const otherVoice = activeVoices[i];
     const other = chosen[otherVoice];
     if (!other) continue;
-    const prevA = lastPitches[voice];
-    const prevB = lastPitches[otherVoice];
+    const prevA = previousPitchForVoice(context, voice);
+    const prevB = previousPitchForVoice(context, otherVoice);
     if (prevA == null || prevB == null) continue;
     const lowerIsCandidate = i > voiceIndex;
     const motion = classifyParallelPerfectMotion({
@@ -2542,6 +2584,10 @@ function parallelPerfectAgainstChosen(candidate, context, { allowDubBend = true 
     allowed = allowed || { blocked: false, allowedByDub: true, motion, otherVoice };
   }
   return allowed;
+}
+
+function previousPitchForVoice(context, voice) {
+  return context.previousPitches?.[voice] ?? context.lastPitches?.[voice] ?? null;
 }
 
 function isVerticalConsonance(interval, againstBass) {
@@ -3153,7 +3199,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`  Rests/breaths placed: ${stats.rests}`);
   lines.push(`  Tendency resolutions completed: ${stats.resolvedTendencies}`);
   lines.push(`  Parallel perfect candidates rejected: ${stats.avoidedParallels}`);
-  lines.push(`  Fallback safety: ${stats.fallbackStats.validated} validated, ${stats.fallbackStats.relationOnly} relation-only, ${stats.fallbackStats.noParallelOnly} no-parallel emergency, ${stats.fallbackStats.emergencyRests} emergency rests.`);
+  lines.push(`  Fallback safety: ${stats.fallbackStats.validated} validated, ${stats.fallbackStats.relationOnly} relation-only, ${stats.fallbackStats.verticalRelaxed} vertical-colour, ${stats.fallbackStats.spacingRelaxed} spacing-colour, ${stats.fallbackStats.noParallelOnly} no-parallel emergency, ${stats.fallbackStats.emergencyRests} emergency rests.`);
   lines.push(`  Suspension gravity: ${stats.suspensionStats.detected} detected, ${stats.suspensionStats.resolved} resolved, ${stats.suspensionStats.overlongPrevented} overlong candidates prevented, ${stats.suspensionStats.pedalHolds} pedal holds allowed.`);
   if (!isFugueStyle(settings)) {
     lines.push("");
