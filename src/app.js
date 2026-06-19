@@ -1215,6 +1215,16 @@ function makeDubBassMemory() {
   };
 }
 
+function makeFallbackStats() {
+  return {
+    validated: 0,
+    relationOnly: 0,
+    noParallelOnly: 0,
+    emergencyRests: 0,
+    parallelBlocked: 0,
+  };
+}
+
 function makePhrasePlan(section, sectionIndex, sectionCount, activeVoices, meter, settings, rng, dubBassMemory) {
   const profile = modePersonality(section.mode);
   const leadOffset = Math.floor(hashUnit(settings.seed, sectionIndex, section.key, section.mode) * activeVoices.length);
@@ -1771,6 +1781,7 @@ function buildPiece(settings, rng) {
   const reports = [];
   const refrainState = makeRefrainState(activeVoices);
   const suspensionStats = makeSuspensionStats();
+  const fallbackStats = makeFallbackStats();
   const dubBassMemory = makeDubBassMemory();
   let currentTick = 0;
   let totalBars = 0;
@@ -1839,6 +1850,7 @@ function buildPiece(settings, rng) {
           fugueSectionPlan,
           phrasePlan,
           suspensionStats,
+          fallbackStats,
           settings,
           rng,
         };
@@ -1848,6 +1860,7 @@ function buildPiece(settings, rng) {
           noteGrid[voice].push(null);
           updateSuspensionState(null, context);
           rests += 1;
+          avoidedParallels += result.parallelRejects || 0;
           return;
         }
         chosen[voice] = result;
@@ -1878,9 +1891,9 @@ function buildPiece(settings, rng) {
   const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick);
   const refrainSummary = summarizeRefrainState(refrainState);
   const dubGrooveSummary = summarizeDubGroove(settings, events, dubBassMemory);
-  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, refrainSummary, fugueSummary, dubGrooveSummary }, audit);
-  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, refrainSummary, fugueSummary, dubGrooveSummary, sweetness }, audit);
-  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, refrainSummary, fugueSummary, dubGrooveSummary, sweetness }, audit);
+  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary }, audit);
+  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, sweetness }, audit);
+  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, sweetness }, audit);
 
   return {
     settings,
@@ -1957,10 +1970,9 @@ function chooseVoiceEvent(context) {
     if (candidates.length > 8) break;
   }
 
-  if (!candidates.length && canRest) return { rest: true };
+  if (!candidates.length && canRest) return { rest: true, parallelRejects };
   if (!candidates.length) {
-    const fallback = resolvePitch(mode.stable[context.voiceIndex % mode.stable.length] || 0, context);
-    return { ...fallback, resolvedDebt: false, parallelRejects };
+    return chooseFallbackVoiceEvent(context, parallelRejects, canRest);
   }
 
   candidates.sort((a, b) => b.score - a.score);
@@ -1968,6 +1980,70 @@ function chooseVoiceEvent(context) {
   if (chosen.resolvedDebt) context.debts[voice] = null;
   applyTendencyDebt(chosen, context);
   return chosen;
+}
+
+function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest = false) {
+  const offsets = fallbackOffsetsForContext(context);
+  let parallelRejects = initialParallelRejects;
+
+  for (const offset of offsets) {
+    const fallback = resolvePitch(offset, context);
+    const validation = validateCandidate(fallback, context);
+    parallelRejects += validation.parallelReject ? 1 : 0;
+    if (validation.ok) {
+      noteFallbackStat(context, "validated");
+      return { ...fallback, resolvedDebt: validation.resolvedDebt, parallelRejects, fallbackKind: "validated" };
+    }
+  }
+
+  if (canRest) return fallbackRest(context, parallelRejects);
+
+  for (const offset of offsets) {
+    const fallback = resolvePitch(offset, context);
+    const relation = validateCandidateRelations(fallback, context, { allowDubBend: true });
+    if (relation.parallelReject) parallelRejects += 1;
+    if (relation.ok) {
+      noteFallbackStat(context, "relationOnly");
+      return { ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "relation-only" };
+    }
+  }
+
+  for (const offset of offsets) {
+    const fallback = resolvePitch(offset, context);
+    const parallel = parallelPerfectAgainstChosen(fallback, context, { allowDubBend: true });
+    if (parallel?.blocked) {
+      parallelRejects += 1;
+      noteFallbackStat(context, "parallelBlocked");
+      continue;
+    }
+    noteFallbackStat(context, "noParallelOnly");
+    return { ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "no-parallel-only" };
+  }
+
+  return fallbackRest(context, parallelRejects);
+}
+
+function fallbackOffsetsForContext(context) {
+  const offsets = [];
+  const add = (items) => {
+    items.filter((item) => Number.isFinite(item)).forEach((item) => offsets.push(mod(item, 12)));
+  };
+  add([context.lastOffsets?.[context.voice]]);
+  add(context.mode.stable || []);
+  if (context.cadenceStage) add(cadenceOffsets(context));
+  add([0, 7, 5]);
+  add(context.mode.offsets || []);
+  if (context.mode.tendencies) add(Object.keys(context.mode.tendencies).map(Number));
+  return [...new Set(offsets)];
+}
+
+function fallbackRest(context, parallelRejects) {
+  noteFallbackStat(context, "emergencyRests");
+  return { rest: true, parallelRejects, fallbackKind: "emergency-rest" };
+}
+
+function noteFallbackStat(context, field) {
+  if (context.fallbackStats && field in context.fallbackStats) context.fallbackStats[field] += 1;
 }
 
 function shouldVoiceBreathe(context) {
@@ -2417,36 +2493,55 @@ function validateCandidate(candidate, context) {
     if (!dubBassBounce && (Math.sign(recovery) === Math.sign(lastLeaps[voice]) || Math.abs(recovery) > 2)) return { ok: false };
   }
 
+  const relation = validateCandidateRelations(candidate, context);
+  if (!relation.ok) return relation.parallelReject ? { ok: false, parallelReject: true } : { ok: false };
+
+  return { ok: true, resolvedDebt };
+}
+
+function validateCandidateRelations(candidate, context, { allowDubBend = true } = {}) {
+  const { chosen, voiceIndex, activeVoices, strong } = context;
   for (let i = 0; i < activeVoices.length; i += 1) {
     const otherVoice = activeVoices[i];
     const other = chosen[otherVoice];
     if (!other) continue;
-    if (i < voiceIndex && candidate.midi <= other.midi) return { ok: false };
-    if (i > voiceIndex && candidate.midi >= other.midi) return { ok: false };
+    if (i < voiceIndex && candidate.midi <= other.midi) return { ok: false, reason: "voice-order" };
+    if (i > voiceIndex && candidate.midi >= other.midi) return { ok: false, reason: "voice-order" };
     const interval = mod(candidate.midi - other.midi, 12);
     const absInterval = Math.abs(candidate.midi - other.midi);
-    if (strong && !isVerticalConsonance(interval, otherVoice === "bass")) return { ok: false };
-    if (absInterval > 28) return { ok: false };
-
-    const prevA = lastPitches[voice];
-    const prevB = lastPitches[otherVoice];
-    if (prevA != null && prevB != null) {
-      const lowerIsCandidate = i > voiceIndex;
-      const motion = classifyParallelPerfectMotion({
-        previousLower: lowerIsCandidate ? prevA : prevB,
-        previousUpper: lowerIsCandidate ? prevB : prevA,
-        currentLower: lowerIsCandidate ? candidate.midi : other.midi,
-        currentUpper: lowerIsCandidate ? other.midi : candidate.midi,
-        strong,
-      });
-      if (motion) {
-        if (allowsDubRuleBend(context, motion)) continue;
-        return { ok: false, parallelReject: true };
-      }
-    }
+    if (strong && !isVerticalConsonance(interval, otherVoice === "bass")) return { ok: false, reason: "vertical-dissonance" };
+    if (absInterval > 28) return { ok: false, reason: "spacing" };
   }
 
-  return { ok: true, resolvedDebt };
+  const parallel = parallelPerfectAgainstChosen(candidate, context, { allowDubBend });
+  if (parallel?.blocked) return { ok: false, parallelReject: true, reason: parallel.motion.type, parallel };
+  return { ok: true, dubParallelAllowed: Boolean(parallel?.allowedByDub) };
+}
+
+function parallelPerfectAgainstChosen(candidate, context, { allowDubBend = true } = {}) {
+  const { chosen, voiceIndex, activeVoices, lastPitches, voice, strong } = context;
+  let allowed = null;
+  for (let i = 0; i < activeVoices.length; i += 1) {
+    const otherVoice = activeVoices[i];
+    const other = chosen[otherVoice];
+    if (!other) continue;
+    const prevA = lastPitches[voice];
+    const prevB = lastPitches[otherVoice];
+    if (prevA == null || prevB == null) continue;
+    const lowerIsCandidate = i > voiceIndex;
+    const motion = classifyParallelPerfectMotion({
+      previousLower: lowerIsCandidate ? prevA : prevB,
+      previousUpper: lowerIsCandidate ? prevB : prevA,
+      currentLower: lowerIsCandidate ? candidate.midi : other.midi,
+      currentUpper: lowerIsCandidate ? other.midi : candidate.midi,
+      strong,
+    });
+    if (!motion) continue;
+    const allowedByDub = allowDubBend && allowsDubRuleBend(context, motion);
+    if (!allowedByDub) return { blocked: true, allowedByDub: false, motion, otherVoice };
+    allowed = allowed || { blocked: false, allowedByDub: true, motion, otherVoice };
+  }
+  return allowed;
 }
 
 function isVerticalConsonance(interval, againstBass) {
@@ -2934,6 +3029,10 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
     },
     refrain: stats.refrainSummary,
     fugue: stats.fugueSummary || null,
+    fallback_safety: {
+      mode: "validated_fallbacks_no_unchecked_parallel_perfects",
+      ...stats.fallbackStats,
+    },
     dub_groove: stats.dubGrooveSummary,
     sweetness: stats.sweetness,
     intonation: {
@@ -3054,6 +3153,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`  Rests/breaths placed: ${stats.rests}`);
   lines.push(`  Tendency resolutions completed: ${stats.resolvedTendencies}`);
   lines.push(`  Parallel perfect candidates rejected: ${stats.avoidedParallels}`);
+  lines.push(`  Fallback safety: ${stats.fallbackStats.validated} validated, ${stats.fallbackStats.relationOnly} relation-only, ${stats.fallbackStats.noParallelOnly} no-parallel emergency, ${stats.fallbackStats.emergencyRests} emergency rests.`);
   lines.push(`  Suspension gravity: ${stats.suspensionStats.detected} detected, ${stats.suspensionStats.resolved} resolved, ${stats.suspensionStats.overlongPrevented} overlong candidates prevented, ${stats.suspensionStats.pedalHolds} pedal holds allowed.`);
   if (!isFugueStyle(settings)) {
     lines.push("");

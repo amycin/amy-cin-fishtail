@@ -62,14 +62,15 @@ function runSmokeTests() {
     const reassuranceOk = piece.audit.issues.length + piece.audit.warnings.length === 0 || piece.report.includes("Gemma says:");
     const suspensionManifestOk = piece.manifest.suspension_control?.mode === "musical_gravity";
     const refrainManifestOk = piece.manifest.refrain && typeof piece.manifest.refrain.has_source === "boolean";
+    const fallbackManifestOk = piece.manifest.fallback_safety?.mode === "validated_fallbacks_no_unchecked_parallel_perfects";
     const fugueManifestOk = test.generationStyle !== "fishtail_fugue" || (
       piece.manifest.fugue?.enabled
       && piece.manifest.fugue.formal_gravity_mode === "formal"
       && piece.report.includes("Fishtail Fugue map")
     );
-    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk && velocityOk && velocityReportOk && velocityManifestOk && reassuranceOk && suspensionManifestOk && refrainManifestOk && fugueManifestOk ? "ok" : "failed";
+    const status = result.ok && piece.audit.issues.length === 0 && dubReportOk && velocityOk && velocityReportOk && velocityManifestOk && reassuranceOk && suspensionManifestOk && refrainManifestOk && fallbackManifestOk && fugueManifestOk ? "ok" : "failed";
     console.log(`${status} ${test.name}: tracks=${result.trackCount}, notes=${result.notes}, tempos=${result.tempos}, warnings=${piece.audit.warnings.length}`);
-    if (!result.ok || piece.audit.issues.length || !dubReportOk || !velocityOk || !velocityReportOk || !velocityManifestOk || !reassuranceOk || !suspensionManifestOk || !refrainManifestOk || !fugueManifestOk) {
+    if (!result.ok || piece.audit.issues.length || !dubReportOk || !velocityOk || !velocityReportOk || !velocityManifestOk || !reassuranceOk || !suspensionManifestOk || !refrainManifestOk || !fallbackManifestOk || !fugueManifestOk) {
       ok = false;
       printMessages(
         result.issues,
@@ -82,6 +83,7 @@ function runSmokeTests() {
         reassuranceOk ? [] : ["Generation report is missing Gemma reassurance after checker notes."],
         suspensionManifestOk ? [] : ["Manifest is missing suspension control metadata."],
         refrainManifestOk ? [] : ["Manifest is missing refrain metadata."],
+        fallbackManifestOk ? [] : ["Manifest is missing fallback safety metadata."],
         fugueManifestOk ? [] : ["Fishtail Fugue manifest/report metadata is missing or incorrect."],
       );
     }
@@ -134,6 +136,42 @@ function runParallelRuleTests() {
         return { summary, warnings };
       }
 
+      function fallbackResult({ previousLower, previousUpper, currentLower, temptingOffset, expectedTemptingMidi, dubMode = false, rngValue = 0.99 }) {
+        const context = {
+          section: { key: "C", mode: "major", meter: "4/4", cadence: "authentic" },
+          mode: MODES.major,
+          meter: METERS["4/4"],
+          step: 1,
+          voice: "tenor",
+          voiceIndex: 1,
+          activeVoices: ["bass", "tenor"],
+          chosen: { bass: { midi: currentLower } },
+          lastPitches: { bass: previousLower, tenor: previousUpper },
+          lastLeaps: { bass: 0, tenor: 0 },
+          lastOffsets: { tenor: temptingOffset },
+          debts: {},
+          strong: false,
+          cadenceStage: null,
+          settings: {
+            dubMode,
+            strangeness: 0,
+            resolution: "literal",
+            outputMode: "equal",
+            rootMidi: 60,
+          },
+          fallbackStats: makeFallbackStats(),
+          rng: () => rngValue,
+        };
+        const fallback = chooseFallbackVoiceEvent(context, 0, false);
+        const forbidden = fallback.rest ? null : parallelPerfectAgainstChosen(fallback, context, { allowDubBend: false });
+        return {
+          fallback,
+          stats: context.fallbackStats,
+          forbidden,
+          avoidedTemptingMidi: fallback.midi !== expectedTemptingMidi,
+        };
+      }
+
       const cases = [
         {
           name: "parallel fifth",
@@ -168,7 +206,7 @@ function runParallelRuleTests() {
         },
       ];
 
-      return cases.map((test) => {
+      const candidateResults = cases.map((test) => {
         const classified = classifyParallelPerfectMotion(test.args);
         const candidate = candidateResult(test.args);
         const checked = checkerWarnings(test.args);
@@ -183,11 +221,73 @@ function runParallelRuleTests() {
           warnings: checked.warnings,
         };
       });
+
+      const fallbackFifth = fallbackResult({
+        previousLower: 48,
+        previousUpper: 55,
+        currentLower: 50,
+        temptingOffset: 9,
+        expectedTemptingMidi: 57,
+      });
+      const fallbackOctave = fallbackResult({
+        previousLower: 48,
+        previousUpper: 60,
+        currentLower: 50,
+        temptingOffset: 2,
+        expectedTemptingMidi: 62,
+      });
+      const dubFallback = fallbackResult({
+        previousLower: 48,
+        previousUpper: 55,
+        currentLower: 50,
+        temptingOffset: 9,
+        expectedTemptingMidi: 57,
+        dubMode: true,
+        rngValue: 0,
+      });
+
+      return [
+        ...candidateResults,
+        {
+          kind: "fallback",
+          name: "fallback avoids parallel fifth",
+          ok: fallbackFifth.avoidedTemptingMidi
+            && !fallbackFifth.forbidden?.blocked
+            && fallbackFifth.fallback.parallelRejects >= 1
+            && fallbackFifth.stats.validated >= 1,
+          details: fallbackFifth,
+        },
+        {
+          kind: "fallback",
+          name: "fallback avoids parallel octave",
+          ok: fallbackOctave.avoidedTemptingMidi
+            && !fallbackOctave.forbidden?.blocked
+            && fallbackOctave.fallback.parallelRejects >= 1
+            && fallbackOctave.stats.validated >= 1,
+          details: fallbackOctave,
+        },
+        {
+          kind: "fallback",
+          name: "dub fallback can still allow rare bend",
+          ok: dubFallback.fallback.midi === 57
+            && dubFallback.stats.validated >= 1,
+          details: dubFallback,
+        },
+      ];
     })()
   `, context);
 
   let ok = true;
   for (const result of results) {
+    if (result.kind === "fallback") {
+      const status = result.ok ? "ok" : "failed";
+      console.log(`${status} parallel-rule ${result.name}`);
+      if (!result.ok) {
+        ok = false;
+        printMessages([`Fallback details: ${JSON.stringify(result.details)}`]);
+      }
+      continue;
+    }
     const classifierOk = result.classifierType === result.expectedType;
     const candidateOk = result.candidateRejected === result.expectCandidateReject;
     const checkerOk = result.checkerWarned === result.expectViolation;
@@ -356,6 +456,8 @@ function runFugueTests() {
     && stylesCss.includes("#tempoDivisorInput")
     && stylesCss.includes("direction: rtl");
   const variedLabelOk = indexHtml.includes("Varied") && !indexHtml.includes("Strange");
+  const notesClosedOk = indexHtml.includes('<button id="toggleNotesButton" type="button">Show Notes</button>')
+    && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
   const context = makeAppContext();
   const results = vm.runInContext(`
     (() => {
@@ -516,10 +618,11 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
+  console.log(`${notesClosedOk ? "ok" : "failed"} notes default closed`);
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} fugue ${result.name}`);

@@ -159,13 +159,13 @@
               <button class="primary-button" id="generateButton" type="button">Generate + Save MIDI</button>
               <button id="downloadMidiButton" type="button" disabled>Save MIDI Again</button>
               <button id="downloadJsonButton" type="button" disabled>Save Project JSON</button>
-              <button id="toggleNotesButton" type="button">Hide Notes</button>
+              <button id="toggleNotesButton" type="button">Show Notes</button>
             </div>
             <p class="download-help">Generate + Save MIDI is the main button. The tempo-map switch writes BPM and time signatures for DAWs that read them; BPM is also kept in the filename. Project JSON saves the recipe, settings, and seed. Hide/Show Notes opens or closes the text below. Codex preview may not save downloads; Safari, Chrome, or a hosted page should.</p>
           </section>
         </section>
 
-        <section class="panel output-panel" id="notesPanel">
+        <section class="panel output-panel" id="notesPanel" hidden>
           <div class="panel-head">
             <h2>Generation Notes</h2>
             <span id="pieceLengthLabel">No piece yet</span>
@@ -317,6 +317,6 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=47"></script>
+    <script src="src/app.js?v=48"></script>
   </body>
 </html>
