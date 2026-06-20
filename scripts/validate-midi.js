@@ -229,6 +229,83 @@ function runStabilityTests() {
         entropyRejectsHttp = /https|localhost/.test(error.message);
       }
 
+      const visualLifecycle = (() => {
+        const originalRequest = requestCoreFrame;
+        let scheduled = 0;
+        requestCoreFrame = () => {
+          scheduled += 1;
+        };
+        const ctx = {
+          setTransform() {},
+          clearRect() {},
+          fillRect() {},
+          beginPath() {},
+          moveTo() {},
+          lineTo() {},
+          stroke() {},
+          ellipse() {},
+          save() {},
+          restore() {},
+          translate() {},
+          rotate() {},
+          quadraticCurveTo() {},
+          createRadialGradient() {
+            return { addColorStop() {} };
+          },
+        };
+        const canvas = {
+          width: 0,
+          height: 0,
+          getContext: () => ctx,
+          getBoundingClientRect: () => ({ width: 360, height: 220 }),
+        };
+        els.coreCanvas = canvas;
+        window.devicePixelRatio = 3;
+        state.pageVisible = true;
+        state.visualVisible = true;
+        state.reducedMotion = false;
+        state.coreFrameId = null;
+        state.coreFrameTimer = null;
+        state.animationPhase = 0;
+        state.animationVisualLevel = 0;
+        torusCore.ready = false;
+        drawCore(1000);
+        requestCoreFrame = originalRequest;
+        return {
+          canvasWidth: canvas.width,
+          canvasHeight: canvas.height,
+          scheduled,
+        };
+      })();
+
+      const disposeSummary = (() => {
+        let geometryDisposed = 0;
+        let materialDisposed = 0;
+        let rendererDisposed = 0;
+        let removed = 0;
+        torusCore.scene = {
+          traverse(callback) {
+            callback({
+              geometry: { dispose() { geometryDisposed += 1; } },
+              material: [
+                { dispose() { materialDisposed += 1; } },
+                { dispose() { materialDisposed += 1; } },
+              ],
+            });
+          },
+        };
+        torusCore.renderer = {
+          domElement: { parentNode: { removeChild() { removed += 1; } } },
+          dispose() { rendererDisposed += 1; },
+        };
+        torusCore.ready = true;
+        torusCore.ratioMarkers = [{}];
+        state.coreFrameId = null;
+        state.coreFrameTimer = null;
+        disposeTorusCore();
+        return { geometryDisposed, materialDisposed, rendererDisposed, removed, ready: torusCore.ready, markers: torusCore.ratioMarkers.length };
+      })();
+
       return [
         {
           name: "explicit voice layouts include bass",
@@ -266,6 +343,19 @@ function runStabilityTests() {
         {
           name: "entropy endpoint URL policy",
           ok: entropyHttps && entropyLocal && entropyRejectsHttp,
+        },
+        {
+          name: "visual lifecycle caps canvas DPR",
+          ok: visualLifecycle.canvasWidth === 720 && visualLifecycle.canvasHeight === 440 && visualLifecycle.scheduled === 1,
+        },
+        {
+          name: "visual lifecycle disposes WebGL resources",
+          ok: disposeSummary.geometryDisposed === 1
+            && disposeSummary.materialDisposed === 2
+            && disposeSummary.rendererDisposed === 1
+            && disposeSummary.removed === 1
+            && disposeSummary.ready === false
+            && disposeSummary.markers === 0,
         },
       ];
     })()

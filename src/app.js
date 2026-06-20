@@ -8,6 +8,9 @@ const GENERATE_MIN_MS = 4200;
 const WORMHOLE_CYCLE_MS = 36000;
 const WORMHOLE_U_SEGMENTS = 24;
 const WORMHOLE_V_SEGMENTS = 7;
+const CORE_ACTIVE_FRAME_MS = 1000 / 30;
+const CORE_IDLE_FRAME_MS = 1000 / 10;
+const CORE_REDUCED_FRAME_MS = 250;
 const DUB_RELAX_LINES = [
   "Relax: Dub Gravity is active, the bass is holding the room.",
   "Take it easy: the checker found the groove and left the shimmer in.",
@@ -414,6 +417,16 @@ const state = {
   pedalTouched: false,
   generating: false,
   randomising: false,
+  pageVisible: true,
+  visualVisible: true,
+  reducedMotion: false,
+  coreFrameId: null,
+  coreFrameTimer: null,
+  coreLastDrawnAt: 0,
+  visualLifecycleReady: false,
+  visualResizeObserver: null,
+  visualIntersectionObserver: null,
+  reducedMotionQuery: null,
 };
 
 window.fishtailApp = { state, version: "v0" };
@@ -450,8 +463,9 @@ document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   updateDubModeUi();
   setupMotionInput();
+  setupVisualLifecycle();
   initTorusCore();
-  drawCore();
+  requestCoreFrame(true);
 });
 
 function bindElements() {
@@ -632,6 +646,100 @@ function handleDeviceMotion(event) {
   state.motionTargetX = clamp((gravity.x || 0) / 8, -1, 1);
   state.motionTargetY = clamp((gravity.y || 0) / 8, -1, 1);
   state.motionLastAt = Date.now();
+}
+
+function setupVisualLifecycle() {
+  if (state.visualLifecycleReady || typeof window === "undefined") return;
+  state.visualLifecycleReady = true;
+  state.pageVisible = typeof document === "undefined" ? true : document.visibilityState !== "hidden";
+  state.visualVisible = true;
+
+  if (typeof window.matchMedia === "function") {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    state.reducedMotionQuery = query;
+    state.reducedMotion = Boolean(query.matches);
+    const handleReducedMotion = () => {
+      state.reducedMotion = Boolean(query.matches);
+      requestCoreFrame(true);
+    };
+    if (typeof query.addEventListener === "function") query.addEventListener("change", handleReducedMotion);
+    else if (typeof query.addListener === "function") query.addListener(handleReducedMotion);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    state.pageVisible = document.visibilityState !== "hidden";
+    if (state.pageVisible) requestCoreFrame(true);
+    else cancelCoreFrame();
+  });
+
+  window.addEventListener("pagehide", () => {
+    cancelCoreFrame();
+    disposeTorusCore();
+  });
+
+  window.addEventListener("pageshow", () => {
+    state.pageVisible = typeof document === "undefined" ? true : document.visibilityState !== "hidden";
+    if (!torusCore.ready && !torusCore.loading) initTorusCore();
+    requestCoreFrame(true);
+  });
+
+  if (typeof IntersectionObserver !== "undefined" && els.torusHost) {
+    state.visualIntersectionObserver = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      state.visualVisible = !entry || entry.isIntersecting;
+      if (state.visualVisible) requestCoreFrame(true);
+      else cancelCoreFrame();
+    }, { threshold: 0.01 });
+    state.visualIntersectionObserver.observe(els.torusHost);
+  }
+
+  if (typeof ResizeObserver !== "undefined" && els.torusHost) {
+    state.visualResizeObserver = new ResizeObserver(() => requestCoreFrame(true));
+    state.visualResizeObserver.observe(els.torusHost);
+  }
+}
+
+function visualsCanRun() {
+  return Boolean(state.pageVisible && state.visualVisible);
+}
+
+function visualIsActive(now = Date.now()) {
+  return Boolean(
+    state.animationActive
+    || state.animationTailUntil > now
+    || state.bootGlitchUntil > now
+    || Math.abs(state.motionTiltX) > 0.01
+    || Math.abs(state.motionTiltY) > 0.01
+  );
+}
+
+function currentCoreFrameDelay(now = Date.now()) {
+  if (state.reducedMotion) return CORE_REDUCED_FRAME_MS;
+  return visualIsActive(now) ? CORE_ACTIVE_FRAME_MS : CORE_IDLE_FRAME_MS;
+}
+
+function requestCoreFrame(immediate = false) {
+  if (!visualsCanRun()) return;
+  if (state.coreFrameId != null || state.coreFrameTimer != null) return;
+  const delay = immediate ? 0 : currentCoreFrameDelay();
+  const schedule = () => {
+    state.coreFrameTimer = null;
+    if (!visualsCanRun() || state.coreFrameId != null) return;
+    state.coreFrameId = requestAnimationFrame(drawCore);
+  };
+  if (delay <= 0) schedule();
+  else state.coreFrameTimer = setTimeout(schedule, delay);
+}
+
+function cancelCoreFrame() {
+  if (state.coreFrameId != null) {
+    cancelAnimationFrame(state.coreFrameId);
+    state.coreFrameId = null;
+  }
+  if (state.coreFrameTimer != null) {
+    clearTimeout(state.coreFrameTimer);
+    state.coreFrameTimer = null;
+  }
 }
 
 function updateBendControls() {
@@ -1095,6 +1203,7 @@ async function generatePiece() {
   state.animationTailUntil = 0;
   state.animationVisualLevel = 0;
   state.animationActive = true;
+  requestCoreFrame(true);
   els.generateButton.classList.add("is-generating");
   setGenerationControlsDisabled(true);
   els.downloadMidiButton.disabled = true;
@@ -1137,6 +1246,7 @@ async function generatePiece() {
   } finally {
     state.animationActive = false;
     state.animationTailUntil = Date.now() + GENERATE_TAIL_MS;
+    requestCoreFrame(true);
     await wait(650);
     els.generateButton.classList.remove("is-generating");
     setGenerationControlsDisabled(false);
@@ -4100,11 +4210,44 @@ async function initTorusCore() {
     torusCore.loading = false;
     state.bootGlitchUntil = Date.now() + 1800;
     refreshTorusTuning();
+    requestCoreFrame(true);
   } catch (error) {
     torusCore.loading = false;
     torusCore.failed = true;
     console.warn("Three.js torus visualisation unavailable; using canvas fallback.", error);
   }
+}
+
+function disposeTorusCore() {
+  cancelCoreFrame();
+  if (torusCore.scene) {
+    torusCore.scene.traverse((object) => {
+      if (object.geometry && typeof object.geometry.dispose === "function") object.geometry.dispose();
+      if (object.material) {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.forEach((material) => {
+          if (material && typeof material.dispose === "function") material.dispose();
+        });
+      }
+    });
+  }
+  if (torusCore.renderer) {
+    const canvas = torusCore.renderer.domElement;
+    if (canvas?.parentNode) canvas.parentNode.removeChild(canvas);
+    torusCore.renderer.dispose();
+  }
+  torusCore.loading = false;
+  torusCore.ready = false;
+  torusCore.failed = false;
+  torusCore.renderer = null;
+  torusCore.scene = null;
+  torusCore.camera = null;
+  torusCore.group = null;
+  torusCore.torus = null;
+  torusCore.negativeWire = null;
+  torusCore.ratioLoop = null;
+  torusCore.ratioWeb = null;
+  torusCore.ratioMarkers = [];
 }
 
 function updateTorusSize(width, height) {
@@ -4151,12 +4294,14 @@ function renderTorusFrame(width, height, phase) {
   const palette = torusPalette();
   const activeBoost = getGenerateEnvelope(now);
   const bootGlitch = Math.max(0, (state.bootGlitchUntil - now) / 2400);
+  const reducedIdle = state.reducedMotion && activeBoost <= 0.02 && bootGlitch <= 0.02;
   const motionAge = now - state.motionLastAt;
-  const motionPresence = clamp(1 - motionAge / 3200, 0, 1);
-  state.motionTiltX += (state.motionTargetX * motionPresence - state.motionTiltX) * 0.045;
-  state.motionTiltY += (state.motionTargetY * motionPresence - state.motionTiltY) * 0.045;
+  const motionPresence = reducedIdle ? 0 : clamp(1 - motionAge / 3200, 0, 1);
+  const tiltEase = reducedIdle ? 0.02 : 0.045;
+  state.motionTiltX += (state.motionTargetX * motionPresence - state.motionTiltX) * tiltEase;
+  state.motionTiltY += (state.motionTargetY * motionPresence - state.motionTiltY) * tiltEase;
   const time = phase * 0.026;
-  const wormholePhase = wormholeLoopPhase(now);
+  const wormholePhase = reducedIdle ? 0 : wormholeLoopPhase(now);
   const negativeSpaceOpacity = smoothstep(0.25, 0.75, wormholePhase);
   const focusZoom = smoothstep(0.18, 0.82, wormholePhase);
   const idleLevel = Math.max(0, 1 - Math.max(activeBoost, bootGlitch));
@@ -4324,13 +4469,19 @@ function ratioColorHex(slot, dubVisual = false) {
   return slot % 2 ? palette.markerB : palette.markerA;
 }
 
-function drawCore() {
+function drawCore(timestamp = 0) {
+  state.coreFrameId = null;
+  if (!visualsCanRun()) return;
   const canvas = els.coreCanvas;
   const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    requestCoreFrame();
+    return;
+  }
   const rect = canvas.getBoundingClientRect();
   const width = rect.width || 360;
   const height = rect.height || 220;
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const targetWidth = Math.max(1, Math.round(width * dpr));
   const targetHeight = Math.max(1, Math.round(height * dpr));
   if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
@@ -4360,8 +4511,11 @@ function drawCore() {
   drawApertureLens(ctx, width, height, phase);
   if (!torusCore.ready) drawProjectedTorusFallback(ctx, width, height, phase);
 
-  state.animationPhase += state.animationVisualLevel > 0.02 ? 1.18 : 0.18;
-  requestAnimationFrame(drawCore);
+  const frameMs = Math.max(16, timestamp - (state.coreLastDrawnAt || timestamp));
+  state.coreLastDrawnAt = timestamp;
+  const speed = state.reducedMotion && !visualIsActive() ? 0.04 : state.animationVisualLevel > 0.02 ? 1.18 : 0.18;
+  state.animationPhase += speed * clamp(frameMs / 16.67, 0.25, 2.4);
+  requestCoreFrame();
 }
 
 function drawGravityWaveField(ctx, width, height, phase) {
@@ -4513,9 +4667,11 @@ function animateFor(ms) {
   state.animationStartedAt = Date.now();
   state.animationTailUntil = 0;
   state.animationActive = true;
+  requestCoreFrame(true);
   setTimeout(() => {
     state.animationActive = false;
     state.animationTailUntil = Date.now() + GENERATE_TAIL_MS;
+    requestCoreFrame(true);
   }, ms);
 }
 
