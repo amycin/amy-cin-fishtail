@@ -8,8 +8,8 @@ const GENERATE_MIN_MS = 4200;
 const WORMHOLE_CYCLE_MS = 36000;
 const WORMHOLE_U_SEGMENTS = 24;
 const WORMHOLE_V_SEGMENTS = 7;
-const CORE_ACTIVE_FRAME_MS = 1000 / 30;
-const CORE_IDLE_FRAME_MS = 1000 / 10;
+const CORE_ACTIVE_FRAME_MS = 1000 / 60;
+const CORE_IDLE_FRAME_MS = 1000 / 30;
 const CORE_REDUCED_FRAME_MS = 250;
 const DUB_RELAX_LINES = [
   "Relax: Dub Gravity is active, the bass is holding the room.",
