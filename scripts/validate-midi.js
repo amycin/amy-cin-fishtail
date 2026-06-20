@@ -19,6 +19,7 @@ function main() {
   if (smoke) {
     failed = !runSmokeTests();
     failed = !runStabilityTests() || failed;
+    failed = !runVelocityTests() || failed;
     failed = !runParallelRuleTests() || failed;
     failed = !runRefrainAndSuspensionTests() || failed;
     failed = !runFugueTests() || failed;
@@ -70,9 +71,11 @@ function runSmokeTests() {
       expectTempo30: test.expectTempo30,
     });
     const dubReportOk = !test.dubMode || piece.report.includes("Dub checker:");
-    const velocityOk = piece.events.every((event) => Number.isInteger(event.velocity) && event.velocity >= 90 && event.velocity <= 127);
-    const velocityReportOk = piece.report.includes("Velocity curve:");
-    const velocityManifestOk = piece.manifest.velocity_curve?.low_velocity === 127 && piece.manifest.velocity_curve?.high_velocity === 90;
+    const velocityOk = piece.events.every((event) => Number.isInteger(event.velocity) && event.velocity >= 1 && event.velocity <= 127);
+    const velocityReportOk = piece.report.includes("Gravity Velocity:");
+    const velocityManifestOk = piece.manifest.velocity_model?.version === "gravity_velocity_v1"
+      && piece.manifest.velocity_model?.rng_isolated === true
+      && Array.isArray(piece.manifest.velocity_model?.range);
     const reassuranceOk = piece.audit.issues.length + piece.audit.warnings.length === 0 || piece.report.includes("Gemma says:");
     const suspensionManifestOk = piece.manifest.suspension_control?.mode === "musical_gravity";
     const refrainManifestOk = piece.manifest.refrain && typeof piece.manifest.refrain.has_source === "boolean";
@@ -91,9 +94,9 @@ function runSmokeTests() {
         result.warnings,
         piece.audit.issues,
         dubReportOk ? [] : ["Dub Gravity report is missing the Dub checker note."],
-        velocityOk ? [] : ["Generated note velocities are outside the expected 90-127 pitch-feel range."],
-        velocityReportOk ? [] : ["Generation report is missing the velocity curve note."],
-        velocityManifestOk ? [] : ["Manifest is missing the expected 127-to-90 velocity curve block."],
+        velocityOk ? [] : ["Generated note velocities are outside the valid MIDI range."],
+        velocityReportOk ? [] : ["Generation report is missing the Gravity Velocity note."],
+        velocityManifestOk ? [] : ["Manifest is missing Gravity Velocity metadata."],
         reassuranceOk ? [] : ["Generation report is missing Gemma reassurance after checker notes."],
         suspensionManifestOk ? [] : ["Manifest is missing suspension control metadata."],
         refrainManifestOk ? [] : ["Manifest is missing refrain metadata."],
@@ -365,6 +368,161 @@ function runStabilityTests() {
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} stability ${result.name}`);
+    if (!result.ok) ok = false;
+  }
+  return ok;
+}
+
+function runVelocityTests() {
+  const context = makeAppContext();
+  const results = vm.runInContext(`
+    (() => {
+      function velocitySettings(profile = "auto", seed = "velocity-test") {
+        return {
+          seed,
+          voices: 4,
+          tempo: 60,
+          includeTempoMap: true,
+          referenceNote: "A4",
+          referenceMidi: 69,
+          referenceHz: 432,
+          referenceAnchorA4Hz: 432,
+          tempoDivisor: 432,
+          breathing: 0.5,
+          density: 0.45,
+          strangeness: 0.12,
+          generationStyle: "counterpoint",
+          resolution: "literal",
+          outputMode: "equal",
+          velocityProfile: profile,
+          dubMode: false,
+          pedalVoices: { bass: false, tenor: false, alto: false, soprano: false },
+          rootPc: 9,
+          rootNote: "A4",
+          rootMidi: 69,
+          rootFreq: 432,
+          sections: structuredClone(DEFAULT_SECTIONS),
+        };
+      }
+
+      function build(profile = "auto", seed = "velocity-test") {
+        const settings = velocitySettings(profile, seed);
+        return buildPiece(settings, makeRng(settings.seed));
+      }
+
+      function nonVelocitySignature(piece) {
+        return JSON.stringify(piece.events.map((event) => ({
+          tick: event.tick,
+          duration: event.duration,
+          voice: event.voice,
+          midi: event.midi,
+          carrierMidi: event.carrierMidi,
+          symbolicOffset: event.symbolicOffset,
+          grooveRole: event.grooveRole,
+          grooveOffsetTicks: event.grooveOffsetTicks,
+        })));
+      }
+
+      function maxAdjacentVelocityJump(piece) {
+        let max = 0;
+        for (const voice of activeVoiceLayout(piece.settings.voices)) {
+          const events = piece.events.filter((event) => event.voice === voice).sort((a, b) => a.tick - b.tick);
+          for (let i = 1; i < events.length; i += 1) {
+            max = Math.max(max, Math.abs(events[i].velocity - events[i - 1].velocity));
+          }
+        }
+        return max;
+      }
+
+      function syntheticTracks(eventsByVoice) {
+        return Object.fromEntries(Object.entries(eventsByVoice).map(([voice, events]) => [voice, {
+          name: voice,
+          channel: 0,
+          events: events.map((event) => ({
+            duration: 480,
+            carrierMidi: event.midi,
+            symbolic: "test",
+            resolved: "test",
+            ratioName: "1/1",
+            tunedFrequency: 440,
+            conceptualRatioFrequency: 440,
+            exportedMidiFrequency: 440,
+            grooveOffsetTicks: 0,
+            grooveRole: null,
+            phraseRole: "field",
+            velocity: 100,
+            bend: null,
+            ...event,
+          })),
+        }]));
+      }
+
+      const gravity = build("auto", "velocity-repeatable");
+      const repeat = build("auto", "velocity-repeatable");
+      const flat = build("flat", "velocity-repeatable");
+
+      const sectionMeta = [{ ...DEFAULT_SECTIONS[0], bars: 2, meter: "4/4", startTick: 0, barTicks: 1920, numerator: 4, denominator: 4 }];
+      const registerTracks = syntheticTracks({
+        bass: [{ tick: 0, gridTick: 0, startStep: 0, midi: 36, symbolicOffset: 0, phraseRole: "lead" }],
+        soprano: [{ tick: 0, gridTick: 0, startStep: 0, midi: 84, symbolicOffset: 0, phraseRole: "lead" }],
+      });
+      applyGravityVelocity(registerTracks, sectionMeta, velocitySettings("auto", "velocity-register"));
+      const lowVelocity = registerTracks.bass.events[0].velocity;
+      const highVelocity = registerTracks.soprano.events[0].velocity;
+
+      const accentTracks = syntheticTracks({
+        soprano: [
+          { tick: 0, gridTick: 0, startStep: 0, midi: 72, symbolicOffset: 0, phraseRole: "lead" },
+          { tick: 480, gridTick: 480, startStep: 1, midi: 72, symbolicOffset: 2, phraseRole: "field" },
+          { tick: 3360, gridTick: 3360, startStep: 7, midi: 72, symbolicOffset: 0, phraseRole: "lead" },
+        ],
+      });
+      applyGravityVelocity(accentTracks, sectionMeta, velocitySettings("auto", "velocity-accent"));
+      const downbeatVelocity = accentTracks.soprano.events[0].velocity;
+      const weakVelocity = accentTracks.soprano.events[1].velocity;
+      const cadenceVelocity = accentTracks.soprano.events[2].velocity;
+
+      return [
+        {
+          name: "model metadata and valid range",
+          ok: gravity.manifest.velocity_model.version === "gravity_velocity_v1"
+            && gravity.manifest.velocity_model.profile === "calm"
+            && gravity.events.every((event) => Number.isInteger(event.velocity) && event.velocity >= 1 && event.velocity <= 127),
+        },
+        {
+          name: "fixed velocity switch exports 100",
+          ok: flat.manifest.velocity_model.profile === "flat"
+            && flat.events.every((event) => event.velocity === 100)
+            && flat.report.includes("fixed at 100"),
+        },
+        {
+          name: "velocity is repeatable",
+          ok: JSON.stringify(gravity.events.map((event) => event.velocity)) === JSON.stringify(repeat.events.map((event) => event.velocity)),
+        },
+        {
+          name: "velocity setting does not change notes",
+          ok: nonVelocitySignature(gravity) === nonVelocitySignature(flat),
+        },
+        {
+          name: "higher register is slightly softer",
+          ok: lowVelocity > highVelocity && lowVelocity - highVelocity <= 12,
+        },
+        {
+          name: "meter and cadence shape gently",
+          ok: downbeatVelocity > weakVelocity && cadenceVelocity >= downbeatVelocity,
+        },
+        {
+          name: "adjacent velocity jumps are bounded",
+          ok: maxAdjacentVelocityJump(gravity) <= 16,
+        },
+      ];
+    })()
+  `, context);
+
+  let ok = true;
+  for (const result of results) {
+    const status = result.ok ? "ok" : "failed";
+    console.log(`${status} velocity ${result.name}`);
     if (!result.ok) ok = false;
   }
   return ok;
@@ -828,6 +986,8 @@ function runFugueTests() {
   const variedLabelOk = indexHtml.includes("Varied") && !indexHtml.includes("Strange");
   const notesClosedOk = indexHtml.includes('<button id="toggleNotesButton" type="button">Show Notes</button>')
     && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
+  const velocitySwitchOk = indexHtml.includes('id="velocityModeInput" type="checkbox" checked')
+    && indexHtml.includes("Gravity velocity");
   const context = makeAppContext();
   const results = vm.runInContext(`
     (() => {
@@ -988,11 +1148,12 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
   console.log(`${notesClosedOk ? "ok" : "failed"} notes default closed`);
+  console.log(`${velocitySwitchOk ? "ok" : "failed"} velocity switch default`);
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} fugue ${result.name}`);

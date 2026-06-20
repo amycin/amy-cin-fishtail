@@ -161,11 +161,15 @@ const VOICE_RANGES = {
   alto: [53, 76],
   soprano: [60, 84],
 };
+const VELOCITY_MODEL_VERSION = "gravity_velocity_v1";
 const VELOCITY_PITCH_LOW = VOICE_RANGES.bass[0];
 const VELOCITY_PITCH_HIGH = VOICE_RANGES.soprano[1];
-const VELOCITY_LOW = 127;
-const VELOCITY_HIGH = 90;
-const VELOCITY_TILT_DB_PER_OCTAVE = 3;
+const VELOCITY_PROFILES = {
+  flat: { label: "Fixed 100", min: 100, max: 100, rho: 0, drift: 0 },
+  calm: { label: "Calm Gravity", min: 62, max: 108, rho: 0.84, drift: 1.2 },
+  gravity: { label: "Gravity", min: 56, max: 116, rho: 0.86, drift: 1.6 },
+  dub: { label: "Dub Gravity", min: 60, max: 116, rho: 0.88, drift: 1.5 },
+};
 const FUGUE_STYLE_ID = "fishtail_fugue";
 const DUB_SKANK_EARLY_MS = [12, 34];
 const DUB_SWING_LATE_MS = [8, 26];
@@ -483,6 +487,7 @@ function bindElements() {
     "pedalSopranoInput",
     "tempoInput",
     "embedTempoInput",
+    "velocityModeInput",
     "dubModeInput",
     "referenceNoteInput",
     "referenceFreqInput",
@@ -1175,6 +1180,7 @@ function setGenerationControlsDisabled(disabled) {
     els.voicesInput,
     els.tempoInput,
     els.embedTempoInput,
+    els.velocityModeInput,
     els.dubModeInput,
     els.referenceNoteInput,
     els.referenceFreqInput,
@@ -1263,6 +1269,7 @@ function readSettings(seed) {
     pedalVoices: readPedalVoices(voices),
     tempo: clamp(parseFloat(els.tempoInput.value) || 72, 30, 220),
     includeTempoMap: Boolean(els.embedTempoInput.checked),
+    velocityProfile: els.velocityModeInput?.checked ? "auto" : "flat",
     dubMode: Boolean(els.dubModeInput.checked),
     referenceNote: els.referenceNoteInput.value || "A4",
     referenceMidi: selectedReferenceMidi(),
@@ -2071,6 +2078,7 @@ function buildPiece(settings, rng) {
     totalBars += section.bars;
   });
 
+  const velocitySummary = applyGravityVelocity(tracks, sectionMeta, settings);
   const events = activeVoices.flatMap((voice) => tracks[voice].events.map((event) => ({ ...event, voice })));
   const serializationIssues = validateMidiSerializationInput(tracks, settings);
   let midiBytes = new Uint8Array();
@@ -2084,9 +2092,9 @@ function buildPiece(settings, rng) {
   const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick, serializationIssues);
   const refrainSummary = summarizeRefrainState(refrainState);
   const dubGrooveSummary = summarizeDubGroove(settings, events, dubBassMemory);
-  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary }, audit);
-  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, sweetness }, audit);
-  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, sweetness }, audit);
+  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary }, audit);
+  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, sweetness }, audit);
+  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, sweetness }, audit);
 
   return {
     settings,
@@ -2958,7 +2966,8 @@ function makeNoteEvent(note, voice, tick, duration, settings, meta = {}) {
 }
 
 function applyDubGroove(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan) {
-  if (!settings.dubMode || !events.length || !section) return events;
+  if (!events.length || !section) return events;
+  if (!settings.dubMode) return annotatePhraseRoles(events, voice, section, phrasePlan);
   const meter = METERS[section.meter] || METERS["4/4"];
   const sectionEndTick = sectionStartTick + section.bars * meter.numerator * pulseTicks;
   const shaped = events.map((event) => {
@@ -2992,7 +3001,7 @@ function applyDubGroove(events, voice, sectionStartTick, pulseTicks, settings, s
       duration: Math.max(DUB_MIN_NOTE_TICKS, duration),
       grooveOffsetTicks: tick - event.gridTick,
       grooveRole,
-      phraseRole: phrasePlan ? (phrasePlan.leadByBar[Math.floor(startStep / meter.numerator)] === voice ? "lead" : phrasePlan.answerByBar[Math.floor(startStep / meter.numerator)] === voice ? "answer" : "field") : null,
+      phraseRole: phraseRoleForStep(voice, startStep, meter, phrasePlan),
     };
   }).sort((a, b) => a.tick - b.tick || a.gridTick - b.gridTick);
 
@@ -3006,14 +3015,218 @@ function applyDubGroove(events, voice, sectionStartTick, pulseTicks, settings, s
   return shaped.filter((event) => event.duration > 0);
 }
 
+function annotatePhraseRoles(events, voice, section, phrasePlan) {
+  if (!phrasePlan || !section) return events;
+  const meter = METERS[section.meter] || METERS["4/4"];
+  return events.map((event) => {
+    const startStep = event.startStep ?? 0;
+    return { ...event, phraseRole: phraseRoleForStep(voice, startStep, meter, phrasePlan) };
+  });
+}
+
+function phraseRoleForStep(voice, startStep, meter, phrasePlan) {
+  if (!phrasePlan) return null;
+  const bar = Math.floor(startStep / meter.numerator);
+  if (phrasePlan.leadByBar?.[bar] === voice) return "lead";
+  if (phrasePlan.answerByBar?.[bar] === voice) return "answer";
+  return "field";
+}
+
 function velocityForPitch(midi) {
+  return clamp(Math.round(92 + registerVelocityBalance(midi)), 1, 127);
+}
+
+function applyGravityVelocity(tracks, sectionMeta, settings) {
+  const profileId = velocityProfileId(settings);
+  const profile = VELOCITY_PROFILES[profileId] || VELOCITY_PROFILES.calm;
+  const refs = Object.entries(tracks)
+    .flatMap(([voice, track]) => track.events.map((event) => ({ voice, event })))
+    .sort((a, b) => a.event.tick - b.event.tick || a.voice.localeCompare(b.voice));
+  if (!refs.length) return emptyVelocitySummary(profileId, profile, settings);
+
+  const startCounts = new Map();
+  refs.forEach(({ event }) => {
+    startCounts.set(event.tick, (startCounts.get(event.tick) || 0) + 1);
+  });
+
+  const previousByVoice = {};
+  const driftByVoice = {};
+  const rawValues = [];
+  refs.forEach((ref, index) => {
+    const previous = previousByVoice[ref.voice] || null;
+    const components = velocityComponentsForEvent(ref, previous, sectionMeta, settings, startCounts.get(ref.event.tick) || 1);
+    const driftUnit = hashUnit(settings.seed, "velocity-v1", ref.voice, ref.event.gridTick, ref.event.symbolicOffset, ref.event.phraseRole || "none", index) * 2 - 1;
+    const drift = profile.rho * (driftByVoice[ref.voice] || 0) + profile.drift * driftUnit;
+    driftByVoice[ref.voice] = drift;
+    const raw = Object.values(components).reduce((sum, value) => sum + value, 0) + drift;
+    ref.rawVelocity = raw;
+    ref.gravity = components.harmonicGravity;
+    ref.event.velocityComponents = components;
+    rawValues.push(raw);
+    previousByVoice[ref.voice] = ref;
+  });
+
+  const values = rawValues.slice().sort((a, b) => a - b);
+  const median = percentile(values, 0.5);
+  const spread = Math.max(10, percentile(values, 0.9) - percentile(values, 0.1));
+  const tempo = velocityTempoCoupling(settings);
+  const center = (profile.min + profile.max) / 2 + tempo.centerOffset;
+  const halfRange = ((profile.max - profile.min) / 2) * tempo.rangeScale;
+  const velocityByVoice = {};
+  refs.forEach((ref) => {
+    const shaped = Math.tanh((ref.rawVelocity - median) / (spread * 1.8));
+    let velocity = profile.min === profile.max ? profile.min : Math.round(center + shaped * halfRange);
+    velocity = clamp(velocity, profile.min, profile.max);
+    const previous = velocityByVoice[ref.voice];
+    if (previous != null) {
+      const limit = velocityStepLimit(ref.event);
+      velocity = clamp(velocity, previous - limit, previous + limit);
+    }
+    ref.event.velocity = clamp(Math.round(velocity), 1, 127);
+    velocityByVoice[ref.voice] = ref.event.velocity;
+  });
+
+  return velocitySummary(refs.map((ref) => ref.event.velocity), profileId, profile, settings, tempo);
+}
+
+function velocityComponentsForEvent(ref, previous, sectionMeta, settings, simultaneousStarts) {
+  const { event, voice } = ref;
+  const location = velocityEventLocation(event, sectionMeta);
+  const section = location.section || sectionMeta[0] || DEFAULT_SECTIONS[0];
+  const mode = MODES[section.mode] || MODES.major;
+  const gravity = harmonicGravityForEvent(event, section, settings);
+  const previousGravity = previous ? harmonicGravityForEvent(previous.event, section, settings) : gravity;
+  const tendencyResolved = previous && mode.tendencies?.[previous.event.symbolicOffset]?.targets?.includes(event.symbolicOffset);
+  const cadenceStage = location.step == null ? null : getCadenceStage(location.step, section.bars * section.numerator, section.numerator);
+  const firstBeat = location.pulseInBar === 0;
+  const secondaryAccent = (METERS[section.meter]?.accents || []).includes(location.pulseInBar);
+  const contour = (hashUnit(settings.seed, "velocity-contour", event.symbolicOffset, mod(event.startStep ?? location.step ?? 0, 8), event.phraseRole || "field") * 2 - 1) * 1.8;
+  const tempo = velocityTempoCoupling(settings);
+
+  return {
+    base: 92,
+    registerBalance: registerVelocityBalance(event.midi),
+    metricAccent: firstBeat ? 4.2 : secondaryAccent ? 2.2 : -1.1,
+    phraseRole: event.phraseRole === "lead" ? 2.3 : event.phraseRole === "answer" ? 1.1 : -0.7,
+    harmonicGravity: (gravity - 0.5) * 4.8,
+    resolutionRelease: Math.max(0, gravity - previousGravity) * 6.2 + (tendencyResolved ? 3.2 : 0),
+    cadencePull: (cadenceStage === "final" || cadenceStage === "cadence-final" ? 4.5 : cadenceStage === "cadence-prep" ? 1.8 : 0) * tempo.cadenceScale,
+    dubRole: dubVelocityRole(event, voice),
+    motifContour: contour,
+    simultaneousCompensation: -1.15 * Math.max(0, simultaneousStarts - 1),
+    tempoBreath: tempo.component,
+  };
+}
+
+function registerVelocityBalance(midi) {
   const pitch = clamp(midi, VELOCITY_PITCH_LOW, VELOCITY_PITCH_HIGH);
-  const totalOctaves = Math.max(1 / 12, (VELOCITY_PITCH_HIGH - VELOCITY_PITCH_LOW) / 12);
-  const octaves = (pitch - VELOCITY_PITCH_LOW) / 12;
-  const endAmplitude = 10 ** (-(VELOCITY_TILT_DB_PER_OCTAVE * totalOctaves) / 20);
-  const amplitude = 10 ** (-(VELOCITY_TILT_DB_PER_OCTAVE * octaves) / 20);
-  const shaped = (amplitude - endAmplitude) / (1 - endAmplitude);
-  return clamp(Math.round(VELOCITY_HIGH + (VELOCITY_LOW - VELOCITY_HIGH) * shaped), VELOCITY_HIGH, VELOCITY_LOW);
+  const normalized = (pitch - VELOCITY_PITCH_LOW) / Math.max(1, VELOCITY_PITCH_HIGH - VELOCITY_PITCH_LOW);
+  return (0.5 - normalized) * 5.5;
+}
+
+function dubVelocityRole(event, voice) {
+  if (event.grooveRole === "skank-touch") return -3.2;
+  if (event.grooveRole === "bass-pulse" || voice === "bass") {
+    if (event.symbolicOffset === 0) return 3.2;
+    if (event.symbolicOffset === 7) return 2.1;
+    return 0.9;
+  }
+  if (event.grooveRole === "dub-stroll") return -0.7;
+  return 0;
+}
+
+function velocityEventLocation(event, sectionMeta) {
+  const tick = event.gridTick ?? event.tick;
+  const located = locateTick(tick, sectionMeta);
+  const section = located.section;
+  if (!section) return { section: null, step: null, pulseInBar: 0 };
+  const localTick = clamp(tick - section.startTick, 0, Math.max(0, section.bars * section.barTicks - 1));
+  const pulseTicks = section.barTicks / section.numerator;
+  const step = Math.floor(localTick / pulseTicks + 0.001);
+  return { section, step, pulseInBar: mod(step, section.numerator) };
+}
+
+function harmonicGravityForEvent(event, section, settings) {
+  const mode = MODES[section.mode] || MODES.major;
+  const tonal = tonalFunctionGravity(event.symbolicOffset, mode);
+  if (settings.outputMode === "equal") return tonal;
+  const ratioGravity = AMY_DUB_RATIOS[mod(event.symbolicOffset, 12)]?.[2] ?? tonal;
+  return ratioGravity * 0.64 + tonal * 0.36;
+}
+
+function tonalFunctionGravity(offset, mode) {
+  const pc = mod(offset, 12);
+  if (pc === 0) return 1;
+  if (pc === 7) return 0.9;
+  if (mode.stable?.includes(pc)) return 0.78;
+  if (mode.tendencies?.[pc]) return 0.28;
+  if (mode.offsets?.includes(pc)) return 0.54;
+  return 0.42;
+}
+
+function velocityTempoCoupling(settings) {
+  const referenceHz = Math.max(1, settings.referenceHz || DEFAULT_A4_HZ);
+  const divisor = Math.max(1, settings.tempoDivisor || Math.round((60 * referenceHz) / Math.max(1, settings.tempo || 60)));
+  const ratio = clamp(Math.sqrt(divisor / referenceHz), 0.78, 1.22);
+  return {
+    ratio,
+    rangeScale: clamp(0.98 + (ratio - 1) * 0.18, 0.92, 1.06),
+    cadenceScale: clamp(1 + (ratio - 1) * 0.16, 0.92, 1.08),
+    centerOffset: clamp((1 - ratio) * 1.8, -1.2, 1.2),
+    component: clamp((ratio - 1) * 1.6, -1.2, 1.2),
+  };
+}
+
+function velocityStepLimit(event) {
+  if (event.grooveRole === "skank-touch") return 16;
+  if (event.phraseRole === "lead") return 14;
+  return 12;
+}
+
+function velocityProfileId(settings) {
+  if (VELOCITY_PROFILES[settings.velocityProfile]) return settings.velocityProfile;
+  return settings.dubMode ? "dub" : "calm";
+}
+
+function emptyVelocitySummary(profileId, profile, settings) {
+  return velocitySummary([], profileId, profile, settings, velocityTempoCoupling(settings));
+}
+
+function velocitySummary(velocities, profileId, profile, settings, tempo) {
+  const sorted = velocities.slice().sort((a, b) => a - b);
+  const average = velocities.length ? velocities.reduce((sum, value) => sum + value, 0) / velocities.length : 0;
+  return {
+    version: VELOCITY_MODEL_VERSION,
+    profile: profileId,
+    label: profile.label,
+    range: [profile.min, profile.max],
+    editable: true,
+    rng_isolated: true,
+    tempo_coupling: {
+      formula: "BPM = 60 * referenceHz / n",
+      reference_hz: Number((settings.referenceHz || DEFAULT_A4_HZ).toFixed(4)),
+      divisor_n: settings.tempoDivisor,
+      bpm: Number((settings.tempo || 60).toFixed(4)),
+      ratio: Number(tempo.ratio.toFixed(4)),
+      range_scale: Number(tempo.rangeScale.toFixed(4)),
+    },
+    stats: {
+      min: sorted.length ? sorted[0] : 0,
+      max: sorted.length ? sorted[sorted.length - 1] : 0,
+      average: Number(average.toFixed(2)),
+      p10: Number(percentile(sorted, 0.1).toFixed(2)),
+      p90: Number(percentile(sorted, 0.9).toFixed(2)),
+    },
+  };
+}
+
+function percentile(sortedValues, amount) {
+  if (!sortedValues.length) return 0;
+  const index = clamp((sortedValues.length - 1) * amount, 0, sortedValues.length - 1);
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sortedValues[lower];
+  return mix(sortedValues[lower], sortedValues[upper], index - lower);
 }
 
 function isIntegerInRange(value, min, max) {
@@ -3360,17 +3573,8 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       tuning_mode: outputModeLabel(settings.outputMode),
       note: "Amy Dub Intonation writes carrier keys for a retuner. Bend MIDI uses per-voice channel pitch bend.",
     },
-    velocity_curve: {
-      mode: "pitch_tilt",
-      note: "Velocity is deterministic pitch feel, not random: lower notes carry more energy and higher notes sit softer.",
-      low_midi: VELOCITY_PITCH_LOW,
-      low_note: midiName(VELOCITY_PITCH_LOW),
-      low_velocity: VELOCITY_LOW,
-      high_midi: VELOCITY_PITCH_HIGH,
-      high_note: midiName(VELOCITY_PITCH_HIGH),
-      high_velocity: VELOCITY_HIGH,
-      tilt_db_per_octave: -VELOCITY_TILT_DB_PER_OCTAVE,
-    },
+    velocity_model: stats.velocitySummary,
+    velocity_curve: stats.velocitySummary,
     fishtail_tempo: {
       formula: "BPM = 60 * referenceHz / n",
       reference_note: settings.referenceNote,
@@ -3427,7 +3631,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`Pedal voices: ${Object.entries(settings.pedalVoices || {}).filter(([, enabled]) => enabled).map(([voice]) => voice).join(", ") || "none"}`);
   lines.push(`Pitch map: ${settings.resolution}`);
   lines.push(`Output: ${outputModeLabel(settings.outputMode)}`);
-  lines.push(`Velocity curve: pitch feel, ${VELOCITY_LOW} at ${midiName(VELOCITY_PITCH_LOW)} down to ${VELOCITY_HIGH} at ${midiName(VELOCITY_PITCH_HIGH)} with a ${VELOCITY_TILT_DB_PER_OCTAVE} dB/octave tilt.`);
+  lines.push(`Gravity Velocity: ${stats.velocitySummary?.label || "Calm Gravity"} ${settings.velocityProfile === "flat" ? "fixed at 100" : `range ${stats.velocitySummary?.stats?.min ?? 0}-${stats.velocitySummary?.stats?.max ?? 0}, linked to Fishtail tempo n=${settings.tempoDivisor}`}.`);
   if (settings.outputMode === "bend") {
     lines.push(`Bend reference: ${settings.rootNote} = ${settings.rootFreq.toFixed(4)} Hz, derived from ${settings.referenceNote} at ${settings.referenceHz.toFixed(4)} Hz`);
   }
@@ -3489,7 +3693,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`  MIDI bytes: ${audit.summary.midiBytes}`);
   lines.push(`  Grid checks: ${audit.summary.gridChecks}`);
   lines.push(`  Strong-beat vertical checks: ${audit.summary.strongBeatChecks}`);
-  lines.push(`  Velocity curve checks: ${audit.summary.velocityChecks}`);
+  lines.push(`  Velocity checks: ${audit.summary.velocityChecks}`);
   if (settings.dubMode) {
     lines.push(`  Dub groove events: ${audit.summary.dubGrooveEvents} (${audit.summary.dubSkankTouches} skank touches, ${audit.summary.dubBassPulses} bass pulses)`);
   }
@@ -3642,11 +3846,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     if (!Number.isInteger(event.velocity) || event.velocity < 1 || event.velocity > 127) {
       pushIssue(`${event.voice} has invalid velocity ${event.velocity} at ${describeTickLocation(event.tick, sectionMeta, settings)}.`);
     } else {
-      const expectedVelocity = velocityForPitch(event.midi);
       summary.velocityChecks += 1;
-      if (event.velocity !== expectedVelocity) {
-        pushWarning(`${event.voice} velocity ${event.velocity} at ${describeTickLocation(event.tick, sectionMeta, settings)} does not match pitch curve value ${expectedVelocity}.`);
-      }
     }
     const carrier = event.carrierMidi ?? event.midi;
     if (voiceRange && (carrier < voiceRange[0] || carrier > voiceRange[1])) {
