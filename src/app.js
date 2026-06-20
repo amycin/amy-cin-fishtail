@@ -147,6 +147,11 @@ const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", 
 const KEY_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const REFERENCE_NOTE_NAMES = buildReferenceNoteNames(2, 6);
 const VOICE_ORDER = ["bass", "tenor", "alto", "soprano"];
+const VOICE_LAYOUTS = {
+  2: ["bass", "soprano"],
+  3: ["bass", "alto", "soprano"],
+  4: ["bass", "tenor", "alto", "soprano"],
+};
 const VOICE_RANGES = {
   bass: [36, 57],
   tenor: [48, 69],
@@ -163,6 +168,8 @@ const DUB_SKANK_EARLY_MS = [12, 34];
 const DUB_SWING_LATE_MS = [8, 26];
 const DUB_BASS_LATE_MS = [4, 18];
 const DUB_MIN_NOTE_TICKS = 24;
+const ENTROPY_TIMEOUT_MS = 2000;
+const ENTROPY_MAX_BYTES = 4096;
 
 const AMY_DUB_RATIOS = [
   ["1/1", 1 / 1, 1.0, "home"],
@@ -405,6 +412,8 @@ const state = {
   audioContext: null,
   referenceAnchorA4Hz: DEFAULT_A4_HZ,
   pedalTouched: false,
+  generating: false,
+  randomising: false,
 };
 
 window.fishtailApp = { state, version: "v0" };
@@ -432,7 +441,7 @@ const els = {};
 document.addEventListener("DOMContentLoaded", () => {
   bindElements();
   hydrateSelects();
-  updateBendReference(false);
+  updateTuningRootReference(false);
   updateBendControls();
   applyPedalDefaults(true);
   updatePedalControls();
@@ -471,6 +480,7 @@ function bindElements() {
     "outputModeInput",
     "rootNoteInput",
     "rootFreqInput",
+    "linkRootInput",
     "generateButton",
     "downloadMidiButton",
     "downloadJsonButton",
@@ -534,15 +544,19 @@ function bindEvents() {
   els.referenceNoteInput.addEventListener("change", () => {
     updateReferenceFrequencyFromAnchor();
     updateTempoControls();
-    if (els.outputModeInput.value === "bend") updateBendReference(true);
+    if (isTuningRootVisible()) updateTuningRootReference(true);
   });
   els.referenceFreqInput.addEventListener("input", () => {
     updateReferenceAnchorFromFrequency();
     updateTempoControls();
-    if (els.outputModeInput.value === "bend") updateBendReference(true);
+    if (isTuningRootVisible()) updateTuningRootReference(true);
   });
   els.tempoDivisorInput.addEventListener("input", updateTempoControls);
-  els.rootNoteInput.addEventListener("change", () => updateBendReference(true));
+  els.rootNoteInput.addEventListener("change", () => updateTuningRootReference(true));
+  els.rootFreqInput.addEventListener("input", () => {
+    if (els.linkRootInput) els.linkRootInput.checked = false;
+  });
+  els.linkRootInput?.addEventListener("change", () => updateTuningRootReference(true));
   els.dubModeInput.addEventListener("change", () => {
     updateDubModeUi();
     applyPedalDefaults(false);
@@ -621,11 +635,15 @@ function handleDeviceMotion(event) {
 }
 
 function updateBendControls() {
-  const showBendReference = els.outputModeInput.value === "bend";
-  document.querySelectorAll(".bend-only").forEach((node) => {
-    node.hidden = !showBendReference;
+  const showTuningRoot = isTuningRootVisible();
+  document.querySelectorAll(".bend-only, .tuning-root-only").forEach((node) => {
+    node.hidden = !showTuningRoot;
   });
-  if (showBendReference) updateBendReference(false);
+  if (showTuningRoot) updateTuningRootReference(true);
+}
+
+function isTuningRootVisible() {
+  return els.outputModeInput?.value === "bend" || els.outputModeInput?.value === "retuner";
 }
 
 function updateDubModeUi() {
@@ -644,7 +662,11 @@ function pedalInputs() {
 }
 
 function activeVoiceNames(count = parseInt(els.voicesInput?.value, 10) || 4) {
-  return VOICE_ORDER.slice(4 - clamp(count, 2, 4));
+  return activeVoiceLayout(count);
+}
+
+function activeVoiceLayout(count = 4) {
+  return [...VOICE_LAYOUTS[clamp(count, 2, 4)]];
 }
 
 function pedalInputForVoice(voice) {
@@ -675,7 +697,8 @@ function updatePedalControls() {
   });
 }
 
-function updateBendReference(overwrite) {
+function updateTuningRootReference(overwrite) {
+  if (els.linkRootInput && !els.linkRootInput.checked) return;
   const rootPc = noteToPc(els.rootNoteInput.value || "A");
   const rootMidi = 60 + rootPc;
   const referenceHz = currentReferenceHz();
@@ -794,42 +817,50 @@ function escapeHtml(value) {
 }
 
 async function randomiseForm(kind) {
-  const seed = await makeSystemSeed();
-  const rng = makeRng(seed);
-  const strange = Number(els.strangenessInput.value) / 100;
-  const dubMode = Boolean(els.dubModeInput?.checked);
-  const sectionCount = randomFormSectionCount(rng, kind, dubMode);
-  const startKey = weightedChoice(rng, KEY_NAMES.map((key) => [key, key === "C" || key === "D" || key === "G" || key === "A" ? 5 : 1]));
-  let currentKey = startKey;
-  let currentMode = weightedChoice(rng, [["major", 4], ["mixolydian", 3], ["dorian", 2], ["gravity_melodic_minor", 2], ["harmonic_minor", 1.8]]);
-  const sections = [];
+  if (state.generating || state.randomising) return;
+  state.randomising = true;
+  setGenerationControlsDisabled(true);
+  try {
+    const seed = await makeSystemSeed();
+    const rng = makeRng(seed);
+    const strange = Number(els.strangenessInput.value) / 100;
+    const dubMode = Boolean(els.dubModeInput?.checked);
+    const sectionCount = randomFormSectionCount(rng, kind, dubMode);
+    const startKey = weightedChoice(rng, KEY_NAMES.map((key) => [key, key === "C" || key === "D" || key === "G" || key === "A" ? 5 : 1]));
+    let currentKey = startKey;
+    let currentMode = weightedChoice(rng, [["major", 4], ["mixolydian", 3], ["dorian", 2], ["gravity_melodic_minor", 2], ["harmonic_minor", 1.8]]);
+    const sections = [];
 
-  for (let i = 0; i < sectionCount; i += 1) {
-    if (i > 0) currentKey = chooseNextKey(rng, currentKey, currentMode, kind, strange);
-    currentMode = chooseNextMode(rng, currentMode, kind, strange);
-    const cadence = chooseCadenceForMode(rng, currentMode, dubMode, i, sectionCount);
-    const roleTreatment = chooseRandomSectionRoleTreatment(rng, i, sectionCount, dubMode, kind);
-    sections.push({
-      bars: randomFormBars(rng, kind, dubMode),
-      key: currentKey,
-      mode: currentMode,
-      meter: chooseMeter(rng, kind, strange),
-      cadence,
-      role: roleTreatment.role,
-      treatment: roleTreatment.treatment,
-    });
+    for (let i = 0; i < sectionCount; i += 1) {
+      if (i > 0) currentKey = chooseNextKey(rng, currentKey, currentMode, kind, strange);
+      currentMode = chooseNextMode(rng, currentMode, kind, strange);
+      const cadence = chooseCadenceForMode(rng, currentMode, dubMode, i, sectionCount);
+      const roleTreatment = chooseRandomSectionRoleTreatment(rng, i, sectionCount, dubMode, kind);
+      sections.push({
+        bars: randomFormBars(rng, kind, dubMode),
+        key: currentKey,
+        mode: currentMode,
+        meter: chooseMeter(rng, kind, strange),
+        cadence,
+        role: roleTreatment.role,
+        treatment: roleTreatment.treatment,
+      });
+    }
+
+    if (rng() < 0.72) {
+      sections[sections.length - 1].key = startKey;
+      sections[sections.length - 1].mode = sections[0].mode;
+      sections[sections.length - 1].cadence = isMinorMode(sections[0].mode) ? "minor_authentic" : "authentic";
+    }
+
+    state.sections = sections;
+    renderSections();
+    els.seedLabel.textContent = `Dice: ${seed.slice(0, 8)}`;
+    els.statusLabel.textContent = kind === "gentle" ? "D4 form" : "D20 form";
+  } finally {
+    state.randomising = false;
+    setGenerationControlsDisabled(false);
   }
-
-  if (rng() < 0.72) {
-    sections[sections.length - 1].key = startKey;
-    sections[sections.length - 1].mode = sections[0].mode;
-    sections[sections.length - 1].cadence = isMinorMode(sections[0].mode) ? "minor_authentic" : "authentic";
-  }
-
-  state.sections = sections;
-  renderSections();
-  els.seedLabel.textContent = `Dice: ${seed.slice(0, 8)}`;
-  els.statusLabel.textContent = kind === "gentle" ? "D4 form" : "D20 form";
 }
 
 function randomFormSectionCount(rng, kind, dubMode) {
@@ -1026,10 +1057,38 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function setGenerationControlsDisabled(disabled) {
+  [
+    els.generateButton,
+    els.gentleRollButton,
+    els.wildRollButton,
+    els.addSectionButton,
+    els.styleInput,
+    els.voicesInput,
+    els.tempoInput,
+    els.embedTempoInput,
+    els.dubModeInput,
+    els.referenceNoteInput,
+    els.referenceFreqInput,
+    els.tempoDivisorInput,
+    els.breathingInput,
+    els.densityInput,
+    els.strangenessInput,
+    els.resolutionInput,
+    els.outputModeInput,
+    els.rootNoteInput,
+    els.rootFreqInput,
+    els.linkRootInput,
+    ...pedalInputs(),
+    ...(typeof document.querySelectorAll === "function" ? document.querySelectorAll("#sectionTable input, #sectionTable select, #sectionTable button") : []),
+  ].filter(Boolean).forEach((node) => {
+    node.disabled = disabled;
+  });
+}
+
 async function generatePiece() {
-  const seed = await makeSystemSeed();
-  const rng = makeRng(seed);
-  const settings = readSettings(seed);
+  if (state.generating) return;
+  state.generating = true;
   playGenerateFeedback();
   state.animationPhase = 0;
   state.animationStartedAt = Date.now();
@@ -1037,13 +1096,16 @@ async function generatePiece() {
   state.animationVisualLevel = 0;
   state.animationActive = true;
   els.generateButton.classList.add("is-generating");
-  els.generateButton.disabled = true;
+  setGenerationControlsDisabled(true);
   els.downloadMidiButton.disabled = true;
   els.downloadJsonButton.disabled = true;
-  els.statusLabel.textContent = "Tuning";
+  els.statusLabel.textContent = customEntropyEndpoint() ? "Tuning + entropy" : "Tuning";
   els.pieceLengthLabel.textContent = "Preparing";
   const startedAt = Date.now();
   try {
+    const seed = await makeSystemSeed();
+    const rng = makeRng(seed);
+    const settings = readSettings(seed);
     await wait(650);
     els.statusLabel.textContent = "Generating";
     await wait(450);
@@ -1057,12 +1119,17 @@ async function generatePiece() {
     document.body.dataset.fishtailAuditWarnings = String(piece.audit.warnings.length);
     els.reportOutput.textContent = piece.report;
     els.seedLabel.textContent = `Seed: ${seed.slice(0, 12)}`;
-    els.pieceLengthLabel.textContent = `${piece.totalBars} bars | ${piece.events.length} notes | ${piece.audit.ok ? "checked" : "check warnings"}`;
-    els.downloadMidiButton.disabled = false;
+    const fatalIssues = piece.audit.issues.length > 0;
+    els.pieceLengthLabel.textContent = `${piece.totalBars} bars | ${piece.events.length} notes | ${piece.audit.ok ? "checked" : fatalIssues ? "MIDI blocked" : "musical notes"}`;
+    els.downloadMidiButton.disabled = fatalIssues;
     els.downloadJsonButton.disabled = false;
     await wait(Math.max(0, GENERATE_MIN_MS - (Date.now() - startedAt)));
-    saveMidiPiece(piece);
-    els.statusLabel.textContent = piece.audit.ok ? "MIDI checked + saved" : "Saved with notes";
+    if (!fatalIssues) {
+      saveMidiPiece(piece);
+      els.statusLabel.textContent = piece.audit.ok ? "MIDI checked + saved" : "Saved with notes";
+    } else {
+      els.statusLabel.textContent = "MIDI blocked by checker";
+    }
   } catch (error) {
     els.statusLabel.textContent = "Stopped";
     els.reportOutput.textContent = `Generation stopped:\n${error.message}`;
@@ -1072,7 +1139,8 @@ async function generatePiece() {
     state.animationTailUntil = Date.now() + GENERATE_TAIL_MS;
     await wait(650);
     els.generateButton.classList.remove("is-generating");
-    els.generateButton.disabled = false;
+    setGenerationControlsDisabled(false);
+    state.generating = false;
   }
 }
 
@@ -1113,7 +1181,7 @@ function readPedalVoices(voiceCount) {
 }
 
 function normalizePedalVoices(pedalVoices = {}, voiceCount = 4, dubMode = false) {
-  const active = new Set(VOICE_ORDER.slice(4 - clamp(voiceCount, 2, 4)));
+  const active = new Set(activeVoiceLayout(voiceCount));
   return Object.fromEntries(VOICE_ORDER.map((voice) => [
     voice,
     active.has(voice) && Boolean(pedalVoices[voice] ?? (dubMode && voice === "bass")),
@@ -1766,7 +1834,7 @@ function planFugueSectionEntries({ sectionIndex, sectionCount, role, meter, acti
 function buildPiece(settings, rng) {
   settings.sections = settings.sections.map(normalizeSection);
   settings.pedalVoices = normalizePedalVoices(settings.pedalVoices, settings.voices, settings.dubMode);
-  const activeVoices = VOICE_ORDER.slice(4 - settings.voices);
+  const activeVoices = activeVoiceLayout(settings.voices);
   const subject = makeSubject(settings, rng);
   let fugueSummary = null;
   let fugueMaterial = null;
@@ -1811,6 +1879,9 @@ function buildPiece(settings, rng) {
     const lastOffsets = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
     const holdStates = Object.fromEntries(activeVoices.map((voice) => [voice, makeHoldState()]));
     const resolvedBlocks = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
+    activeVoices.forEach((voice) => {
+      debts[voice] = null;
+    });
 
     for (let step = 0; step < steps; step += 1) {
       const pulseInBar = step % meter.numerator;
@@ -1891,8 +1962,16 @@ function buildPiece(settings, rng) {
   });
 
   const events = activeVoices.flatMap((voice) => tracks[voice].events.map((event) => ({ ...event, voice })));
-  const midiBytes = writeMidiFile({ tracks, sectionMeta, settings, totalTicks: currentTick });
-  const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick);
+  const serializationIssues = validateMidiSerializationInput(tracks, settings);
+  let midiBytes = new Uint8Array();
+  if (!serializationIssues.length) {
+    try {
+      midiBytes = writeMidiFile({ tracks, sectionMeta, settings, totalTicks: currentTick });
+    } catch (error) {
+      serializationIssues.push(`MIDI serialization failed: ${error.message}`);
+    }
+  }
+  const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick, serializationIssues);
   const refrainSummary = summarizeRefrainState(refrainState);
   const dubGrooveSummary = summarizeDubGroove(settings, events, dubBassMemory);
   const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary }, audit);
@@ -1981,9 +2060,7 @@ function chooseVoiceEvent(context) {
 
   candidates.sort((a, b) => b.score - a.score);
   const chosen = weightedChoice(rng, candidates.slice(0, 5).map((candidate, index) => [candidate, 6 - index]));
-  if (chosen.resolvedDebt) context.debts[voice] = null;
-  applyTendencyDebt(chosen, context);
-  return { ...chosen, parallelRejects };
+  return commitVoiceChoice({ ...chosen, parallelRejects }, context);
 }
 
 function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest = false) {
@@ -1995,7 +2072,7 @@ function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest =
     parallelRejects += validation.parallelReject ? 1 : 0;
     if (validation.ok) {
       noteFallbackStat(context, "validated");
-      return { ...fallback, resolvedDebt: validation.resolvedDebt, parallelRejects, fallbackKind: "validated" };
+      return commitVoiceChoice({ ...fallback, resolvedDebt: validation.resolvedDebt, parallelRejects, fallbackKind: "validated" }, context);
     }
   }
 
@@ -2006,7 +2083,7 @@ function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest =
     if (relation.parallelReject) parallelRejects += 1;
     if (relation.ok) {
       noteFallbackStat(context, "relationOnly");
-      return { ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "relation-only" };
+      return commitVoiceChoice({ ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "relation-only" }, context);
     }
   }
 
@@ -2015,7 +2092,7 @@ function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest =
     if (relation.parallelReject) parallelRejects += 1;
     if (relation.ok) {
       noteFallbackStat(context, "verticalRelaxed");
-      return { ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "vertical-relaxed" };
+      return commitVoiceChoice({ ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "vertical-relaxed" }, context);
     }
   }
 
@@ -2024,7 +2101,7 @@ function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest =
     if (relation.parallelReject) parallelRejects += 1;
     if (relation.ok) {
       noteFallbackStat(context, "spacingRelaxed");
-      return { ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "spacing-relaxed" };
+      return commitVoiceChoice({ ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "spacing-relaxed" }, context);
     }
   }
 
@@ -2036,7 +2113,7 @@ function chooseFallbackVoiceEvent(context, initialParallelRejects = 0, canRest =
       continue;
     }
     noteFallbackStat(context, "noParallelOnly");
-    return { ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "no-parallel-only" };
+    return commitVoiceChoice({ ...fallback, resolvedDebt: false, parallelRejects, fallbackKind: "no-parallel-only" }, context);
   }
 
   return fallbackRest(context, parallelRejects);
@@ -2579,7 +2656,7 @@ function parallelPerfectAgainstChosen(candidate, context, { allowDubBend = true 
       strong,
     });
     if (!motion) continue;
-    const allowedByDub = allowDubBend && allowsDubRuleBend(context, motion);
+    const allowedByDub = allowDubBend && allowsDubRuleBend(context, motion, otherVoice);
     if (!allowedByDub) return { blocked: true, allowedByDub: false, motion, otherVoice };
     allowed = allowed || { blocked: false, allowedByDub: true, motion, otherVoice };
   }
@@ -2618,12 +2695,15 @@ function classifyParallelPerfectMotion({ previousLower, previousUpper, currentLo
   return null;
 }
 
-function allowsDubRuleBend(context, motion) {
+function allowsDubRuleBend(context, motion, otherVoice = "") {
   const { settings, cadenceStage, rng, voice } = context;
   if (!settings.dubMode || cadenceStage) return false;
   const baseChance = motion.type === "direct-perfect" ? 0.18 : 0.09;
   const bassWeight = voice === "bass" ? 1.25 : 1;
-  return rng() < baseChance * bassWeight * (0.85 + settings.strangeness * 0.7);
+  const unit = settings.seed
+    ? hashUnit(settings.seed, "dub-rule-bend", context.sectionIndex, context.step, voice, otherVoice, motion.type, motion.interval)
+    : rng();
+  return unit < baseChance * bassWeight * (0.85 + settings.strangeness * 0.7);
 }
 
 function scoreCandidate(candidate, context) {
@@ -2686,13 +2766,20 @@ function applyTendencyDebt(chosen, context) {
   if (tendency) debts[voice] = tendency;
 }
 
+function commitVoiceChoice(choice, context) {
+  if (!choice || choice.rest) return choice;
+  if (choice.resolvedDebt) context.debts[context.voice] = null;
+  applyTendencyDebt(choice, context);
+  return choice;
+}
+
 function gridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan) {
   const events = [];
   let active = null;
   let startStep = 0;
   for (let i = 0; i <= grid.length; i += 1) {
     const current = grid[i] || null;
-    const same = active && current && current.midi === active.midi && !shouldRearticulateDubRepeat(voice, i, section, settings);
+    const same = sameGridNote(active, current, voice, i, section, settings);
     if (same) continue;
     if (active) {
       events.push(makeNoteEvent(active, voice, sectionStartTick + startStep * pulseTicks, (i - startStep) * pulseTicks, settings, { startStep, endStep: i }));
@@ -2701,6 +2788,14 @@ function gridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, secti
     startStep = i;
   }
   return applyDubGroove(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan);
+}
+
+function sameGridNote(active, current, voice, step, section, settings) {
+  if (!active || !current) return false;
+  if (shouldRearticulateDubRepeat(voice, step, section, settings)) return false;
+  return current.midi === active.midi
+    && mod(current.symbolicOffset, 12) === mod(active.symbolicOffset, 12)
+    && current.ratioName === active.ratioName;
 }
 
 function shouldRearticulateDubRepeat(voice, step, section, settings) {
@@ -2713,16 +2808,20 @@ function shouldRearticulateDubRepeat(voice, step, section, settings) {
 }
 
 function makeNoteEvent(note, voice, tick, duration, settings, meta = {}) {
-  const tunedFrequency = settings.rootFreq * ratioForMidi(note.midi, settings);
+  const ratioFrequency = settings.rootFreq * ratioForMidi(note.midi, settings);
   let midi = note.midi;
   let bend = null;
+  let tunedFrequency = ratioFrequency;
   if (settings.outputMode === "equal") {
     midi = nearestMidiForPc(note.literalPc, VOICE_RANGES[voice][0], VOICE_RANGES[voice][1], note.midi);
+    tunedFrequency = midiFrequency(midi);
   } else if (settings.outputMode === "bend") {
-    midi = Math.round(69 + 12 * Math.log2(tunedFrequency / 440));
-    const etFreq = 440 * 2 ** ((midi - 69) / 12);
-    const cents = 1200 * Math.log2(tunedFrequency / etFreq);
-    bend = centsToPitchBend(cents, 2);
+    midi = Math.round(69 + 12 * Math.log2(ratioFrequency / 440));
+    if (Number.isInteger(midi)) {
+      const etFreq = midiFrequency(midi);
+      const cents = 1200 * Math.log2(ratioFrequency / etFreq);
+      bend = centsToPitchBend(cents, 2);
+    }
   }
   const velocity = velocityForPitch(midi);
   return {
@@ -2741,6 +2840,8 @@ function makeNoteEvent(note, voice, tick, duration, settings, meta = {}) {
     resolved: note.noteName,
     ratioName: note.ratioName,
     tunedFrequency,
+    conceptualRatioFrequency: ratioFrequency,
+    exportedMidiFrequency: midiFrequency(midi),
     velocity,
     bend,
   };
@@ -2805,6 +2906,54 @@ function velocityForPitch(midi) {
   return clamp(Math.round(VELOCITY_HIGH + (VELOCITY_LOW - VELOCITY_HIGH) * shaped), VELOCITY_HIGH, VELOCITY_LOW);
 }
 
+function isIntegerInRange(value, min, max) {
+  return Number.isInteger(value) && value >= min && value <= max;
+}
+
+function isNonNegativeInteger(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+function midiChannel(value, label) {
+  if (!isIntegerInRange(value, 0, 15)) throw new RangeError(`${label} must be 0-15, got ${value}.`);
+  return value;
+}
+
+function midiDataByte(value, label, min = 0) {
+  if (!isIntegerInRange(value, min, 127)) throw new RangeError(`${label} must be ${min}-127, got ${value}.`);
+  return value;
+}
+
+function midiTick(value, label) {
+  if (!isNonNegativeInteger(value)) throw new RangeError(`${label} must be a non-negative integer, got ${value}.`);
+  return value;
+}
+
+function midiPositiveTick(value, label) {
+  if (!Number.isInteger(value) || value <= 0) throw new RangeError(`${label} must be a positive integer, got ${value}.`);
+  return value;
+}
+
+function validateMidiSerializationInput(tracks, settings) {
+  const issues = [];
+  Object.values(tracks).forEach((track) => {
+    if (!isIntegerInRange(track.channel, 0, 15)) {
+      issues.push(`${track.name || "Voice"} has invalid MIDI channel ${track.channel}.`);
+    }
+    track.events.forEach((note, index) => {
+      const label = `${track.name || "Voice"} event ${index + 1}`;
+      if (!isNonNegativeInteger(note.tick)) issues.push(`${label} has invalid tick ${note.tick}.`);
+      if (!Number.isInteger(note.duration) || note.duration <= 0) issues.push(`${label} has invalid duration ${note.duration}.`);
+      if (!isIntegerInRange(note.midi, 0, 127)) issues.push(`${label} has invalid MIDI note ${note.midi}; Bend MIDI may need a root frequency inside the usable range.`);
+      if (!isIntegerInRange(note.velocity, 1, 127)) issues.push(`${label} has invalid velocity ${note.velocity}.`);
+      if (settings.outputMode === "bend" && note.bend != null && !isIntegerInRange(note.bend, 0, 16383)) {
+        issues.push(`${label} has invalid pitch bend ${note.bend}.`);
+      }
+    });
+  });
+  return issues;
+}
+
 function writeMidiFile({ tracks, sectionMeta, settings }) {
   const chunks = [];
   const voiceTracks = Object.values(tracks);
@@ -2828,16 +2977,20 @@ function makeHeaderChunk(format, ntrks, division) {
 
 function makeVoiceTrack(track, settings) {
   const events = [];
-  const channel = track.channel;
+  const channel = midiChannel(track.channel, `${track.name || "Voice"} channel`);
   if (settings.outputMode === "bend") {
     events.push(...pitchBendRangeEvents(channel, 2));
   }
   for (const note of track.events) {
+    const tick = midiTick(note.tick, `${track.name || "Voice"} note tick`);
+    const duration = midiPositiveTick(note.duration, `${track.name || "Voice"} note duration`);
+    const midi = midiDataByte(note.midi, `${track.name || "Voice"} note`);
+    const velocity = midiDataByte(note.velocity, `${track.name || "Voice"} velocity`, 1);
     if (settings.outputMode === "bend" && note.bend != null) {
-      events.push({ tick: note.tick, bytes: pitchBendBytes(channel, note.bend) });
+      events.push({ tick, bytes: pitchBendBytes(channel, note.bend) });
     }
-    events.push({ tick: note.tick, bytes: [0x90 | channel, note.midi & 0x7f, note.velocity & 0x7f] });
-    events.push({ tick: note.tick + note.duration, bytes: [0x80 | channel, note.midi & 0x7f, 0] });
+    events.push({ tick, bytes: [0x90 | channel, midi, velocity] });
+    events.push({ tick: tick + duration, bytes: [0x80 | channel, midi, 0] });
   }
   events.sort((a, b) => a.tick - b.tick || eventOrder(a.bytes) - eventOrder(b.bytes));
   return chunk("MTrk", deltaEncode(events));
@@ -2870,13 +3023,15 @@ function timeSignatureMetaBytes(numerator, denominator) {
 }
 
 function pitchBendRangeEvents(channel, semitones) {
+  const safeChannel = midiChannel(channel, "Pitch bend range channel");
+  const safeSemitones = midiDataByte(semitones, "Pitch bend range semitones");
   return [
-    { tick: 0, bytes: [0xb0 | channel, 101, 0] },
-    { tick: 0, bytes: [0xb0 | channel, 100, 0] },
-    { tick: 0, bytes: [0xb0 | channel, 6, semitones] },
-    { tick: 0, bytes: [0xb0 | channel, 38, 0] },
-    { tick: 0, bytes: [0xb0 | channel, 101, 127] },
-    { tick: 0, bytes: [0xb0 | channel, 100, 127] },
+    { tick: 0, bytes: [0xb0 | safeChannel, 101, 0] },
+    { tick: 0, bytes: [0xb0 | safeChannel, 100, 0] },
+    { tick: 0, bytes: [0xb0 | safeChannel, 6, safeSemitones] },
+    { tick: 0, bytes: [0xb0 | safeChannel, 38, 0] },
+    { tick: 0, bytes: [0xb0 | safeChannel, 101, 127] },
+    { tick: 0, bytes: [0xb0 | safeChannel, 100, 127] },
   ];
 }
 
@@ -2893,8 +3048,9 @@ function deltaEncode(events, endTick = null) {
   const bytes = [];
   let previousTick = 0;
   for (const event of events) {
-    bytes.push(...varLen(event.tick - previousTick), ...event.bytes);
-    previousTick = event.tick;
+    const tick = midiTick(event.tick, "MIDI event tick");
+    bytes.push(...varLen(tick - previousTick), ...event.bytes);
+    previousTick = tick;
   }
   const finalTick = endTick == null ? previousTick : Math.max(previousTick, endTick);
   bytes.push(...varLen(finalTick - previousTick), 0xff, 0x2f, 0x00);
@@ -2915,8 +3071,9 @@ function chunk(id, data) {
 }
 
 function pitchBendBytes(channel, value) {
-  const clamped = clamp(value, 0, 16383);
-  return [0xe0 | channel, clamped & 0x7f, (clamped >> 7) & 0x7f];
+  const safeChannel = midiChannel(channel, "Pitch bend channel");
+  if (!isIntegerInRange(value, 0, 16383)) throw new RangeError(`Pitch bend value must be 0-16383, got ${value}.`);
+  return [0xe0 | safeChannel, value & 0x7f, (value >> 7) & 0x7f];
 }
 
 function centsToPitchBend(cents, rangeSemitones) {
@@ -2969,7 +3126,7 @@ function summarizeDubGroove(settings, events, memory) {
 
 function checkSweetness(settings, sectionMeta, events, stats, audit) {
   const totalTicks = Math.max(1, sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0));
-  const activeVoices = VOICE_ORDER.slice(4 - settings.voices);
+  const activeVoices = activeVoiceLayout(settings.voices);
   const byVoice = Object.fromEntries(activeVoices.map((voice) => [voice, events.filter((event) => event.voice === voice)]));
   const totalSoundingTicks = events.reduce((sum, event) => sum + event.duration, 0);
   const restSpace = clamp(1 - totalSoundingTicks / Math.max(1, totalTicks * activeVoices.length), 0, 1);
@@ -3119,6 +3276,7 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
     stats,
     audit: {
       ok: audit.ok,
+      fatal: audit.issues.length > 0,
       summary: audit.summary,
       issues: audit.issues,
       warnings: audit.warnings,
@@ -3134,6 +3292,8 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       resolved: event.resolved,
       ratio: event.ratioName,
       hz: Number(event.tunedFrequency.toFixed(4)),
+      conceptual_ratio_hz: Number(event.conceptualRatioFrequency.toFixed(4)),
+      exported_midi_hz: Number(event.exportedMidiFrequency.toFixed(4)),
       velocity: event.velocity,
       groove_role: event.grooveRole,
       groove_offset_ticks: event.grooveOffsetTicks,
@@ -3293,7 +3453,7 @@ function checkerReassurance(seed, index) {
   return CHECK_REASSURANCE_LINES[Math.abs(hash) % CHECK_REASSURANCE_LINES.length];
 }
 
-function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTicks) {
+function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTicks, preflightIssues = []) {
   const issues = [];
   const warnings = [];
   const summary = {
@@ -3318,10 +3478,11 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     dubSkankTouches: 0,
     dubBassPulses: 0,
   };
-  const activeVoices = VOICE_ORDER.slice(4 - settings.voices);
+  const activeVoices = activeVoiceLayout(settings.voices);
   const byVoice = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
   const pushIssue = (message) => pushLimited(issues, message);
   const pushWarning = (message) => pushLimited(warnings, message);
+  preflightIssues.forEach(pushIssue);
   summary.refrainReturns = sectionMeta.filter((section) => section.refrainPlan?.kind === "return").length;
   summary.refrainDevelopments = sectionMeta.filter((section) => section.refrainPlan?.kind === "development").length;
   summary.dubbyRefrains = sectionMeta.filter((section) => section.refrainPlan?.treatment === "dubby").length;
@@ -3710,6 +3871,10 @@ function pushLimited(list, message, limit = 12) {
 function downloadLast(kind) {
   if (!state.lastPiece) return;
   if (kind === "midi") {
+    if (state.lastPiece.audit?.issues?.length) {
+      els.statusLabel.textContent = "MIDI blocked by checker";
+      return;
+    }
     saveMidiPiece(state.lastPiece);
     els.statusLabel.textContent = "MIDI save requested";
   } else if (kind === "json") {
@@ -4383,6 +4548,10 @@ function midiName(midi) {
   return `${pcToName(midi % 12)}${Math.floor(midi / 12) - 1}`;
 }
 
+function midiFrequency(midi, a4 = 440) {
+  return a4 * 2 ** ((midi - 69) / 12);
+}
+
 function nearestMidiForPc(pc, low, high, prefer) {
   let best = low;
   let bestScore = Infinity;
@@ -4517,20 +4686,81 @@ function customEntropyEndpoint() {
 }
 
 async function fetchExternalEntropy(endpoint) {
-  const response = await fetch(endpoint, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Entropy endpoint returned ${response.status}`);
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    const payload = await response.json();
-    if (typeof payload.hex === "string") return hexToBytes(payload.hex);
-    if (Array.isArray(payload.bytes)) return new Uint8Array(payload.bytes.map((byte) => clamp(Number(byte) || 0, 0, 255)));
-    throw new Error("Entropy JSON must include a hex string or bytes array");
+  const url = validatedEntropyUrl(endpoint);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ENTROPY_TIMEOUT_MS);
+  try {
+    const response = await fetch(url.href, {
+      cache: "no-store",
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Entropy endpoint returned ${response.status}`);
+    const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
+    if (contentLength > ENTROPY_MAX_BYTES) throw new Error(`Entropy endpoint returned more than ${ENTROPY_MAX_BYTES} bytes`);
+    const contentType = response.headers.get("content-type") || "";
+    const rawBytes = await readEntropyResponseBytes(response);
+    const text = new TextDecoder().decode(rawBytes);
+    if (contentType.includes("application/json")) {
+      const payload = JSON.parse(text);
+      if (typeof payload.hex === "string") return hexToBytes(payload.hex);
+      if (Array.isArray(payload.bytes)) return new Uint8Array(payload.bytes.map((byte) => clamp(Number(byte) || 0, 0, 255)));
+      throw new Error("Entropy JSON must include a hex string or bytes array");
+    }
+    const compactHex = text.replace(/[^0-9a-f]/gi, "");
+    if (compactHex.length >= 16) return hexToBytes(compactHex);
+    return rawBytes;
+  } finally {
+    clearTimeout(timeout);
   }
-  const rawBytes = new Uint8Array(await response.arrayBuffer());
-  const text = new TextDecoder().decode(rawBytes);
-  const compactHex = text.replace(/[^0-9a-f]/gi, "");
-  if (compactHex.length >= 16) return hexToBytes(compactHex);
-  return rawBytes;
+}
+
+function validatedEntropyUrl(endpoint) {
+  let url;
+  try {
+    url = new URL(endpoint, window.location?.href || "http://localhost/");
+  } catch (error) {
+    throw new Error("Entropy endpoint URL is invalid");
+  }
+  const localHosts = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+  const localHttp = url.protocol === "http:" && localHosts.has(url.hostname);
+  if (url.protocol !== "https:" && !localHttp) {
+    throw new Error("Entropy endpoint must use https or localhost http");
+  }
+  return url;
+}
+
+async function readEntropyResponseBytes(response) {
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > ENTROPY_MAX_BYTES) {
+        try {
+          await reader.cancel();
+        } catch (error) {
+          // Ignore cancellation errors after the size guard has already fired.
+        }
+        throw new Error(`Entropy endpoint returned more than ${ENTROPY_MAX_BYTES} bytes`);
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let offset = 0;
+    chunks.forEach((chunk) => {
+      out.set(chunk, offset);
+      offset += chunk.length;
+    });
+    return out;
+  }
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > ENTROPY_MAX_BYTES) throw new Error(`Entropy endpoint returned more than ${ENTROPY_MAX_BYTES} bytes`);
+  return new Uint8Array(buffer);
 }
 
 function concatEntropyBytes(a, b) {

@@ -18,6 +18,7 @@ function main() {
   let failed = false;
   if (smoke) {
     failed = !runSmokeTests();
+    failed = !runStabilityTests() || failed;
     failed = !runParallelRuleTests() || failed;
     failed = !runRefrainAndSuspensionTests() || failed;
     failed = !runFugueTests() || failed;
@@ -100,6 +101,181 @@ function runSmokeTests() {
         fugueManifestOk ? [] : ["Fishtail Fugue manifest/report metadata is missing or incorrect."],
       );
     }
+  }
+  return ok;
+}
+
+function runStabilityTests() {
+  const context = makeAppContext();
+  const results = vm.runInContext(`
+    (() => {
+      function baseSettings(overrides = {}) {
+        return {
+          seed: "stability",
+          voices: 4,
+          tempo: 60,
+          includeTempoMap: true,
+          referenceNote: "A4",
+          referenceMidi: 69,
+          referenceHz: 432,
+          referenceAnchorA4Hz: 432,
+          tempoDivisor: 432,
+          breathing: 0.5,
+          density: 0.5,
+          strangeness: 0.1,
+          generationStyle: "counterpoint",
+          resolution: "literal",
+          outputMode: "equal",
+          dubMode: false,
+          pedalVoices: { bass: false, tenor: false, alto: false, soprano: false },
+          rootPc: 9,
+          rootNote: "A4",
+          rootMidi: 69,
+          rootFreq: 432,
+          ...overrides,
+        };
+      }
+
+      function fallbackContext(overrides = {}) {
+        const settings = baseSettings({ outputMode: "equal", resolution: "literal", rootMidi: 60, ...overrides.settings });
+        return {
+          section: { key: "C", mode: "harmonic_minor", meter: "4/4", cadence: "authentic" },
+          mode: MODES.harmonic_minor,
+          meter: METERS["4/4"],
+          step: 1,
+          steps: 8,
+          sectionIndex: 0,
+          voice: "soprano",
+          voiceIndex: 0,
+          activeVoices: ["soprano"],
+          chosen: {},
+          previousPitches: { soprano: overrides.previous ?? 71 },
+          lastPitches: { soprano: overrides.previous ?? 71 },
+          lastLeaps: { soprano: 0 },
+          lastOffsets: { soprano: overrides.lastOffset ?? 11 },
+          debts: overrides.debts || {},
+          strong: false,
+          cadenceStage: null,
+          holdStates: { soprano: makeHoldState() },
+          resolvedBlocks: { soprano: null },
+          settings,
+          fallbackStats: makeFallbackStats(),
+          suspensionStats: makeSuspensionStats(),
+          rng: () => 0.5,
+        };
+      }
+
+      const invalidTrack = { name: "bass", channel: 0, events: [{ tick: 0, duration: 480, midi: -9, velocity: 100, bend: 8192 }] };
+      const invalidIssues = validateMidiSerializationInput({ bass: invalidTrack }, { outputMode: "bend" });
+      let strictWriterThrows = false;
+      try {
+        makeVoiceTrack(invalidTrack, { outputMode: "bend" });
+      } catch (error) {
+        strictWriterThrows = /0-127/.test(error.message);
+      }
+
+      const debtContext = fallbackContext({
+        debts: { soprano: { targets: [0], direction: "up", label: "leading tone rises" } },
+      });
+      const debtFallback = chooseFallbackVoiceEvent(debtContext, 0, false);
+
+      const newDebtContext = fallbackContext({
+        previous: 69,
+        lastOffset: 11,
+        debts: { soprano: null },
+      });
+      const newDebtFallback = chooseFallbackVoiceEvent(newDebtContext, 0, false);
+
+      const equalEvent = makeNoteEvent(
+        { midi: 69, literalPc: 9, symbolicOffset: 9, symbolicName: "A4", noteName: "A4", ratioName: "3/2" },
+        "soprano",
+        0,
+        480,
+        baseSettings({ outputMode: "equal", rootFreq: 999, rootMidi: 60 }),
+      );
+
+      const semanticGrid = [
+        { midi: 60, literalPc: 0, symbolicOffset: 0, symbolicName: "C4", noteName: "C4", ratioName: "1/1" },
+        { midi: 60, literalPc: 2, symbolicOffset: 2, symbolicName: "D4", noteName: "C4", ratioName: "9/8" },
+      ];
+      const semanticEvents = gridToEvents(
+        semanticGrid,
+        "soprano",
+        0,
+        480,
+        baseSettings({ outputMode: "retuner", resolution: "nearest-ratio" }),
+        { bars: 1, key: "C", mode: "major", meter: "4/4", cadence: "authentic" },
+        null,
+      );
+
+      els.rootNoteInput = { value: "D" };
+      els.referenceNoteInput = { value: "A4" };
+      els.referenceFreqInput = { value: "432" };
+      els.rootFreqInput = { value: "999" };
+      els.linkRootInput = { checked: true };
+      updateTuningRootReference(true);
+      const linkedRootHz = Number(els.rootFreqInput.value);
+      els.linkRootInput.checked = false;
+      els.rootFreqInput.value = "123.45";
+      updateTuningRootReference(true);
+      const unlockedRootHz = Number(els.rootFreqInput.value);
+
+      const entropyHttps = validatedEntropyUrl("https://example.com/random").protocol === "https:";
+      const entropyLocal = validatedEntropyUrl("http://localhost:8787/random").hostname === "localhost";
+      let entropyRejectsHttp = false;
+      try {
+        validatedEntropyUrl("http://example.com/random");
+      } catch (error) {
+        entropyRejectsHttp = /https|localhost/.test(error.message);
+      }
+
+      return [
+        {
+          name: "explicit voice layouts include bass",
+          ok: JSON.stringify(activeVoiceLayout(2)) === JSON.stringify(["bass", "soprano"])
+            && JSON.stringify(activeVoiceLayout(3)) === JSON.stringify(["bass", "alto", "soprano"])
+            && JSON.stringify(activeVoiceLayout(4)) === JSON.stringify(["bass", "tenor", "alto", "soprano"])
+            && normalizePedalVoices({ bass: true, alto: true, soprano: true }, 2, true).bass === true,
+        },
+        {
+          name: "strict MIDI serialization rejects invalid note",
+          ok: invalidIssues.some((issue) => issue.includes("invalid MIDI note -9")) && strictWriterThrows,
+        },
+        {
+          name: "fallback clears resolved tendency debt",
+          ok: debtFallback.resolvedDebt === true && debtContext.debts.soprano === null,
+        },
+        {
+          name: "fallback records new tendency debt",
+          ok: newDebtFallback.symbolicOffset === 11 && newDebtContext.debts.soprano?.targets?.includes(0),
+        },
+        {
+          name: "equal mode frequency metadata is exported ET",
+          ok: Math.abs(equalEvent.tunedFrequency - midiFrequency(equalEvent.midi)) < 0.0001
+            && Math.abs(equalEvent.conceptualRatioFrequency - equalEvent.tunedFrequency) > 0.1,
+        },
+        {
+          name: "semantic carrier changes rearticulate",
+          ok: semanticEvents.length === 2 && semanticEvents[0].symbolicOffset !== semanticEvents[1].symbolicOffset,
+        },
+        {
+          name: "tuning root link follows reference and can unlock",
+          ok: Math.abs(linkedRootHz - defaultRootHzForReference(62, 69, 432)) < 0.01
+            && Math.abs(unlockedRootHz - 123.45) < 0.001,
+        },
+        {
+          name: "entropy endpoint URL policy",
+          ok: entropyHttps && entropyLocal && entropyRejectsHttp,
+        },
+      ];
+    })()
+  `, context);
+
+  let ok = true;
+  for (const result of results) {
+    const status = result.ok ? "ok" : "failed";
+    console.log(`${status} stability ${result.name}`);
+    if (!result.ok) ok = false;
   }
   return ok;
 }
@@ -736,10 +912,13 @@ function runFugueTests() {
 }
 
 function makeAppContext() {
+  const TestURL = URL;
+  TestURL.createObjectURL = () => "blob:test";
+  TestURL.revokeObjectURL = () => {};
   const context = {
     console,
     structuredClone,
-    window: {},
+    window: { location: { href: "https://amycin.github.io/amy-cin-fishtail/" } },
     document: { addEventListener() {}, getElementById: () => null },
     navigator: {},
     localStorage: { getItem: () => null, setItem() {} },
@@ -747,7 +926,7 @@ function makeAppContext() {
       getRandomValues: (array) => array.fill(17),
       subtle: { digest: async () => new ArrayBuffer(32) },
     },
-    URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
+    URL: TestURL,
     Blob,
     Uint8Array,
     ArrayBuffer,

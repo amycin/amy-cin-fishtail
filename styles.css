@@ -592,7 +592,8 @@ input[type="range"] {
   opacity: 0.42;
 }
 
-.bend-only[hidden] {
+.bend-only[hidden],
+.tuning-root-only[hidden] {
   display: none;
 }
 
