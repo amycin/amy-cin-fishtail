@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=31">
+    <link rel="stylesheet" href="styles.css?v=33">
   </head>
   <body>
     <main class="shell">
@@ -32,6 +32,7 @@
               <button class="icon-button" id="addSectionButton" type="button" title="Add section">+</button>
             </div>
             <div class="section-table" id="sectionTable"></div>
+            <p class="form-safety" id="formSafetyLabel" hidden></p>
             <div class="dice-row">
               <button class="dice dice-d4" id="gentleRollButton" type="button" title="Gentle weighted random form">
                 <span>D4</span>
@@ -47,7 +48,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel voices-panel">
             <div class="panel-head">
               <h2>Voices</h2>
             </div>
@@ -83,8 +84,8 @@
                 </span>
               </label>
               <label class="tempo-slider-field">
-                Tempo divisor <span id="tempoDivisorLabel">n = 432</span>
-                <input id="tempoDivisorInput" type="range" min="118" max="864" step="1" value="432">
+                Tempo divisor <span id="tempoDivisorLabel">n = 216</span>
+                <input id="tempoDivisorInput" type="range" min="59" max="432" step="1" value="216">
               </label>
               <label class="switch-label" title="Include tempo and time signatures">
                 <span>Tempo data</span>
@@ -118,7 +119,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel pitch-panel">
             <div class="panel-head">
               <h2>Pitch</h2>
             </div>
@@ -129,7 +130,7 @@
               </label>
               <label>
                 Reference Hz
-                <input id="referenceFreqInput" type="number" min="20" max="2000" step="0.01" value="432.00">
+                <input id="referenceFreqInput" type="number" min="20" max="2000" step="0.01" value="216.00">
               </label>
               <label>
                 Map
@@ -161,6 +162,66 @@
             </div>
           </section>
 
+          <section class="panel sound-time-panel">
+            <div class="panel-head">
+              <h2>Probe + Time</h2>
+              <span id="tempoLatticeStatusLabel">Straight time</span>
+            </div>
+            <div class="field-grid sound-grid">
+              <label class="switch-label" title="Use pulse-level tempo events in the conductor track">
+                <span>Tempo lattice</span>
+                <span class="switch-control">
+                  <input id="tempoLatticeInput" type="checkbox">
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
+              </label>
+              <label>
+                Preview meter
+                <select id="metronomeMeterInput"></select>
+              </label>
+              <label>
+                Rational
+                <input id="rationalSwingInput" type="range" min="0" max="100" value="50">
+              </label>
+              <label>
+                Irrational
+                <input id="irrationalSwingInput" type="range" min="0" max="100" value="0">
+              </label>
+              <label class="switch-label" title="Mute the live reference probe">
+                <span>Probe mute</span>
+                <span class="switch-control">
+                  <input id="probeMuteInput" type="checkbox" checked>
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
+              </label>
+              <button class="hold-button" id="probeHoldButton" type="button">Hold Probe</button>
+              <label>
+                Probe level
+                <input id="probeLevelInput" type="range" min="0" max="100" value="20">
+              </label>
+              <label class="switch-label" title="Live pink-noise tempo preview">
+                <span>Metronome</span>
+                <span class="switch-control">
+                  <input id="metronomeInput" type="checkbox">
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
+              </label>
+              <label>
+                Metronome level
+                <input id="metronomeLevelInput" type="range" min="0" max="100" value="25">
+              </label>
+              <label class="check-row">
+                <input id="prepareProbeWavInput" type="checkbox">
+                Prepare probe WAV
+              </label>
+              <label class="check-row">
+                <input id="prepareTickerWavInput" type="checkbox">
+                Prepare ticker WAV
+              </label>
+              <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | midpoint 0.560</output>
+            </div>
+          </section>
+
           <section class="panel action-panel">
             <div class="generator-core" aria-hidden="true">
               <div class="torus-host" id="torusHost"></div>
@@ -170,9 +231,11 @@
               <button class="primary-button" id="generateButton" type="button">Generate + Save MIDI</button>
               <button id="downloadMidiButton" type="button" disabled>Save MIDI Again</button>
               <button id="downloadJsonButton" type="button" disabled>Save Project JSON</button>
+              <button id="downloadProbeWavButton" type="button" disabled>Save Probe WAV</button>
+              <button id="downloadTickerWavButton" type="button" disabled>Save Ticker WAV</button>
               <button id="toggleNotesButton" type="button">Show Notes</button>
             </div>
-            <p class="download-help">Generate + Save MIDI is the main button. The tempo-map switch writes BPM and time signatures for DAWs that read them; BPM is also kept in the filename. Project JSON saves the recipe, settings, and seed. Hide/Show Notes opens or closes the text below. Codex preview may not save downloads; Safari, Chrome, or a hosted page should.</p>
+            <p class="download-help">Generate + Save MIDI is the main button. Tempo data writes the conductor track; Tempo lattice can add pulse-level timing sway. Optional WAV stems are prepared after generation and saved with explicit buttons.</p>
           </section>
         </section>
 
@@ -328,6 +391,9 @@
       </section>
     </main>
 
-    <script src="src/app.js?v=53"></script>
+    <script src="src/tempo-lattice.js?v=1"></script>
+    <script src="src/audio-engine.js?v=1"></script>
+    <script src="src/wav-export.js?v=1"></script>
+    <script src="src/app.js?v=57"></script>
   </body>
 </html>

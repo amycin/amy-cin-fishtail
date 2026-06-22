@@ -2,15 +2,32 @@
 
 const PPQ = 480;
 const DEFAULT_A4_HZ = 432;
+const DEFAULT_REFERENCE_NOTE = "A3";
+const DEFAULT_REFERENCE_HZ = 216;
+const DEFAULT_TEMPO_DIVISOR = 216;
 const GENERATE_FADE_MS = 900;
 const GENERATE_TAIL_MS = 1800;
 const GENERATE_MIN_MS = 4200;
+const GENERATE_RITUAL_COMFORT_MS = 5600;
+const GENERATE_RITUAL_FAST_MS = 7200;
+const GENERATE_RITUAL_MAX_MS = 8600;
 const WORMHOLE_CYCLE_MS = 36000;
 const WORMHOLE_U_SEGMENTS = 24;
 const WORMHOLE_V_SEGMENTS = 7;
 const CORE_ACTIVE_FRAME_MS = 1000 / 60;
 const CORE_IDLE_FRAME_MS = 1000 / 30;
+const CORE_HIGH_REFRESH_IDLE_FRAME_MS = 1000 / 60;
+const CORE_ECO_ACTIVE_FRAME_MS = 1000 / 24;
+const CORE_ECO_IDLE_FRAME_MS = 1000 / 14;
 const CORE_REDUCED_FRAME_MS = 250;
+const HIGH_REFRESH_SAMPLE_COUNT = 10;
+const HIGH_REFRESH_FRAME_MS = 12.5;
+const VISUAL_STRESS_FRAME_MS = 82;
+const VISUAL_STRESS_DRAW_MS = 28;
+const VISUAL_STRESS_TRIGGER = 4.6;
+const VISUAL_ECO_MS = 9000;
+const VISUAL_GLITCH_MS = 1900;
+const VISUAL_ECO_COOLDOWN_MS = 3500;
 const DUB_RELAX_LINES = [
   "Relax: Dub Gravity is active, the bass is holding the room.",
   "Take it easy: the checker found the groove and left the shimmer in.",
@@ -177,6 +194,16 @@ const DUB_BASS_LATE_MS = [4, 18];
 const DUB_MIN_NOTE_TICKS = 24;
 const ENTROPY_TIMEOUT_MS = 2000;
 const ENTROPY_MAX_BYTES = 4096;
+const COMPLEXITY_WARN = {
+  sections: 10,
+  bars: 128,
+  voicePulses: 3200,
+};
+const COMPLEXITY_EXPANSIVE = {
+  sections: 18,
+  bars: 256,
+  voicePulses: 7600,
+};
 
 const AMY_DUB_RATIOS = [
   ["1/1", 1 / 1, 1.0, "home"],
@@ -417,6 +444,21 @@ const state = {
   motionLastAt: 0,
   bootGlitchUntil: Date.now() + 2400,
   audioContext: null,
+  audio: {
+    context: null,
+    safetyBus: null,
+    limiter: null,
+    probe: null,
+    metronome: null,
+    pinkNoiseBuffer: null,
+    schedulerTimer: null,
+    schedulerRevision: 0,
+  },
+  lastAudioExports: {
+    probe: null,
+    ticker: null,
+  },
+  probeHeld: false,
   referenceAnchorA4Hz: DEFAULT_A4_HZ,
   pedalTouched: false,
   generating: false,
@@ -424,6 +466,13 @@ const state = {
   pageVisible: true,
   visualVisible: true,
   reducedMotion: false,
+  visualStressScore: 0,
+  visualEcoUntil: 0,
+  visualGlitchUntil: 0,
+  visualEcoCooldownUntil: 0,
+  visualHighRefreshCapable: false,
+  visualRefreshEstimate: 60,
+  formSafetyNoticeLevel: "comfortable",
   coreFrameId: null,
   coreFrameTimer: null,
   coreLastDrawnAt: 0,
@@ -464,10 +513,12 @@ document.addEventListener("DOMContentLoaded", () => {
   updatePedalControls();
   updateTempoControls();
   renderSections();
+  updateSoundTimeControls();
   bindEvents();
   updateDubModeUi();
   setupMotionInput();
   setupVisualLifecycle();
+  detectDisplayRefresh();
   initTorusCore();
   requestCoreFrame(true);
 });
@@ -475,6 +526,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function bindElements() {
   for (const id of [
     "sectionTable",
+    "formSafetyLabel",
     "addSectionButton",
     "gentleRollButton",
     "wildRollButton",
@@ -487,6 +539,19 @@ function bindElements() {
     "pedalSopranoInput",
     "tempoInput",
     "embedTempoInput",
+    "tempoLatticeInput",
+    "tempoLatticeStatusLabel",
+    "tempoLatticeReadout",
+    "rationalSwingInput",
+    "irrationalSwingInput",
+    "metronomeMeterInput",
+    "probeMuteInput",
+    "probeHoldButton",
+    "probeLevelInput",
+    "metronomeInput",
+    "metronomeLevelInput",
+    "prepareProbeWavInput",
+    "prepareTickerWavInput",
     "velocityModeInput",
     "dubModeInput",
     "referenceNoteInput",
@@ -503,6 +568,8 @@ function bindElements() {
     "generateButton",
     "downloadMidiButton",
     "downloadJsonButton",
+    "downloadProbeWavButton",
+    "downloadTickerWavButton",
     "toggleNotesButton",
     "helpButton",
     "helpModal",
@@ -534,8 +601,21 @@ function hydrateSelects() {
     const option = document.createElement("option");
     option.value = note;
     option.textContent = note;
-    if (note === "A4") option.selected = true;
+    if (note === DEFAULT_REFERENCE_NOTE) option.selected = true;
     els.referenceNoteInput.append(option);
+  }
+  if (els.metronomeMeterInput) {
+    const follow = document.createElement("option");
+    follow.value = "section-1";
+    follow.textContent = "Follow section 1";
+    follow.selected = true;
+    els.metronomeMeterInput.append(follow);
+    Object.keys(METERS).forEach((meter) => {
+      const option = document.createElement("option");
+      option.value = meter;
+      option.textContent = meter;
+      els.metronomeMeterInput.append(option);
+    });
   }
 }
 
@@ -555,7 +635,11 @@ function bindEvents() {
   });
   els.gentleRollButton.addEventListener("click", () => randomiseForm("gentle"));
   els.wildRollButton.addEventListener("click", () => randomiseForm("wild"));
-  els.voicesInput.addEventListener("change", updatePedalControls);
+  els.voicesInput.addEventListener("change", () => {
+    updatePedalControls();
+    updateFormSafety();
+  });
+  els.styleInput.addEventListener("change", updateFormSafety);
   els.outputModeInput.addEventListener("change", () => {
     updateBendControls();
     refreshTorusTuning();
@@ -564,13 +648,21 @@ function bindEvents() {
     updateReferenceFrequencyFromAnchor();
     updateTempoControls();
     if (isTuningRootVisible()) updateTuningRootReference(true);
+    updateSoundTimeControls();
+    updateLiveAudioFromControls();
   });
   els.referenceFreqInput.addEventListener("input", () => {
     updateReferenceAnchorFromFrequency();
     updateTempoControls();
     if (isTuningRootVisible()) updateTuningRootReference(true);
+    updateSoundTimeControls();
+    updateLiveAudioFromControls();
   });
-  els.tempoDivisorInput.addEventListener("input", updateTempoControls);
+  els.tempoDivisorInput.addEventListener("input", () => {
+    updateTempoControls();
+    updateSoundTimeControls();
+    updateLiveAudioFromControls();
+  });
   els.rootNoteInput.addEventListener("change", () => updateTuningRootReference(true));
   els.rootFreqInput.addEventListener("input", () => {
     if (els.linkRootInput) els.linkRootInput.checked = false;
@@ -580,6 +672,7 @@ function bindEvents() {
     updateDubModeUi();
     applyPedalDefaults(false);
     updatePedalControls();
+    updateFormSafety();
     animateFor(1200);
   });
   pedalInputs().forEach((input) => {
@@ -591,6 +684,8 @@ function bindEvents() {
   els.generateButton.addEventListener("click", generatePiece);
   els.downloadMidiButton.addEventListener("click", () => downloadLast("midi"));
   els.downloadJsonButton.addEventListener("click", () => downloadLast("json"));
+  els.downloadProbeWavButton?.addEventListener("click", () => downloadLast("probeWav"));
+  els.downloadTickerWavButton?.addEventListener("click", () => downloadLast("tickerWav"));
   els.toggleNotesButton.addEventListener("click", toggleNotes);
   els.helpButton.addEventListener("click", openHelp);
   els.closeHelpButton.addEventListener("click", closeHelp);
@@ -606,6 +701,164 @@ function bindEvents() {
     if (event.key === "Escape" && !els.helpModal.hidden) closeHelp();
     if (event.key === "Escape" && !els.creditsModal.hidden) closeCredits();
   });
+  bindSoundTimeEvents();
+}
+
+function bindSoundTimeEvents() {
+  [
+    els.tempoLatticeInput,
+    els.rationalSwingInput,
+    els.irrationalSwingInput,
+    els.metronomeMeterInput,
+    els.probeMuteInput,
+    els.probeLevelInput,
+    els.metronomeLevelInput,
+    els.prepareProbeWavInput,
+    els.prepareTickerWavInput,
+  ].filter(Boolean).forEach((input) => {
+    input.addEventListener("input", () => {
+      updateSoundTimeControls();
+      updateLiveAudioFromControls();
+    });
+    input.addEventListener("change", () => {
+      updateSoundTimeControls();
+      updateLiveAudioFromControls();
+    });
+  });
+
+  els.metronomeInput?.addEventListener("change", () => {
+    updateSoundTimeControls();
+    if (els.metronomeInput.checked) startLiveMetronome();
+    else stopLiveMetronome();
+  });
+
+  if (els.probeHoldButton) {
+    els.probeHoldButton.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      if (typeof els.probeHoldButton.setPointerCapture === "function" && event.pointerId != null) {
+        try {
+          els.probeHoldButton.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Pointer capture is not available for every input path.
+        }
+      }
+      startProbeHold();
+    });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach((type) => {
+      els.probeHoldButton.addEventListener(type, stopProbeHold);
+    });
+    els.probeHoldButton.addEventListener("keydown", (event) => {
+      if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+        event.preventDefault();
+        startProbeHold();
+      }
+    });
+    els.probeHoldButton.addEventListener("keyup", (event) => {
+      if (event.key === " " || event.key === "Enter") {
+        event.preventDefault();
+        stopProbeHold();
+      }
+    });
+  }
+
+  window.addEventListener("blur", stopProbeHold);
+}
+
+function ensureAudioContextFromUserGesture() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  const context = state.audio.context || state.audioContext || new AudioContextClass();
+  state.audio.context = context;
+  state.audioContext = context;
+  if (context.state === "suspended") context.resume();
+  FishtailAudioEngine.ensureAudioState(state.audio, context);
+  return context;
+}
+
+function readLiveAudioSettings() {
+  const sectionMeter = state.sections[0]?.meter || "4/4";
+  const meterChoice = els.metronomeMeterInput?.value || "section-1";
+  return {
+    seed: state.lastPiece?.settings?.seed || "live-metronome",
+    ppq: PPQ,
+    meters: METERS,
+    metronomeMeter: meterChoice === "section-1" ? sectionMeter : meterChoice,
+    tempo: currentTempoBpm(),
+    referenceHz: currentReferenceHz(),
+    tempoLatticeEnabled: true,
+    rationalSwing: percentInput(els.rationalSwingInput, 0.5),
+    irrationalSwing: percentInput(els.irrationalSwingInput, 0),
+    probeMuted: Boolean(els.probeMuteInput?.checked),
+    probeLevel: percentInput(els.probeLevelInput, 0.2),
+    metronomeEnabled: Boolean(els.metronomeInput?.checked),
+    metronomeLevel: percentInput(els.metronomeLevelInput, 0.25),
+  };
+}
+
+function percentInput(input, fallback) {
+  if (!input) return fallback;
+  return clamp((parseFloat(input.value) || 0) / 100, 0, 1);
+}
+
+function currentTempoBpm() {
+  return clamp(parseFloat(els.tempoInput?.value) || fishtailTempo(currentReferenceHz(), DEFAULT_TEMPO_DIVISOR), 30, 220);
+}
+
+function startProbeHold() {
+  state.probeHeld = true;
+  els.probeHoldButton?.classList.add("is-held");
+  const settings = readLiveAudioSettings();
+  if (settings.probeMuted) {
+    els.statusLabel.textContent = "Probe muted";
+    return;
+  }
+  const context = ensureAudioContextFromUserGesture();
+  if (!context) {
+    els.statusLabel.textContent = "Audio unavailable";
+    return;
+  }
+  FishtailAudioEngine.startProbe(state.audio, context, settings);
+  els.statusLabel.textContent = `Probe ${settings.referenceHz.toFixed(2)} Hz`;
+}
+
+function stopProbeHold() {
+  if (!state.probeHeld && !state.audio.probe) return;
+  state.probeHeld = false;
+  els.probeHoldButton?.classList.remove("is-held");
+  FishtailAudioEngine.stopProbe(state.audio, state.audio.context);
+}
+
+function startLiveMetronome() {
+  const context = ensureAudioContextFromUserGesture();
+  if (!context) {
+    els.statusLabel.textContent = "Audio unavailable";
+    if (els.metronomeInput) els.metronomeInput.checked = false;
+    return;
+  }
+  FishtailAudioEngine.startMetronome(state.audio, context, readLiveAudioSettings());
+  els.statusLabel.textContent = "Metronome on";
+}
+
+function stopLiveMetronome() {
+  FishtailAudioEngine.stopMetronome(state.audio);
+  els.statusLabel.textContent = "Metronome off";
+}
+
+function updateLiveAudioFromControls() {
+  const context = state.audio.context;
+  const settings = readLiveAudioSettings();
+  if (state.audio.probe) FishtailAudioEngine.updateProbe(state.audio, context, settings);
+  if (state.probeHeld && !settings.probeMuted && !state.audio.probe) {
+    const gestureContext = ensureAudioContextFromUserGesture();
+    if (gestureContext) FishtailAudioEngine.startProbe(state.audio, gestureContext, settings);
+  }
+  if (state.audio.metronome) FishtailAudioEngine.updateMetronome(state.audio, context, settings);
+}
+
+function stopAllLiveAudio() {
+  stopProbeHold();
+  FishtailAudioEngine.stopAll(state.audio, state.audio.context);
+  if (els.metronomeInput) els.metronomeInput.checked = false;
 }
 
 function setupMotionInput() {
@@ -674,11 +927,15 @@ function setupVisualLifecycle() {
   document.addEventListener("visibilitychange", () => {
     state.pageVisible = document.visibilityState !== "hidden";
     if (state.pageVisible) requestCoreFrame(true);
-    else cancelCoreFrame();
+    else {
+      cancelCoreFrame();
+      stopAllLiveAudio();
+    }
   });
 
   window.addEventListener("pagehide", () => {
     cancelCoreFrame();
+    stopAllLiveAudio();
     disposeTorusCore();
   });
 
@@ -720,6 +977,8 @@ function visualIsActive(now = Date.now()) {
 
 function currentCoreFrameDelay(now = Date.now()) {
   if (state.reducedMotion) return CORE_REDUCED_FRAME_MS;
+  if (visualEcoActive(now)) return visualIsActive(now) ? CORE_ECO_ACTIVE_FRAME_MS : CORE_ECO_IDLE_FRAME_MS;
+  if (state.visualHighRefreshCapable) return visualIsActive(now) ? 0 : CORE_HIGH_REFRESH_IDLE_FRAME_MS;
   return visualIsActive(now) ? CORE_ACTIVE_FRAME_MS : CORE_IDLE_FRAME_MS;
 }
 
@@ -745,6 +1004,89 @@ function cancelCoreFrame() {
     clearTimeout(state.coreFrameTimer);
     state.coreFrameTimer = null;
   }
+}
+
+function visualEcoActive(now = Date.now()) {
+  return state.visualEcoUntil > now;
+}
+
+function visualGlitchEnvelope(now = Date.now()) {
+  return clamp((state.visualGlitchUntil - now) / VISUAL_GLITCH_MS, 0, 1);
+}
+
+function currentVisualPixelRatio(now = Date.now()) {
+  const deviceRatio = window.devicePixelRatio || 1;
+  return Math.min(deviceRatio, visualEcoActive(now) ? 1 : 2);
+}
+
+function monitorVisualLoad(frameMs, drawCostMs, now = Date.now()) {
+  const memoryPressure = memoryPressureLevel();
+  let pressure = 0;
+  if (frameMs > VISUAL_STRESS_FRAME_MS) pressure += frameMs > VISUAL_STRESS_FRAME_MS * 1.8 ? 2.4 : 1.35;
+  if (drawCostMs > VISUAL_STRESS_DRAW_MS) pressure += drawCostMs > VISUAL_STRESS_DRAW_MS * 1.8 ? 2.2 : 1.2;
+  if (memoryPressure > 0.86) pressure += 2.6;
+  else if (memoryPressure > 0.74) pressure += 1.1;
+
+  state.visualStressScore = pressure
+    ? clamp(state.visualStressScore + pressure, 0, 9)
+    : clamp(state.visualStressScore - 0.42, 0, 9);
+
+  if (state.visualStressScore >= VISUAL_STRESS_TRIGGER) {
+    activateVisualEco(now);
+  }
+  applyVisualEcoClass(now);
+}
+
+function activateVisualEco(now = Date.now()) {
+  if (now < state.visualEcoCooldownUntil && !visualEcoActive(now)) return;
+  state.visualEcoUntil = Math.max(state.visualEcoUntil, now + VISUAL_ECO_MS);
+  state.visualGlitchUntil = Math.max(state.visualGlitchUntil, now + VISUAL_GLITCH_MS);
+  state.visualEcoCooldownUntil = now + VISUAL_ECO_MS + VISUAL_ECO_COOLDOWN_MS;
+  state.visualStressScore = Math.min(state.visualStressScore, VISUAL_STRESS_TRIGGER * 0.65);
+}
+
+function applyVisualEcoClass(now = Date.now()) {
+  if (typeof document === "undefined" || !document.body) return;
+  document.body.dataset.visualEco = visualEcoActive(now) ? "on" : "off";
+}
+
+function memoryPressureLevel() {
+  const memory = typeof performance !== "undefined" ? performance.memory : null;
+  if (!memory || !memory.jsHeapSizeLimit || !memory.usedJSHeapSize) return 0;
+  return clamp(memory.usedJSHeapSize / memory.jsHeapSizeLimit, 0, 1);
+}
+
+function runtimeNow() {
+  return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+}
+
+function detectDisplayRefresh() {
+  if (typeof requestAnimationFrame !== "function") return;
+  const samples = [];
+  let previous = 0;
+  const sample = (timestamp) => {
+    if (previous) {
+      const frameMs = timestamp - previous;
+      if (frameMs > 0 && frameMs < 40) samples.push(frameMs);
+    }
+    previous = timestamp;
+    if (samples.length >= HIGH_REFRESH_SAMPLE_COUNT) {
+      const median = medianValue(samples);
+      state.visualRefreshEstimate = Math.round(1000 / median);
+      state.visualHighRefreshCapable = median > 0 && median < HIGH_REFRESH_FRAME_MS;
+      requestCoreFrame(true);
+      return;
+    }
+    requestAnimationFrame(sample);
+  };
+  requestAnimationFrame(sample);
+}
+
+function medianValue(values) {
+  if (!values.length) return 1000 / 60;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 function updateBendControls() {
@@ -828,11 +1170,58 @@ function updateTempoControls() {
   const maxN = Math.max(minN, Math.floor((60 * referenceHz) / 30));
   els.tempoDivisorInput.min = String(minN);
   els.tempoDivisorInput.max = String(maxN);
-  const divisor = clamp(parseInt(els.tempoDivisorInput.value, 10) || 432, minN, maxN);
+  const divisor = clamp(parseInt(els.tempoDivisorInput.value, 10) || DEFAULT_TEMPO_DIVISOR, minN, maxN);
   els.tempoDivisorInput.value = String(divisor);
   const bpm = fishtailTempo(referenceHz, divisor);
   els.tempoInput.value = bpm.toFixed(4);
   els.tempoDivisorLabel.textContent = `n = ${divisor}`;
+}
+
+function currentSectionMetaForTimeline() {
+  let currentTick = 0;
+  return state.sections.map(normalizeSection).map((section) => {
+    const meter = METERS[section.meter] || METERS["4/4"];
+    const barTicks = meter.numerator * meter.pulse;
+    const meta = {
+      ...section,
+      startTick: currentTick,
+      barTicks,
+      numerator: meter.numerator,
+      denominator: meter.denominator,
+    };
+    currentTick += section.bars * barTicks;
+    return meta;
+  });
+}
+
+function currentTimingSettings(seed = "preview") {
+  return {
+    seed,
+    tempo: currentTempoBpm(),
+    tempoLatticeEnabled: Boolean(els.tempoLatticeInput?.checked),
+    rationalSwing: percentInput(els.rationalSwingInput, 0.5),
+    irrationalSwing: percentInput(els.irrationalSwingInput, 0),
+  };
+}
+
+function previewTempoTimeline(seed = "preview") {
+  return FishtailTempoLattice.buildTempoTimeline(currentSectionMetaForTimeline(), currentTimingSettings(seed), {
+    ppq: PPQ,
+    meters: METERS,
+  });
+}
+
+function updateSoundTimeControls() {
+  if (!els.tempoLatticeReadout) return;
+  const timeline = previewTempoTimeline("preview");
+  const swing = FishtailTempoLattice.rationalSwingAmount(percentInput(els.rationalSwingInput, 0.5));
+  const midpoint = (1 + swing) / 2;
+  const minBpm = timeline.minInstantaneousBpm.toFixed(2);
+  const maxBpm = timeline.maxInstantaneousBpm.toFixed(2);
+  const duration = timeline.totalSeconds;
+  const label = els.tempoLatticeInput?.checked ? `${minBpm}-${maxBpm} BPM` : "Straight time";
+  els.tempoLatticeStatusLabel.textContent = label;
+  els.tempoLatticeReadout.textContent = `${currentTempoBpm().toFixed(4)} BPM | midpoint ${midpoint.toFixed(3)} | ${duration.toFixed(2)} s`;
 }
 
 function updateReferenceFrequencyFromAnchor() {
@@ -847,11 +1236,11 @@ function updateReferenceAnchorFromFrequency() {
 }
 
 function currentReferenceHz() {
-  return clamp(parseFloat(els.referenceFreqInput.value) || DEFAULT_A4_HZ, 20, 2000);
+  return clamp(parseFloat(els.referenceFreqInput.value) || DEFAULT_REFERENCE_HZ, 20, 2000);
 }
 
 function selectedReferenceMidi() {
-  return noteNameToMidi(els.referenceNoteInput.value || "A4");
+  return noteNameToMidi(els.referenceNoteInput.value || DEFAULT_REFERENCE_NOTE);
 }
 
 function renderSections() {
@@ -887,6 +1276,76 @@ function renderSections() {
     });
     els.sectionTable.append(row);
   });
+  updateFormSafety();
+  updateSoundTimeControls();
+}
+
+function updateFormSafety() {
+  if (!els.formSafetyLabel) return;
+  const voices = clamp(parseInt(els.voicesInput?.value, 10) || 4, 2, 4);
+  const estimate = estimateComplexity(state.sections.map(normalizeSection), voices);
+  const message = formComplexityMessage(estimate, els.styleInput?.value, Boolean(els.dubModeInput?.checked));
+  if (!message) {
+    state.formSafetyNoticeLevel = "comfortable";
+    els.formSafetyLabel.hidden = true;
+    els.formSafetyLabel.textContent = "";
+    els.formSafetyLabel.dataset.level = estimate.level;
+    return;
+  }
+  if (complexityRank(estimate.level) > complexityRank(state.formSafetyNoticeLevel)) {
+    state.formSafetyNoticeLevel = estimate.level;
+    els.formSafetyLabel.dataset.level = estimate.level;
+    els.formSafetyLabel.textContent = message;
+  }
+  els.formSafetyLabel.hidden = false;
+}
+
+function estimateComplexity(sections, voices) {
+  const normalized = sections.map(normalizeSection);
+  const totalBars = normalized.reduce((sum, section) => sum + section.bars, 0);
+  const totalPulses = normalized.reduce((sum, section) => {
+    const meter = METERS[section.meter] || METERS["4/4"];
+    return sum + section.bars * meter.numerator;
+  }, 0);
+  const voicePulses = totalPulses * clamp(voices, 2, 4);
+  const level = complexityLevel({ sections: normalized.length, bars: totalBars, voicePulses });
+  return {
+    level,
+    sections: normalized.length,
+    bars: totalBars,
+    pulses: totalPulses,
+    voice_pulses: voicePulses,
+    advisory: level === "comfortable" ? "comfortable" : level === "long" ? "long_form" : "expansive_long_form",
+    hard_cap: false,
+  };
+}
+
+function complexityLevel(estimate) {
+  if (
+    estimate.sections >= COMPLEXITY_EXPANSIVE.sections ||
+    estimate.bars >= COMPLEXITY_EXPANSIVE.bars ||
+    estimate.voicePulses >= COMPLEXITY_EXPANSIVE.voicePulses
+  ) return "expansive";
+  if (
+    estimate.sections >= COMPLEXITY_WARN.sections ||
+    estimate.bars >= COMPLEXITY_WARN.bars ||
+    estimate.voicePulses >= COMPLEXITY_WARN.voicePulses
+  ) return "long";
+  return "comfortable";
+}
+
+function complexityRank(level) {
+  return { comfortable: 0, long: 1, expansive: 2 }[level] || 0;
+}
+
+function formComplexityMessage(estimate, style, dubMode) {
+  if (estimate.level === "comfortable") return "";
+  const styleNote = style === FUGUE_STYLE_ID ? " Fishtail Fugue may add cadence and entry room while generating." : "";
+  const dubNote = dubMode ? " DUB can add groove shaping, so give older devices a moment." : "";
+  if (estimate.level === "expansive") {
+    return `Expansive long-form run: ${estimate.bars} bars across ${estimate.sections} sections, about ${estimate.voice_pulses.toLocaleString()} voice-pulses. Fishtail will still try it; save project JSON and expect slower generation on smaller devices.${styleNote}${dubNote}`;
+  }
+  return `Long-form warning: ${estimate.bars} bars across ${estimate.sections} sections, about ${estimate.voice_pulses.toLocaleString()} voice-pulses. This is allowed, but phones and tablets may take a moment.${styleNote}${dubNote}`;
 }
 
 function roleOptionsForSection(index) {
@@ -1105,15 +1564,17 @@ function playGenerateFeedback() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return;
   try {
-    const ctx = state.audioContext || new AudioContextClass();
+    const ctx = state.audio.context || state.audioContext || new AudioContextClass();
+    state.audio.context = ctx;
     state.audioContext = ctx;
     if (ctx.state === "suspended") ctx.resume();
+    FishtailAudioEngine.ensureAudioState(state.audio, ctx);
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.0001, now);
     master.gain.exponentialRampToValueAtTime(0.16, now + 0.012);
     master.gain.exponentialRampToValueAtTime(0.0001, now + 1.08);
-    master.connect(ctx.destination);
+    master.connect(state.audio.safetyBus);
 
     const clickGain = ctx.createGain();
     clickGain.gain.setValueAtTime(0.0001, now);
@@ -1170,6 +1631,39 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function generationRitualMinimumMs(piece) {
+  const now = Date.now();
+  const stressed = state.reducedMotion
+    || visualEcoActive(now)
+    || state.visualStressScore > 2.8
+    || memoryPressureLevel() > 0.72;
+  if (stressed) return GENERATE_MIN_MS;
+
+  let minimum = state.visualHighRefreshCapable ? GENERATE_RITUAL_FAST_MS : GENERATE_RITUAL_COMFORT_MS;
+  const complexity = piece?.manifest?.complexity;
+  if (complexity?.level === "long") minimum += 350;
+  if (complexity?.level === "expansive") minimum += 650;
+  if (piece?.settings?.generationStyle === FUGUE_STYLE_ID) minimum += 450;
+  if (piece?.settings?.dubMode) minimum += 300;
+  return clamp(minimum, GENERATE_MIN_MS, GENERATE_RITUAL_MAX_MS);
+}
+
+function generationRitualStatus(piece) {
+  const seed = piece?.settings?.seed || "fishtail";
+  const options = piece?.settings?.dubMode ? [
+    "Letting the bass breathe",
+    "Weighing the echo",
+    "Settling Dub Gravity",
+    "Listening for the pocket",
+  ] : [
+    "Weighing cadences",
+    "Settling the voices",
+    "Letting the torus resolve",
+    "Polishing the counterpoint",
+  ];
+  return options[Math.floor(hashUnit(seed, "generation-ritual") * options.length) % options.length];
+}
+
 function setGenerationControlsDisabled(disabled) {
   [
     els.generateButton,
@@ -1180,6 +1674,17 @@ function setGenerationControlsDisabled(disabled) {
     els.voicesInput,
     els.tempoInput,
     els.embedTempoInput,
+    els.tempoLatticeInput,
+    els.rationalSwingInput,
+    els.irrationalSwingInput,
+    els.metronomeMeterInput,
+    els.probeMuteInput,
+    els.probeHoldButton,
+    els.probeLevelInput,
+    els.metronomeInput,
+    els.metronomeLevelInput,
+    els.prepareProbeWavInput,
+    els.prepareTickerWavInput,
     els.velocityModeInput,
     els.dubModeInput,
     els.referenceNoteInput,
@@ -1203,6 +1708,7 @@ function setGenerationControlsDisabled(disabled) {
 async function generatePiece() {
   if (state.generating) return;
   state.generating = true;
+  stopAllLiveAudio();
   playGenerateFeedback();
   state.animationPhase = 0;
   state.animationStartedAt = Date.now();
@@ -1214,6 +1720,8 @@ async function generatePiece() {
   setGenerationControlsDisabled(true);
   els.downloadMidiButton.disabled = true;
   els.downloadJsonButton.disabled = true;
+  releaseAudioExports();
+  updateAudioExportButtons();
   els.statusLabel.textContent = customEntropyEndpoint() ? "Tuning + entropy" : "Tuning";
   els.pieceLengthLabel.textContent = "Preparing";
   const startedAt = Date.now();
@@ -1238,10 +1746,15 @@ async function generatePiece() {
     els.pieceLengthLabel.textContent = `${piece.totalBars} bars | ${piece.events.length} notes | ${piece.audit.ok ? "checked" : fatalIssues ? "MIDI blocked" : "musical notes"}`;
     els.downloadMidiButton.disabled = fatalIssues;
     els.downloadJsonButton.disabled = false;
-    await wait(Math.max(0, GENERATE_MIN_MS - (Date.now() - startedAt)));
+    const ritualMinimumMs = generationRitualMinimumMs(piece);
+    const ritualWaitMs = Math.max(0, ritualMinimumMs - (Date.now() - startedAt));
+    document.body.dataset.fishtailRitualMs = String(Math.round(ritualMinimumMs));
+    if (ritualWaitMs > 500) els.statusLabel.textContent = generationRitualStatus(piece);
+    await wait(ritualWaitMs);
     if (!fatalIssues) {
       saveMidiPiece(piece);
       els.statusLabel.textContent = piece.audit.ok ? "MIDI checked + saved" : "Saved with notes";
+      await prepareRequestedAudioExports(piece);
     } else {
       els.statusLabel.textContent = "MIDI blocked by checker";
     }
@@ -1269,13 +1782,23 @@ function readSettings(seed) {
     pedalVoices: readPedalVoices(voices),
     tempo: clamp(parseFloat(els.tempoInput.value) || 72, 30, 220),
     includeTempoMap: Boolean(els.embedTempoInput.checked),
+    tempoLatticeEnabled: Boolean(els.tempoLatticeInput?.checked),
+    rationalSwing: percentInput(els.rationalSwingInput, 0.5),
+    irrationalSwing: percentInput(els.irrationalSwingInput, 0),
+    metronomeMeterMode: els.metronomeMeterInput?.value || "section-1",
+    probeMuted: Boolean(els.probeMuteInput?.checked),
+    probeLevel: percentInput(els.probeLevelInput, 0.2),
+    metronomeEnabled: Boolean(els.metronomeInput?.checked),
+    metronomeLevel: percentInput(els.metronomeLevelInput, 0.25),
+    prepareProbeWav: Boolean(els.prepareProbeWavInput?.checked),
+    prepareTickerWav: Boolean(els.prepareTickerWavInput?.checked),
     velocityProfile: els.velocityModeInput?.checked ? "auto" : "flat",
     dubMode: Boolean(els.dubModeInput.checked),
-    referenceNote: els.referenceNoteInput.value || "A4",
+    referenceNote: els.referenceNoteInput.value || DEFAULT_REFERENCE_NOTE,
     referenceMidi: selectedReferenceMidi(),
     referenceHz: currentReferenceHz(),
     referenceAnchorA4Hz: state.referenceAnchorA4Hz,
-    tempoDivisor: clamp(parseInt(els.tempoDivisorInput.value, 10) || 432, 1, 100000),
+    tempoDivisor: clamp(parseInt(els.tempoDivisorInput.value, 10) || DEFAULT_TEMPO_DIVISOR, 1, 100000),
     breathing: Number(els.breathingInput.value) / 100,
     density: Number(els.densityInput.value) / 100,
     strangeness: Number(els.strangenessInput.value) / 100,
@@ -2080,11 +2603,13 @@ function buildPiece(settings, rng) {
 
   const velocitySummary = applyGravityVelocity(tracks, sectionMeta, settings);
   const events = activeVoices.flatMap((voice) => tracks[voice].events.map((event) => ({ ...event, voice })));
+  const complexity = estimateComplexity(sectionMeta, settings.voices);
+  const tempoTimeline = FishtailTempoLattice.buildTempoTimeline(sectionMeta, settings, { ppq: PPQ, meters: METERS });
   const serializationIssues = validateMidiSerializationInput(tracks, settings);
   let midiBytes = new Uint8Array();
   if (!serializationIssues.length) {
     try {
-      midiBytes = writeMidiFile({ tracks, sectionMeta, settings, totalTicks: currentTick });
+      midiBytes = writeMidiFile({ tracks, sectionMeta, settings, totalTicks: currentTick, tempoTimeline });
     } catch (error) {
       serializationIssues.push(`MIDI serialization failed: ${error.message}`);
     }
@@ -2092,9 +2617,9 @@ function buildPiece(settings, rng) {
   const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick, serializationIssues);
   const refrainSummary = summarizeRefrainState(refrainState);
   const dubGrooveSummary = summarizeDubGroove(settings, events, dubBassMemory);
-  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary }, audit);
-  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, sweetness }, audit);
-  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, sweetness }, audit);
+  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline }, audit);
+  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, sweetness }, audit);
+  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, sweetness }, audit);
 
   return {
     settings,
@@ -2103,6 +2628,8 @@ function buildPiece(settings, rng) {
     report,
     audit,
     events,
+    sectionMeta,
+    tempoTimeline,
     totalBars,
   };
 }
@@ -3277,14 +3804,14 @@ function validateMidiSerializationInput(tracks, settings) {
   return issues;
 }
 
-function writeMidiFile({ tracks, sectionMeta, settings }) {
+function writeMidiFile({ tracks, sectionMeta, settings, totalTicks = null, tempoTimeline = null }) {
   const chunks = [];
   const voiceTracks = Object.values(tracks);
   const hasConductor = Boolean(settings.includeTempoMap);
   chunks.push(makeHeaderChunk(1, voiceTracks.length + (hasConductor ? 1 : 0), PPQ));
   if (hasConductor) {
-    const totalTicks = sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0);
-    chunks.push(makeConductorTrack(sectionMeta, settings, totalTicks));
+    const conductorEndTick = totalTicks == null ? sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0) : totalTicks;
+    chunks.push(makeConductorTrack(sectionMeta, settings, conductorEndTick, tempoTimeline));
   }
   voiceTracks.forEach((track) => chunks.push(makeVoiceTrack(track, settings)));
   return concatBytes(chunks);
@@ -3319,10 +3846,15 @@ function makeVoiceTrack(track, settings) {
   return chunk("MTrk", deltaEncode(events));
 }
 
-function makeConductorTrack(sectionMeta, settings, totalTicks) {
-  const events = [
-    { tick: 0, bytes: tempoMetaBytes(settings.tempo) },
-  ];
+function makeConductorTrack(sectionMeta, settings, totalTicks, tempoTimeline = null) {
+  const events = [];
+  if (settings.tempoLatticeEnabled && tempoTimeline?.tempoEvents?.length) {
+    tempoTimeline.tempoEvents.forEach((event) => {
+      events.push({ tick: event.tick, bytes: tempoMetaBytesFromMicroseconds(event.microsecondsPerQuarter) });
+    });
+  } else {
+    events.push({ tick: 0, bytes: tempoMetaBytes(settings.tempo) });
+  }
   sectionMeta.forEach((section) => {
     events.push({ tick: section.startTick, bytes: timeSignatureMetaBytes(section.numerator, section.denominator) });
   });
@@ -3332,11 +3864,16 @@ function makeConductorTrack(sectionMeta, settings, totalTicks) {
 
 function tempoMetaBytes(bpm) {
   const microsecondsPerQuarter = clamp(Math.round(60000000 / clamp(bpm, 1, 999)), 1, 0xffffff);
+  return tempoMetaBytesFromMicroseconds(microsecondsPerQuarter);
+}
+
+function tempoMetaBytesFromMicroseconds(microsecondsPerQuarter) {
+  const safeMicroseconds = clamp(Math.round(microsecondsPerQuarter), 1, 0xffffff);
   return [
     0xff, 0x51, 0x03,
-    (microsecondsPerQuarter >>> 16) & 0xff,
-    (microsecondsPerQuarter >>> 8) & 0xff,
-    microsecondsPerQuarter & 0xff,
+    (safeMicroseconds >>> 16) & 0xff,
+    (safeMicroseconds >>> 8) & 0xff,
+    safeMicroseconds & 0xff,
   ];
 }
 
@@ -3540,6 +4077,7 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       dub_gravity: settings.dubMode,
       dub_checker_note: settings.dubMode ? dubRelaxLine(settings.seed) : null,
     },
+    complexity: stats.complexity,
     pedal_voices: settings.pedalVoices,
     suspension_control: {
       mode: "musical_gravity",
@@ -3585,6 +4123,55 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       bpm: Number(settings.tempo.toFixed(4)),
       midi_tempo_map: settings.includeTempoMap,
     },
+    tempo_lattice: {
+      enabled: Boolean(settings.tempoLatticeEnabled),
+      law: stats.tempoTimeline?.law || FishtailTempoLattice.DEFAULT_LAW,
+      rational_amount: Number((settings.rationalSwing || 0).toFixed(4)),
+      rational_swing: Number(FishtailTempoLattice.rationalSwingAmount(settings.rationalSwing || 0).toFixed(4)),
+      irrational_amount: Number((settings.irrationalSwing || 0).toFixed(4)),
+      tempo_event_count: stats.tempoTimeline?.tempoEvents?.length || 0,
+      minimum_instantaneous_bpm: Number((stats.tempoTimeline?.minInstantaneousBpm || settings.tempo).toFixed(4)),
+      maximum_instantaneous_bpm: Number((stats.tempoTimeline?.maxInstantaneousBpm || settings.tempo).toFixed(4)),
+      duration_seconds: Number((stats.tempoTimeline?.totalSeconds || 0).toFixed(4)),
+      bar_endpoints_preserved: stats.tempoTimeline?.barEndpointsPreserved !== false,
+      note_groove_layer: settings.dubMode ? "dub_note_offsets_can_compound_with_conductor_lattice" : "grid_notes_only",
+    },
+    audio_reference: {
+      probe: {
+        model: FishtailTempoLattice.TEARDROP_MODEL,
+        reference_hz: Number(settings.referenceHz.toFixed(4)),
+        oscillator_budget: 12,
+        oscillator_count: FishtailTempoLattice.buildTeardropVoiceTable(settings.referenceHz, 12).length,
+        delta: FishtailTempoLattice.TEARDROP_DELTA,
+        q: FishtailTempoLattice.TEARDROP_Q,
+        p: FishtailTempoLattice.TEARDROP_P,
+        glide_seconds: FishtailTempoLattice.TEARDROP_GLIDE_SECONDS,
+        attack_seconds: FishtailTempoLattice.TEARDROP_ATTACK_SECONDS,
+        release_seconds: FishtailTempoLattice.TEARDROP_RELEASE_SECONDS,
+        muted_by_default: true,
+      },
+      ticker: {
+        model: FishtailTempoLattice.TICKER_MODEL,
+        frequency_multiplier: 8,
+        frequency_range_hz: [400, 8000],
+        rq: FishtailTempoLattice.TICKER_RQ,
+        web_audio_q: Number(FishtailTempoLattice.TICKER_WEB_AUDIO_Q.toFixed(4)),
+        duration_seconds: FishtailTempoLattice.TICKER_DECAY_SECONDS,
+        filter_glide_seconds: FishtailTempoLattice.TICKER_FILTER_GLIDE_SECONDS,
+      },
+    },
+    audio_stems: {
+      requested: {
+        probe: Boolean(settings.prepareProbeWav),
+        ticker: Boolean(settings.prepareTickerWav),
+      },
+      rendered: {
+        probe: false,
+        ticker: false,
+      },
+      bit_depth: 24,
+      channels: 1,
+    },
     sections: sectionMeta,
     subject,
     stats,
@@ -3625,13 +4212,27 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`Dub Gravity: ${settings.dubMode ? "on" : "off"}`);
   lines.push(`Tempo: ${settings.tempo.toFixed(4)} BPM`);
   lines.push(`MIDI tempo map: ${settings.includeTempoMap ? "on" : "off"}`);
+  if (stats.tempoTimeline) {
+    lines.push(`Tempo lattice: ${settings.tempoLatticeEnabled ? "on" : "off"} | rational ${(settings.rationalSwing || 0).toFixed(2)} | irrational ${(settings.irrationalSwing || 0).toFixed(2)} | events ${stats.tempoTimeline.tempoEvents.length} | range ${stats.tempoTimeline.minInstantaneousBpm.toFixed(2)}-${stats.tempoTimeline.maxInstantaneousBpm.toFixed(2)} BPM | duration ${stats.tempoTimeline.totalSeconds.toFixed(2)} s`);
+  }
   lines.push(`Reference pitch: ${settings.referenceNote} = ${settings.referenceHz.toFixed(4)} Hz`);
   lines.push(`Fishtail tempo: 60 * ${settings.referenceHz.toFixed(4)} / ${settings.tempoDivisor}`);
   lines.push(`Voices: ${settings.voices}`);
+  if (stats.complexity) {
+    const complexityLabel = stats.complexity.level === "comfortable" ? "comfortable" : stats.complexity.level === "long" ? "long-form" : "expansive long-form";
+    lines.push(`Scale: ${stats.complexity.bars} bars, ${stats.complexity.sections} sections, ${stats.complexity.voice_pulses} voice-pulses (${complexityLabel}; no hard cap).`);
+    if (stats.complexity.level !== "comfortable") {
+      lines.push("Long-form note: Fishtail generated this intentionally, but smaller devices may need extra time for similar settings.");
+    }
+  }
   lines.push(`Pedal voices: ${Object.entries(settings.pedalVoices || {}).filter(([, enabled]) => enabled).map(([voice]) => voice).join(", ") || "none"}`);
   lines.push(`Pitch map: ${settings.resolution}`);
   lines.push(`Output: ${outputModeLabel(settings.outputMode)}`);
   lines.push(`Gravity Velocity: ${stats.velocitySummary?.label || "Calm Gravity"} ${settings.velocityProfile === "flat" ? "fixed at 100" : `range ${stats.velocitySummary?.stats?.min ?? 0}-${stats.velocitySummary?.stats?.max ?? 0}, linked to Fishtail tempo n=${settings.tempoDivisor}`}.`);
+  if (settings.prepareProbeWav || settings.prepareTickerWav) {
+    const requested = [settings.prepareProbeWav ? "probe" : "", settings.prepareTickerWav ? "ticker" : ""].filter(Boolean).join(", ");
+    lines.push(`Audio stems requested: ${requested}; rendered after MIDI generation with mono 24-bit safety checks.`);
+  }
   if (settings.outputMode === "bend") {
     lines.push(`Bend reference: ${settings.rootNote} = ${settings.rootFreq.toFixed(4)} Hz, derived from ${settings.referenceNote} at ${settings.referenceHz.toFixed(4)} Hz`);
   }
@@ -4190,10 +4791,88 @@ function downloadLast(kind) {
   } else if (kind === "json") {
     downloadBlob(new Blob([JSON.stringify(state.lastPiece.manifest, null, 2)], { type: "application/json" }), "amy-cin-fishtail-generator.json");
     els.statusLabel.textContent = "Settings save requested";
+  } else if (kind === "probeWav") {
+    downloadAudioExport("probe");
+  } else if (kind === "tickerWav") {
+    downloadAudioExport("ticker");
   } else {
     downloadBlob(new Blob([state.lastPiece.report], { type: "text/plain" }), "amy-cin-fishtail-generation-notes.txt");
     els.statusLabel.textContent = "Notes save requested";
   }
+}
+
+function releaseAudioExports() {
+  state.lastAudioExports.probe = null;
+  state.lastAudioExports.ticker = null;
+}
+
+function updateAudioExportButtons() {
+  if (els.downloadProbeWavButton) els.downloadProbeWavButton.disabled = !state.lastAudioExports.probe?.blob;
+  if (els.downloadTickerWavButton) els.downloadTickerWavButton.disabled = !state.lastAudioExports.ticker?.blob;
+}
+
+async function prepareRequestedAudioExports(piece) {
+  const requested = [];
+  if (piece.settings.prepareProbeWav) requested.push(["probe", FishtailWavExport.renderProbeWav]);
+  if (piece.settings.prepareTickerWav) requested.push(["ticker", FishtailWavExport.renderTickerWav]);
+  if (!requested.length) return;
+
+  const rendered = [];
+  const failed = [];
+  piece.manifest.audio_stems = piece.manifest.audio_stems || { requested: {}, rendered: {}, bit_depth: 24, channels: 1 };
+  piece.manifest.audio_stems.errors = [];
+
+  for (const [kind, renderer] of requested) {
+    try {
+      els.statusLabel.textContent = `Rendering ${kind} WAV`;
+      document.body.dataset.audioRendering = kind;
+      const audioExport = await renderer(piece);
+      state.lastAudioExports[kind] = audioExport;
+      recordAudioExport(piece, audioExport);
+      rendered.push(`${kind} ${audioExport.sampleRate / 1000} kHz`);
+      updateAudioExportButtons();
+    } catch (error) {
+      const message = `${kind} WAV skipped: ${error.message}`;
+      failed.push(message);
+      piece.manifest.audio_stems.errors.push(message);
+      console.warn(message, error);
+    } finally {
+      document.body.dataset.audioRendering = "";
+    }
+  }
+
+  const lines = [];
+  if (rendered.length) lines.push(`Rendered WAV stems: ${rendered.join(", ")}.`);
+  failed.forEach((message) => lines.push(message));
+  if (lines.length) {
+    piece.report = `${piece.report}\n\nAudio stems\n  ${lines.join("\n  ")}`;
+    els.reportOutput.textContent = piece.report;
+  }
+  els.statusLabel.textContent = rendered.length ? "WAV ready" : "MIDI saved";
+}
+
+function recordAudioExport(piece, audioExport) {
+  const kind = audioExport.kind;
+  piece.manifest.audio_stems.rendered[kind] = true;
+  piece.manifest.audio_stems[kind] = {
+    filename: audioExport.filename,
+    sample_rate_hz: audioExport.sampleRate,
+    bit_depth: audioExport.bitDepth,
+    channels: 1,
+    duration_seconds: Number(audioExport.durationSeconds.toFixed(4)),
+    piece_seconds: Number(audioExport.pieceSeconds.toFixed(4)),
+    fallback_sample_rate: Boolean(audioExport.fallbackSampleRate),
+  };
+}
+
+function downloadAudioExport(kind) {
+  const audioExport = state.lastAudioExports[kind];
+  if (!audioExport?.blob) {
+    els.statusLabel.textContent = `${kind} WAV not ready`;
+    return;
+  }
+  downloadBlob(audioExport.blob, audioExport.filename);
+  els.statusLabel.textContent = `${kind} WAV save requested`;
 }
 
 function toggleNotes() {
@@ -4454,6 +5133,10 @@ function updateTorusSize(width, height) {
   if (!torusCore.ready) return;
   const renderer = torusCore.renderer;
   const camera = torusCore.camera;
+  const pixelRatio = currentVisualPixelRatio();
+  if (typeof renderer.getPixelRatio === "function" && Math.abs(renderer.getPixelRatio() - pixelRatio) > 0.01) {
+    renderer.setPixelRatio(pixelRatio);
+  }
   const pixelWidth = Math.max(1, Math.round(width));
   const pixelHeight = Math.max(1, Math.round(height));
   const canvas = renderer.domElement;
@@ -4492,9 +5175,12 @@ function renderTorusFrame(width, height, phase) {
 
   const now = Date.now();
   const palette = torusPalette();
+  const eco = visualEcoActive(now);
   const activeBoost = getGenerateEnvelope(now);
   const bootGlitch = Math.max(0, (state.bootGlitchUntil - now) / 2400);
-  const reducedIdle = state.reducedMotion && activeBoost <= 0.02 && bootGlitch <= 0.02;
+  const stressGlitch = visualGlitchEnvelope(now);
+  const glitch = Math.max(bootGlitch, stressGlitch);
+  const reducedIdle = state.reducedMotion && activeBoost <= 0.02 && glitch <= 0.02;
   const motionAge = now - state.motionLastAt;
   const motionPresence = reducedIdle ? 0 : clamp(1 - motionAge / 3200, 0, 1);
   const tiltEase = reducedIdle ? 0.02 : 0.045;
@@ -4504,17 +5190,20 @@ function renderTorusFrame(width, height, phase) {
   const wormholePhase = reducedIdle ? 0 : wormholeLoopPhase(now);
   const negativeSpaceOpacity = smoothstep(0.25, 0.75, wormholePhase);
   const focusZoom = smoothstep(0.18, 0.82, wormholePhase);
-  const idleLevel = Math.max(0, 1 - Math.max(activeBoost, bootGlitch));
+  const idleLevel = Math.max(0, 1 - Math.max(activeBoost, glitch));
   const idleBreath = idleLevel * (0.5 + Math.sin(time * 0.36) * 0.5);
-  const pulse = activeBoost * (0.5 + Math.sin(time * 1.75) * 0.5) + bootGlitch * (0.45 + Math.sin(time * 5.8) * 0.18) + idleBreath * 0.18;
-  const twitch = bootGlitch ? Math.sin(time * 19.5) * bootGlitch * 0.012 : 0;
+  const pulse = activeBoost * (0.5 + Math.sin(time * 1.75) * 0.5) + glitch * (0.45 + Math.sin(time * 5.8) * 0.18) + idleBreath * 0.18;
+  const twitch = glitch ? Math.sin(time * 19.5) * glitch * (stressGlitch > 0 ? 0.028 : 0.012) : 0;
 
   state.wormholePhase = wormholePhase;
   state.negativeSpaceOpacity = negativeSpaceOpacity;
   state.focusZoom = focusZoom;
-  state.animationVisualLevel = Math.max(activeBoost, bootGlitch, negativeSpaceOpacity * 0.35);
+  state.animationVisualLevel = Math.max(activeBoost, glitch, negativeSpaceOpacity * 0.35);
   updateWormholeGeometry(torusCore.torus, wormholePhase, time, false);
-  if (torusCore.negativeWire) updateWormholeGeometry(torusCore.negativeWire, wormholePhase, time, true);
+  if (torusCore.negativeWire) {
+    torusCore.negativeWire.visible = !eco || activeBoost > 0.18 || glitch > 0.2 || negativeSpaceOpacity > 0.68;
+    if (torusCore.negativeWire.visible) updateWormholeGeometry(torusCore.negativeWire, wormholePhase, time, true);
+  }
   updateFocusCamera(focusZoom, activeBoost);
 
   torusCore.group.scale.set(
@@ -4525,17 +5214,19 @@ function renderTorusFrame(width, height, phase) {
   torusCore.group.rotation.x = 0.11 + idleLevel * Math.sin(time * 0.28) * 0.032 + activeBoost * Math.sin(time * 0.56) * 0.035 + state.motionTiltY * 0.1 + twitch;
   torusCore.group.rotation.y = idleLevel * Math.sin(time * 0.22) * 0.05 + activeBoost * Math.sin(time * 0.48) * 0.055 + state.motionTiltX * 0.13 + twitch * 0.8;
   torusCore.group.rotation.z = idleLevel * Math.sin(time * 0.18) * 0.04 + activeBoost * Math.sin(time * 0.72) * 0.065 + state.motionTiltX * 0.05 + twitch * 1.6;
-  torusCore.torus.rotation.z = idleLevel * Math.sin(time * 0.34) * 0.08 + activeBoost * Math.sin(time * 0.95) * 0.14 + bootGlitch * Math.sin(time * 8.2) * 0.035;
-  torusCore.torus.material.opacity = 0.26 + idleBreath * 0.07 + negativeSpaceOpacity * 0.08 + activeBoost * 0.22 + bootGlitch * 0.16;
-  torusCore.torus.material.color.setHex((activeBoost > 0.28 || bootGlitch > 0.08) ? palette.torusActive : palette.torus);
+  torusCore.torus.rotation.z = idleLevel * Math.sin(time * 0.34) * 0.08 + activeBoost * Math.sin(time * 0.95) * 0.14 + glitch * Math.sin(time * 8.2) * 0.035;
+  torusCore.torus.material.opacity = 0.26 + idleBreath * 0.07 + negativeSpaceOpacity * 0.08 + activeBoost * 0.22 + glitch * 0.16;
+  torusCore.torus.material.color.setHex((activeBoost > 0.28 || glitch > 0.08) ? palette.torusActive : palette.torus);
   if (torusCore.negativeWire) {
     torusCore.negativeWire.rotation.copy(torusCore.torus.rotation);
-    torusCore.negativeWire.material.opacity = negativeSpaceOpacity * 0.22 + activeBoost * 0.08 + bootGlitch * 0.06;
+    torusCore.negativeWire.material.opacity = eco && !torusCore.negativeWire.visible ? 0 : negativeSpaceOpacity * 0.22 + activeBoost * 0.08 + glitch * 0.06;
     torusCore.negativeWire.material.color.setHex(palette.negative);
   }
   const scaffoldFocus = 1 - focusZoom * 0.46;
-  torusCore.ratioLoop.material.opacity = (0.34 + activeBoost * 0.24 + bootGlitch * 0.18 + negativeSpaceOpacity * 0.08) * scaffoldFocus;
-  torusCore.ratioWeb.material.opacity = (0.26 + activeBoost * 0.26 + bootGlitch * 0.18 + negativeSpaceOpacity * 0.08) * scaffoldFocus;
+  torusCore.ratioLoop.visible = true;
+  torusCore.ratioWeb.visible = !eco || activeBoost > 0.42 || glitch > 0.3;
+  torusCore.ratioLoop.material.opacity = (0.34 + activeBoost * 0.24 + glitch * 0.18 + negativeSpaceOpacity * 0.08) * scaffoldFocus * (eco ? 0.45 : 1);
+  torusCore.ratioWeb.material.opacity = torusCore.ratioWeb.visible ? (0.26 + activeBoost * 0.26 + glitch * 0.18 + negativeSpaceOpacity * 0.08) * scaffoldFocus : 0;
   torusCore.ratioLoop.material.color.setHex(palette.web);
   torusCore.ratioWeb.material.color.setHex(palette.web);
 
@@ -4543,7 +5234,8 @@ function renderTorusFrame(width, height, phase) {
     const base = marker.userData.basePosition;
     const slot = marker.userData.slot;
     const angle = marker.userData.baseAngle;
-    const gravityWave = Math.sin(phase * (activeBoost > 0.02 ? 0.036 : 0.014) + slot * 0.86) * (idleLevel * 0.026 + (activeBoost || bootGlitch > 0 ? 0.08 + pulse * 0.18 : 0));
+    marker.visible = !eco || slot % 3 === 0 || activeBoost > 0.36 || glitch > 0.2;
+    const gravityWave = Math.sin(phase * (activeBoost > 0.02 ? 0.036 : 0.014) + slot * 0.86) * (idleLevel * 0.026 + (activeBoost || glitch > 0 ? 0.08 + pulse * 0.18 : 0));
     const rimFold = smoothstep(0.18, 0.86, wormholePhase);
     const vortex = rimFold * Math.sin(slot * 1.7 + time * 0.42) * 0.08;
     marker.position.set(
@@ -4551,13 +5243,13 @@ function renderTorusFrame(width, height, phase) {
       base.y * (1 - rimFold * 0.08) + Math.sin(angle) * vortex,
       base.z + gravityWave + rimFold * Math.sin(slot * 1.21 + time * 0.38) * 0.16,
     );
-    marker.scale.setScalar(1 + idleLevel * Math.max(0, Math.sin(phase * 0.016 + slot)) * 0.06 + Math.max(activeBoost, bootGlitch) * Math.max(0, Math.sin(phase * 0.04 + slot)) * 0.18 - rimFold * 0.08);
-    marker.material.opacity = 0.86 - focusZoom * 0.34 + activeBoost * 0.08;
+    marker.scale.setScalar(1 + idleLevel * Math.max(0, Math.sin(phase * 0.016 + slot)) * 0.06 + Math.max(activeBoost, glitch) * Math.max(0, Math.sin(phase * 0.04 + slot)) * 0.18 - rimFold * 0.08);
+    marker.material.opacity = (0.86 - focusZoom * 0.34 + activeBoost * 0.08) * (eco && slot % 3 !== 0 ? 0.3 : 1);
     const markerColor = ratioColorHex(slot, isDubModeVisual());
     marker.material.color.setHex(markerColor);
     marker.material.emissive.setHex(markerColor);
   });
-  updateRatioConnectorGeometry();
+  if (!eco || activeBoost > 0.35 || glitch > 0.24) updateRatioConnectorGeometry();
 
   torusCore.renderer.render(torusCore.scene, torusCore.camera);
 }
@@ -4670,6 +5362,7 @@ function ratioColorHex(slot, dubVisual = false) {
 }
 
 function drawCore(timestamp = 0) {
+  const drawStartedAt = runtimeNow();
   state.coreFrameId = null;
   if (!visualsCanRun()) return;
   const canvas = els.coreCanvas;
@@ -4681,7 +5374,7 @@ function drawCore(timestamp = 0) {
   const rect = canvas.getBoundingClientRect();
   const width = rect.width || 360;
   const height = rect.height || 220;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = currentVisualPixelRatio();
   const targetWidth = Math.max(1, Math.round(width * dpr));
   const targetHeight = Math.max(1, Math.round(height * dpr));
   if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
@@ -4709,12 +5402,14 @@ function drawCore(timestamp = 0) {
 
   drawGravityWaveField(ctx, width, height, phase);
   drawApertureLens(ctx, width, height, phase);
+  drawEcoGlitchOverlay(ctx, width, height, phase);
   if (!torusCore.ready) drawProjectedTorusFallback(ctx, width, height, phase);
 
   const frameMs = Math.max(16, timestamp - (state.coreLastDrawnAt || timestamp));
   state.coreLastDrawnAt = timestamp;
   const speed = state.reducedMotion && !visualIsActive() ? 0.04 : state.animationVisualLevel > 0.02 ? 1.18 : 0.18;
   state.animationPhase += speed * clamp(frameMs / 16.67, 0.25, 2.4);
+  monitorVisualLoad(frameMs, runtimeNow() - drawStartedAt);
   requestCoreFrame();
 }
 
@@ -4722,13 +5417,18 @@ function drawGravityWaveField(ctx, width, height, phase) {
   const cx = width / 2;
   const cy = height / 2;
   const dubVisual = isDubModeVisual();
+  const eco = visualEcoActive();
+  const horizontalGap = eco ? 30 : 18;
+  const horizontalStep = eco ? 18 : 10;
+  const verticalGap = eco ? 34 : 22;
+  const verticalStep = eco ? 18 : 10;
   ctx.save();
-  ctx.lineWidth = 0.56;
-  ctx.globalAlpha = (dubVisual ? 0.58 : 0.42) + state.animationVisualLevel * 0.3;
+  ctx.lineWidth = eco ? 0.46 : 0.56;
+  ctx.globalAlpha = ((dubVisual ? 0.58 : 0.42) + state.animationVisualLevel * 0.3) * (eco ? 0.72 : 1);
 
-  for (let y = -18; y <= height + 18; y += 18) {
+  for (let y = -18; y <= height + 18; y += horizontalGap) {
     ctx.beginPath();
-    for (let x = -16; x <= width + 16; x += 10) {
+    for (let x = -16; x <= width + 16; x += horizontalStep) {
       const point = warpedFieldPoint(x, y, cx, cy, phase);
       if (x === -16) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
@@ -4737,9 +5437,9 @@ function drawGravityWaveField(ctx, width, height, phase) {
     ctx.stroke();
   }
 
-  for (let x = -18; x <= width + 18; x += 22) {
+  for (let x = -18; x <= width + 18; x += verticalGap) {
     ctx.beginPath();
-    for (let y = -16; y <= height + 16; y += 10) {
+    for (let y = -16; y <= height + 16; y += verticalStep) {
       const point = warpedFieldPoint(x, y, cx, cy, phase + 48);
       if (y === -16) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
@@ -4793,6 +5493,49 @@ function drawApertureLens(ctx, width, height, phase) {
       cy + Math.sin(angle) * outer * 0.58,
     );
     ctx.strokeStyle = dubVisual ? "rgba(0, 255, 200, 0.32)" : "rgba(41, 169, 199, 0.36)";
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawEcoGlitchOverlay(ctx, width, height, phase) {
+  const now = Date.now();
+  const glitch = visualGlitchEnvelope(now);
+  const eco = visualEcoActive(now);
+  const intensity = Math.max(glitch, eco ? 0.16 : 0);
+  if (intensity <= 0.01) return;
+
+  const dubVisual = isDubModeVisual();
+  const bandCount = glitch > 0.04 ? 8 : 3;
+  const paletteA = dubVisual ? "rgba(57, 255, 136," : "rgba(41, 169, 199,";
+  const paletteB = dubVisual ? "rgba(183, 255, 77," : "rgba(215, 46, 127,";
+  ctx.save();
+  ctx.globalCompositeOperation = "screen";
+
+  for (let band = 0; band < bandCount; band += 1) {
+    const wave = Math.sin(phase * 0.19 + band * 2.71);
+    const y = mod((phase * (0.9 + band * 0.07) + band * 41), height + 28) - 14;
+    const bandHeight = glitch > 0.04 ? 1 + Math.abs(wave) * 7 : 1.4;
+    const offset = wave * width * (0.018 + intensity * 0.036);
+    ctx.globalAlpha = 0.06 + intensity * (band % 2 ? 0.2 : 0.13);
+    ctx.fillStyle = `${band % 2 ? paletteB : paletteA} ${0.22 + intensity * 0.42})`;
+    ctx.fillRect(offset, y, width, bandHeight);
+    if (glitch > 0.08) {
+      ctx.globalAlpha = 0.035 + intensity * 0.1;
+      ctx.fillStyle = `${band % 2 ? paletteA : paletteB} ${0.14 + intensity * 0.28})`;
+      ctx.fillRect(-offset * 0.6, y + bandHeight + 2, width, 1);
+    }
+  }
+
+  ctx.globalAlpha = 0.06 + intensity * 0.18;
+  ctx.lineWidth = 0.5;
+  for (let y = 0; y < height; y += eco ? 16 : 9) {
+    const offset = Math.sin(y * 0.045 + phase * 0.05) * intensity * 8;
+    ctx.beginPath();
+    ctx.moveTo(offset, y + 0.5);
+    ctx.lineTo(width + offset, y + 0.5);
+    ctx.strokeStyle = dubVisual ? "rgba(57, 255, 136, 0.34)" : "rgba(255, 255, 255, 0.32)";
     ctx.stroke();
   }
 

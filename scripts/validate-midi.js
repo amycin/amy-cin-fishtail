@@ -6,7 +6,12 @@ const path = require("path");
 const vm = require("vm");
 
 const ROOT = path.resolve(__dirname, "..");
-const APP_PATH = path.join(ROOT, "src", "app.js");
+const APP_SCRIPT_PATHS = [
+  path.join(ROOT, "src", "tempo-lattice.js"),
+  path.join(ROOT, "src", "audio-engine.js"),
+  path.join(ROOT, "src", "wav-export.js"),
+  path.join(ROOT, "src", "app.js"),
+];
 const TEMPO_30_BYTES = [0x1e, 0x84, 0x80];
 
 function main() {
@@ -309,6 +314,184 @@ function runStabilityTests() {
         return { geometryDisposed, materialDisposed, rendererDisposed, removed, ready: torusCore.ready, markers: torusCore.ratioMarkers.length };
       })();
 
+      const adaptiveVisual = (() => {
+        const now = Date.now() + 1000;
+        state.visualEcoUntil = 0;
+        state.visualGlitchUntil = 0;
+        state.visualEcoCooldownUntil = 0;
+        state.visualStressScore = 0;
+        state.reducedMotion = false;
+        state.animationActive = false;
+        state.animationTailUntil = 0;
+        state.bootGlitchUntil = 0;
+        state.motionTiltX = 0;
+        state.motionTiltY = 0;
+        window.devicePixelRatio = 3;
+        monitorVisualLoad(120, 34, now);
+        monitorVisualLoad(118, 32, now + 80);
+        return {
+          active: visualEcoActive(now + 120),
+          glitch: visualGlitchEnvelope(now + 120) > 0.1,
+          delay: currentCoreFrameDelay(now + 120),
+          dpr: currentVisualPixelRatio(now + 120),
+        };
+      })();
+
+      const highRefreshVisual = (() => {
+        const now = Date.now() + 20000;
+        state.visualEcoUntil = 0;
+        state.visualGlitchUntil = 0;
+        state.visualEcoCooldownUntil = 0;
+        state.visualHighRefreshCapable = true;
+        state.reducedMotion = false;
+        state.animationActive = true;
+        state.animationTailUntil = 0;
+        state.bootGlitchUntil = 0;
+        state.motionTiltX = 0;
+        state.motionTiltY = 0;
+        const activeDelay = currentCoreFrameDelay(now);
+        state.animationActive = false;
+        const idleDelay = currentCoreFrameDelay(now);
+        state.visualHighRefreshCapable = false;
+        return { activeDelay, idleDelay };
+      })();
+
+      const generationRitual = (() => {
+        const piece = {
+          settings: baseSettings({ generationStyle: "counterpoint", dubMode: false }),
+          manifest: { complexity: { level: "comfortable" } },
+        };
+        state.reducedMotion = false;
+        state.visualEcoUntil = 0;
+        state.visualStressScore = 0;
+        state.visualHighRefreshCapable = false;
+        const comfort = generationRitualMinimumMs(piece);
+        state.visualHighRefreshCapable = true;
+        const fast = generationRitualMinimumMs(piece);
+        state.visualEcoUntil = Date.now() + 10000;
+        const eco = generationRitualMinimumMs(piece);
+        state.visualEcoUntil = 0;
+        state.visualStressScore = 4;
+        const stressed = generationRitualMinimumMs(piece);
+        state.visualStressScore = 0;
+        state.visualHighRefreshCapable = false;
+        return { comfort, fast, eco, stressed };
+      })();
+
+      function countTempoMeta(bytes) {
+        let count = 0;
+        for (let index = 0; index < bytes.length - 2; index += 1) {
+          if (bytes[index] === 0xff && bytes[index + 1] === 0x51 && bytes[index + 2] === 0x03) count += 1;
+        }
+        return count;
+      }
+
+      function noteSignature(piece) {
+        return JSON.stringify(piece.events.map((event) => ({
+          voice: event.voice,
+          tick: event.tick,
+          duration: event.duration,
+          midi: event.midi,
+          velocity: event.velocity,
+        })));
+      }
+
+      const timelineAudit = (() => {
+        const settings = baseSettings({
+          tempoLatticeEnabled: true,
+          rationalSwing: 1,
+          irrationalSwing: 0.6,
+          seed: "timeline-audit",
+        });
+        const perMeter = Object.entries(METERS).every(([meterId, meter]) => {
+          const timeline = FishtailTempoLattice.buildTempoTimeline([{
+            bars: 2,
+            meter: meterId,
+            startTick: 0,
+            barTicks: meter.numerator * meter.pulse,
+            numerator: meter.numerator,
+            denominator: meter.denominator,
+          }], settings, { ppq: PPQ, meters: METERS });
+          const ticks = timeline.segments.map((segment) => segment.tick);
+          return timeline.segments.length === meter.numerator * 2
+            && timeline.barEndpointsPreserved
+            && timeline.segments.every((segment) => segment.durationSeconds > 0 && segment.tickLength > 0 && segment.microsecondsPerQuarter >= 1 && segment.microsecondsPerQuarter <= 0xffffff)
+            && ticks.every((tick, index) => index === 0 || tick > ticks[index - 1])
+            && timeline.tickerEvents.length === timeline.segments.length
+            && timeline.tempoEvents.every((event, index) => index === 0 || event.tick > timeline.tempoEvents[index - 1].tick);
+        });
+        const section = [{ bars: 2, meter: "7/8", startTick: 0, barTicks: METERS["7/8"].numerator * METERS["7/8"].pulse, numerator: 7, denominator: 8 }];
+        const one = FishtailTempoLattice.buildTempoTimeline(section, settings, { ppq: PPQ, meters: METERS });
+        const same = FishtailTempoLattice.buildTempoTimeline(section, settings, { ppq: PPQ, meters: METERS });
+        const other = FishtailTempoLattice.buildTempoTimeline(section, { ...settings, seed: "timeline-other" }, { ppq: PPQ, meters: METERS });
+        const straight = FishtailTempoLattice.buildTempoTimeline(section, { ...settings, tempoLatticeEnabled: false }, { ppq: PPQ, meters: METERS });
+        return {
+          perMeter,
+          deterministic: JSON.stringify(one.segments.map((segment) => segment.durationWeight)) === JSON.stringify(same.segments.map((segment) => segment.durationWeight)),
+          seedChanges: JSON.stringify(one.segments.map((segment) => segment.durationWeight)) !== JSON.stringify(other.segments.map((segment) => segment.durationWeight)),
+          straight: straight.tempoEvents.length === 1 && straight.segments.every((segment) => segment.microsecondsPerQuarter === straight.baseMicrosecondsPerQuarter),
+        };
+      })();
+
+      const latticeMidiAudit = (() => {
+        const base = baseSettings({
+          seed: "lattice-note-stability",
+          includeTempoMap: true,
+          tempoLatticeEnabled: false,
+          sections: structuredClone(DEFAULT_SECTIONS),
+        });
+        const lattice = {
+          ...base,
+          tempoLatticeEnabled: true,
+          rationalSwing: 0.8,
+          irrationalSwing: 0.25,
+        };
+        const straightPiece = buildPiece({ ...base, sections: structuredClone(DEFAULT_SECTIONS) }, makeRng(base.seed));
+        const latticePiece = buildPiece({ ...lattice, sections: structuredClone(DEFAULT_SECTIONS) }, makeRng(lattice.seed));
+        return {
+          noteStable: noteSignature(straightPiece) === noteSignature(latticePiece),
+          straightTempos: countTempoMeta(straightPiece.midiBytes),
+          latticeTempos: countTempoMeta(latticePiece.midiBytes),
+          manifestOk: latticePiece.manifest.tempo_lattice.enabled
+            && latticePiece.manifest.tempo_lattice.tempo_event_count === latticePiece.tempoTimeline.tempoEvents.length
+            && latticePiece.report.includes("Tempo lattice: on"),
+        };
+      })();
+
+      const teardropAudit = (() => {
+        const table = FishtailTempoLattice.buildTeardropVoiceTable(216, 12);
+        const centre = table.find((voice) => Math.abs(voice.frequencyFactor - 1) < 1e-12);
+        const symmetric = table.every((voice, index) => {
+          const opposite = table[table.length - 1 - index];
+          return Math.abs(voice.weight - opposite.weight) < 1e-9
+            && Math.abs((voice.frequencyFactor * opposite.frequencyFactor) - 1) < 1e-9;
+        });
+        const weightSum = table.reduce((sum, voice) => sum + voice.weight, 0);
+        return {
+          count: table.length,
+          centre: Boolean(centre),
+          finite: table.every((voice) => Number.isFinite(voice.frequency) && voice.frequency > 0 && Number.isFinite(voice.weight) && voice.weight >= 0),
+          symmetric,
+          normalized: Math.abs(weightSum - 1) < 1e-9,
+          lowpass: FishtailTempoLattice.teardropLowpassHz(216) === 2592,
+        };
+      })();
+
+      const wavAudit = (() => {
+        const wav = FishtailWavExport.encodePcm24Mono(new Float32Array([0, 1, -1, 2, -2, NaN]), 48000);
+        const text = (start, end) => String.fromCharCode(...wav.slice(start, end));
+        const dataBytes = wav[40] | (wav[41] << 8) | (wav[42] << 16) | (wav[43] << 24);
+        return {
+          riff: text(0, 4) === "RIFF",
+          wave: text(8, 12) === "WAVE",
+          pcm: wav[20] === 1 && wav[21] === 0,
+          mono: wav[22] === 1 && wav[23] === 0,
+          rate: (wav[24] | (wav[25] << 8) | (wav[26] << 16) | (wav[27] << 24)) === 48000,
+          bits: wav[34] === 24 && wav[35] === 0,
+          dataLength: dataBytes === 18 && wav.length === 62,
+        };
+      })();
+
       return [
         {
           name: "explicit voice layouts include bass",
@@ -359,6 +542,58 @@ function runStabilityTests() {
             && disposeSummary.removed === 1
             && disposeSummary.ready === false
             && disposeSummary.markers === 0,
+        },
+        {
+          name: "visual adaptive eco glitch lowers render load",
+          ok: adaptiveVisual.active
+            && adaptiveVisual.glitch
+            && adaptiveVisual.delay === CORE_ECO_IDLE_FRAME_MS
+            && adaptiveVisual.dpr === 1,
+        },
+        {
+          name: "visual high refresh display can use native active frames",
+          ok: highRefreshVisual.activeDelay === 0
+            && highRefreshVisual.idleDelay === CORE_HIGH_REFRESH_IDLE_FRAME_MS,
+        },
+        {
+          name: "generation ritual rewards fast machines and spares stressed ones",
+          ok: generationRitual.comfort >= GENERATE_RITUAL_COMFORT_MS
+            && generationRitual.fast >= GENERATE_RITUAL_FAST_MS
+            && generationRitual.fast > generationRitual.comfort
+            && generationRitual.eco === GENERATE_MIN_MS
+            && generationRitual.stressed === GENERATE_MIN_MS,
+        },
+        {
+          name: "tempo lattice is meter-safe deterministic and straight-safe",
+          ok: timelineAudit.perMeter && timelineAudit.deterministic && timelineAudit.seedChanges && timelineAudit.straight,
+        },
+        {
+          name: "tempo lattice conductor does not move note events",
+          ok: latticeMidiAudit.noteStable
+            && latticeMidiAudit.straightTempos === 1
+            && latticeMidiAudit.latticeTempos > 1
+            && latticeMidiAudit.manifestOk,
+        },
+        {
+          name: "teardrop voice table preserves centre and symmetry",
+          ok: teardropAudit.count <= 12
+            && teardropAudit.count === 11
+            && teardropAudit.centre
+            && teardropAudit.finite
+            && teardropAudit.symmetric
+            && teardropAudit.normalized
+            && teardropAudit.lowpass,
+        },
+        {
+          name: "wav encoder writes mono 24-bit pcm headers",
+          ok: wavAudit.riff && wavAudit.wave && wavAudit.pcm && wavAudit.mono && wavAudit.rate && wavAudit.bits && wavAudit.dataLength,
+        },
+        {
+          name: "audio runtime is silent at load",
+          ok: state.audioContext === null
+            && state.audio.context === null
+            && state.audio.probe === null
+            && state.audio.metronome === null,
         },
       ];
     })()
@@ -979,8 +1214,9 @@ function runFugueTests() {
   const stylesCss = fs.readFileSync(path.join(ROOT, "styles.css"), "utf8");
   const styleOptionOk = indexHtml.includes('<option value="fishtail_fugue">Fishtail Fugue</option>');
   const tempoDefaultOk = indexHtml.includes('id="tempoInput" type="text" value="60.0000"')
-    && indexHtml.includes('id="tempoDivisorLabel">n = 432</span>')
-    && indexHtml.includes('id="tempoDivisorInput" type="range" min="118" max="864" step="1" value="432"')
+    && indexHtml.includes('id="tempoDivisorLabel">n = 216</span>')
+    && indexHtml.includes('id="tempoDivisorInput" type="range" min="59" max="432" step="1" value="216"')
+    && indexHtml.includes('id="referenceFreqInput" type="number" min="20" max="2000" step="0.01" value="216.00"')
     && stylesCss.includes("#tempoDivisorInput")
     && stylesCss.includes("direction: rtl");
   const variedLabelOk = indexHtml.includes("Varied") && !indexHtml.includes("Strange");
@@ -1189,7 +1425,9 @@ function makeAppContext() {
     THREE: undefined,
   };
   vm.createContext(context);
-  vm.runInContext(fs.readFileSync(APP_PATH, "utf8"), context, { filename: APP_PATH });
+  APP_SCRIPT_PATHS.forEach((scriptPath) => {
+    vm.runInContext(fs.readFileSync(scriptPath, "utf8"), context, { filename: scriptPath });
+  });
   return context;
 }
 

@@ -234,9 +234,23 @@ body.dub-mode .help-card {
 body.dub-mode .section-row,
 body.dub-mode .pedal-field,
 body.dub-mode .help-body section,
-body.dub-mode pre {
+body.dub-mode pre,
+body.dub-mode .form-safety,
+body.dub-mode .tempo-lattice-readout,
+body.dub-mode .check-row {
   border-color: rgba(57, 255, 136, 0.18);
   background: rgba(0, 14, 6, 0.64);
+}
+
+body.dub-mode .form-safety {
+  color: #dfffe8;
+  box-shadow: inset 0 0 18px rgba(57, 255, 136, 0.04);
+}
+
+body.dub-mode .form-safety[data-level="expansive"] {
+  color: #f0ffbf;
+  border-color: rgba(183, 255, 77, 0.28);
+  background: rgba(0, 24, 10, 0.72);
 }
 
 body.dub-mode .help-body p,
@@ -406,17 +420,22 @@ h2 {
 
 .form-panel {
   grid-column: 1;
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
 }
 
-.control-grid > .panel:nth-of-type(2) {
+.voices-panel {
   grid-column: 2;
   grid-row: 1;
 }
 
-.control-grid > .panel:nth-of-type(3) {
+.pitch-panel {
   grid-column: 2;
   grid-row: 2;
+}
+
+.sound-time-panel {
+  grid-column: 2;
+  grid-row: 3;
 }
 
 .panel {
@@ -483,10 +502,10 @@ button:disabled {
 
 .section-row {
   display: grid;
-  grid-template-columns: 48px 66px minmax(74px, 0.72fr) minmax(150px, 1.35fr) 76px minmax(106px, 0.98fr) minmax(92px, 0.9fr) minmax(104px, 0.95fr) 34px;
-  gap: 7px;
+  grid-template-columns: 38px 62px minmax(66px, 0.58fr) minmax(122px, 1.08fr) 68px minmax(88px, 0.82fr) minmax(78px, 0.72fr) minmax(82px, 0.72fr) 34px;
+  gap: 6px;
   align-items: end;
-  padding: 10px;
+  padding: 8px;
   border-radius: 6px;
   border: 1px solid rgba(192, 83, 42, 0.16);
   background: rgba(255, 246, 209, 0.45);
@@ -494,6 +513,23 @@ button:disabled {
 
 .section-row > * {
   min-width: 0;
+}
+
+.form-safety {
+  margin: 0 12px 12px;
+  padding: 10px 12px;
+  color: #6d3a22;
+  border: 1px solid rgba(245, 130, 31, 0.3);
+  border-radius: 6px;
+  background: rgba(255, 239, 187, 0.68);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.form-safety[data-level="expansive"] {
+  color: #5e2431;
+  border-color: rgba(215, 46, 127, 0.34);
+  background: rgba(255, 222, 194, 0.76);
 }
 
 .row-index {
@@ -675,6 +711,44 @@ input[type="range"] {
   outline-offset: 3px;
 }
 
+.sound-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hold-button {
+  min-height: 44px;
+  align-self: end;
+  font-weight: 720;
+}
+
+.check-row {
+  display: flex;
+  grid-template-columns: none;
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid rgba(192, 83, 42, 0.2);
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: rgba(255, 252, 239, 0.58);
+  text-transform: none;
+}
+
+.check-row input {
+  accent-color: var(--orange);
+}
+
+.tempo-lattice-readout {
+  grid-column: 1 / -1;
+  min-height: 38px;
+  padding: 9px 10px;
+  color: var(--muted);
+  border: 1px solid rgba(192, 83, 42, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 252, 239, 0.58);
+  font-size: 0.76rem;
+}
+
 .dub-switch {
   color: #a9362d;
   border-color: rgba(227, 93, 71, 0.34);
@@ -791,7 +865,7 @@ input[type="range"] {
 .action-panel {
   display: grid;
   grid-column: 3;
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
   grid-template-rows: auto auto auto;
   align-content: start;
 }
@@ -1007,9 +1081,10 @@ pre {
   }
 
   .control-grid > .panel,
-  .control-grid > .panel:nth-of-type(2),
-  .control-grid > .panel:nth-of-type(3),
   .form-panel,
+  .voices-panel,
+  .pitch-panel,
+  .sound-time-panel,
   .action-panel {
     grid-column: auto;
     grid-row: auto;
@@ -1119,9 +1194,10 @@ pre {
   }
 
   .control-grid > .panel,
-  .control-grid > .panel:nth-of-type(2),
-  .control-grid > .panel:nth-of-type(3),
   .form-panel,
+  .voices-panel,
+  .pitch-panel,
+  .sound-time-panel,
   .action-panel {
     grid-column: 1;
     grid-row: auto;
@@ -1129,6 +1205,7 @@ pre {
 
   .section-row,
   .field-grid,
+  .sound-grid,
   .pedal-field,
   .action-buttons {
     grid-template-columns: 1fr;

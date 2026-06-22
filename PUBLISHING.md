@@ -1,8 +1,10 @@
 # Publishing amy_cin fishtail generator
 
-This app is static: `index.html`, `styles.css`, `src/app.js`, and assets. It does not need a backend server for the current MIDI generator.
+This app is static: `index.html`, `styles.css`, `src/app.js`, helper scripts in `src/`, and assets. It does not need a backend server for the current MIDI generator, live probe/metronome, or optional browser-rendered WAV stems.
 
-Equal Temperament and Amy Dub Intonation exports keep voice tracks note-only: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When the Tempo map switch is on, the app adds a small conductor track with BPM and time-signature metadata for DAWs that read Standard MIDI tempo maps. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes. Bend MIDI is the exception because pitch-bend output necessarily writes pitch-bend and controller setup data.
+Equal Temperament and Amy Dub Intonation exports keep voice tracks note-only: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When the Tempo data switch is on, the app adds a conductor track with BPM and time-signature metadata for DAWs that read Standard MIDI tempo maps. If Tempo lattice is enabled, that same conductor track receives pulse-level Set Tempo events from the shared Fishtail timeline; the note tracks are not moved by conductor-only swing. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes. Bend MIDI is the exception because pitch-bend output necessarily writes pitch-bend and controller setup data.
+
+The Teardrop Probe and metronome are off at page load. Browser audio starts only after a user gesture. WAV stems are rendered one at a time in the browser, with a memory estimate before allocation; MIDI and JSON generation should remain usable even if a long WAV stem is skipped.
 
 ## Randomness On The Web
 
