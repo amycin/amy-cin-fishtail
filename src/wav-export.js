@@ -4,6 +4,8 @@
   const BIT_DEPTH = 24;
   const CHANNELS = 1;
   const MAX_RENDER_BYTES = 220 * 1024 * 1024;
+  const MAX_MOBILE_RENDER_BYTES = 96 * 1024 * 1024;
+  const OFFLINE_RENDER_BUFFER_MULTIPLIER = 3;
   const EPSILON_GAIN = 0.0001;
   const TICKER_NORMALIZE_DBFS = -6;
   const CV_SAMPLE_RATE = 48000;
@@ -59,25 +61,41 @@
 
   function estimateRenderBytes(durationSeconds, sampleRate) {
     const frames = Math.ceil(Math.max(0, durationSeconds) * sampleRate);
+    const floatBytes = frames * CHANNELS * 4;
+    const wavBytes = frames * CHANNELS * 3 + 44;
+    const offlineBytes = floatBytes * OFFLINE_RENDER_BUFFER_MULTIPLIER;
     return {
       frames,
-      floatBytes: frames * CHANNELS * 4,
-      wavBytes: frames * CHANNELS * 3 + 44,
-      totalBytes: frames * CHANNELS * 7 + 44,
+      floatBytes,
+      wavBytes,
+      offlineBytes,
+      totalBytes: floatBytes + wavBytes + offlineBytes,
     };
+  }
+
+  function mobileRenderLikely() {
+    const nav = global.navigator;
+    const ua = String(nav?.userAgent || "");
+    const touchPoints = Number(nav?.maxTouchPoints) || 0;
+    return /iPad|iPhone|iPod|Android|Mobile/i.test(ua) || (touchPoints > 1 && /Macintosh/i.test(ua));
+  }
+
+  function renderByteLimit() {
+    return mobileRenderLikely() ? MAX_MOBILE_RENDER_BYTES : MAX_RENDER_BYTES;
   }
 
   function chooseRenderPlan(durationSeconds) {
     const preferred = durationSeconds < 60 ? 96000 : 48000;
     let sampleRate = preferred;
     let estimate = estimateRenderBytes(durationSeconds, sampleRate);
+    const byteLimit = renderByteLimit();
     let fallback = false;
-    if (estimate.totalBytes > MAX_RENDER_BYTES && sampleRate > 48000) {
+    if (estimate.totalBytes > byteLimit && sampleRate > 48000) {
       sampleRate = 48000;
       estimate = estimateRenderBytes(durationSeconds, sampleRate);
       fallback = true;
     }
-    if (estimate.totalBytes > MAX_RENDER_BYTES) {
+    if (estimate.totalBytes > byteLimit) {
       throw new Error("Audio stem too long for safe browser rendering");
     }
     return { sampleRate, estimate, fallback };
@@ -99,6 +117,11 @@
 
   function dbfsToGain(dbfs) {
     return 10 ** (clamp(Number(dbfs) || 0, -96, 0) / 20);
+  }
+
+  function levelSetting(value, fallback) {
+    const number = Number(value);
+    return clamp(Number.isFinite(number) ? number : fallback, 0, 1);
   }
 
   function peakAbs(samples) {
@@ -380,7 +403,7 @@
     const filter = context.createBiquadFilter();
     const envelope = context.createGain();
     const outputGain = context.createGain();
-    const level = clamp(Number(settings.probeLevel) || 0.2, 0, 1);
+    const level = levelSetting(settings.probeLevel, 0.2);
     const gain = global.FishtailAudioEngine?.levelToGain
       ? global.FishtailAudioEngine.levelToGain(level, 0.42)
       : level * 0.14;
@@ -436,22 +459,25 @@
     filter.frequency.setValueAtTime(global.FishtailTempoLattice.tickerCenterHz(settings.referenceHz || 216), 0);
     filter.Q.setValueAtTime(global.FishtailTempoLattice.TICKER_WEB_AUDIO_Q, 0);
     const tickGain = context.createGain();
-    tickGain.gain.setValueAtTime(EPSILON_GAIN, 0);
+    const level = levelSetting(settings.metronomeLevel, 0.25);
+    const gateFloor = level > 0 ? EPSILON_GAIN : 0;
+    tickGain.gain.setValueAtTime(gateFloor, 0);
     source.connect(filter).connect(tickGain).connect(context.destination);
-    const level = clamp(Number(settings.metronomeLevel) || 0.25, 0, 1);
     const maxGain = global.FishtailAudioEngine?.METRONOME_MAX_GAIN || 3.4;
     const baseGain = global.FishtailAudioEngine?.levelToGain
       ? global.FishtailAudioEngine.levelToGain(level, maxGain)
       : level * maxGain;
-    (timeline.tickerEvents || []).forEach((event) => {
-      const time = Math.max(0, event.timeSeconds || 0);
-      if (time >= renderSeconds) return;
-      const gain = Math.max(EPSILON_GAIN, baseGain * clamp(event.accentLevel || 0.25, 0.05, 1.2));
-      filter.frequency.setValueAtTime(global.FishtailTempoLattice.tickerCenterHz(settings.referenceHz || 216), time);
-      tickGain.gain.setValueAtTime(EPSILON_GAIN, time);
-      tickGain.gain.linearRampToValueAtTime(gain, time + global.FishtailTempoLattice.TICKER_ATTACK_SECONDS);
-      tickGain.gain.exponentialRampToValueAtTime(EPSILON_GAIN, time + global.FishtailTempoLattice.TICKER_DECAY_SECONDS);
-    });
+    if (level > 0) {
+      (timeline.tickerEvents || []).forEach((event) => {
+        const time = Math.max(0, event.timeSeconds || 0);
+        if (time >= renderSeconds) return;
+        const gain = Math.max(EPSILON_GAIN, baseGain * clamp(event.accentLevel || 0.25, 0.05, 1.2));
+        filter.frequency.setValueAtTime(global.FishtailTempoLattice.tickerCenterHz(settings.referenceHz || 216), time);
+        tickGain.gain.setValueAtTime(EPSILON_GAIN, time);
+        tickGain.gain.linearRampToValueAtTime(gain, time + global.FishtailTempoLattice.TICKER_ATTACK_SECONDS);
+        tickGain.gain.exponentialRampToValueAtTime(EPSILON_GAIN, time + global.FishtailTempoLattice.TICKER_DECAY_SECONDS);
+      });
+    }
     source.start(0);
     source.stop(renderSeconds);
     const buffer = await context.startRendering();
@@ -587,15 +613,19 @@
     BIT_DEPTH,
     CHANNELS,
     MAX_RENDER_BYTES,
+    MAX_MOBILE_RENDER_BYTES,
+    OFFLINE_RENDER_BUFFER_MULTIPLIER,
     TICKER_NORMALIZE_DBFS,
     CV_SAMPLE_RATE,
     CV_FULL_SCALE_VOLTS,
     CV_REFERENCE_MIDI,
     CV_CLOCK_PULSE_SECONDS,
     dbfsToGain,
+    levelSetting,
     peakAbs,
     normalizePeak,
     encodePcm24Mono,
+    renderByteLimit,
     makeZip,
     tickToSeconds,
     eventCvVolts,

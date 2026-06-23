@@ -3,6 +3,7 @@
 (function exposePitchInput(global) {
   const ALGORITHM = "fishtail_yin_lite_v1";
   const INPUT_FFT_SIZE = 8192;
+  const INPUT_FFT_SIZE_MAX = 32768;
   const DETECTOR_SAMPLE_RATE = 12000;
   const DETECTOR_FRAME_SIZE = 2048;
   const ANALYSIS_FPS = 10;
@@ -11,6 +12,8 @@
   const MIN_RMS_DBFS = -64;
   const MIN_CONFIDENCE = 0.8;
   const CAPTURE_HISTORY_MS = 800;
+  const CAPTURE_MIN_RELIABLE_FRAMES = 5;
+  const CAPTURE_MIN_SPAN_MS = 360;
   const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
   const PITCH_RANGES = {
     general: { label: "General", minHz: 40, maxHz: 1500 },
@@ -62,12 +65,35 @@
     };
   }
 
+  function requiredInputFrameSize(sampleRate, options = {}) {
+    const detectorRate = Math.max(1000, Math.round(options.detectorSampleRate || DETECTOR_SAMPLE_RATE));
+    const frameSize = Math.max(32, Math.round(options.detectorFrameSize || DETECTOR_FRAME_SIZE));
+    const rate = Math.max(1, Number(sampleRate) || detectorRate);
+    return Math.ceil((frameSize * rate) / detectorRate);
+  }
+
+  function nextPowerOfTwo(value) {
+    const target = Math.max(1, Math.ceil(Number(value) || 1));
+    let size = 1;
+    while (size < target) size *= 2;
+    return size;
+  }
+
+  function chooseInputFftSize(sampleRate, options = {}) {
+    const minSize = Math.max(32, Math.round(options.minSize || INPUT_FFT_SIZE));
+    const maxSize = Math.max(minSize, Math.round(options.maxSize || INPUT_FFT_SIZE_MAX));
+    return clamp(nextPowerOfTwo(requiredInputFrameSize(sampleRate, options)), minSize, maxSize);
+  }
+
   function downsampleToDetector(input, sampleRate, scratch, options = {}) {
     const detectorRate = Math.max(1000, Math.round(options.detectorSampleRate || DETECTOR_SAMPLE_RATE));
     const frameSize = Math.min(scratch.detectorFrame.length, Math.round(options.detectorFrameSize || DETECTOR_FRAME_SIZE));
-    const sourceStep = sampleRate / detectorRate;
-    const neededSourceFrames = frameSize * sourceStep;
-    const sourceStart = Math.max(0, input.length - neededSourceFrames);
+    const targetSourceStep = sampleRate / detectorRate;
+    const neededSourceFrames = frameSize * targetSourceStep;
+    const hasFullWindow = input.length >= neededSourceFrames;
+    const sourceStep = hasFullWindow ? targetSourceStep : Math.max(1, input.length / Math.max(1, frameSize));
+    const effectiveDetectorRate = hasFullWindow ? detectorRate : sampleRate / sourceStep;
+    const sourceStart = hasFullWindow ? Math.max(0, input.length - neededSourceFrames) : 0;
     let sum = 0;
     for (let i = 0; i < frameSize; i += 1) {
       const sourceIndex = sourceStart + i * sourceStep;
@@ -86,9 +112,12 @@
       energy += sample * sample;
     }
     return {
-      detectorRate,
+      detectorRate: effectiveDetectorRate,
       frameSize,
       rms: Math.sqrt(energy / Math.max(1, frameSize)),
+      sourceFrames: input.length,
+      requiredSourceFrames: Math.ceil(neededSourceFrames),
+      fullWindow: hasFullWindow,
     };
   }
 
@@ -185,6 +214,8 @@
   function pitchStats(history, now = Date.now(), options = {}) {
     const maxAgeMs = Number.isFinite(options.historyMs) ? options.historyMs : CAPTURE_HISTORY_MS;
     const minConfidence = Number.isFinite(options.minConfidence) ? options.minConfidence : MIN_CONFIDENCE;
+    const minCount = Number.isFinite(options.minCount) ? options.minCount : CAPTURE_MIN_RELIABLE_FRAMES;
+    const minSpanMs = Number.isFinite(options.minSpanMs) ? options.minSpanMs : CAPTURE_MIN_SPAN_MS;
     const cutoff = now - maxAgeMs;
     const usable = (history || []).filter((entry) => entry
       && entry.ok !== false
@@ -193,6 +224,18 @@
       && Number.isFinite(entry.frequency)
       && entry.frequency > 0);
     if (!usable.length) return { ok: false, reason: "no-reliable-history", count: 0 };
+    const times = usable.map((entry) => Number(entry.at) || now).sort((a, b) => a - b);
+    const spanMs = times[times.length - 1] - times[0];
+    if (usable.length < minCount || spanMs < minSpanMs) {
+      return {
+        ok: false,
+        reason: "collecting-reliable-history",
+        count: usable.length,
+        spanMs,
+        neededCount: minCount,
+        neededSpanMs: minSpanMs,
+      };
+    }
     const cents = usable.map((entry) => centsForHz(entry.frequency)).sort((a, b) => a - b);
     const centreCents = median(cents);
     const deviations = cents.map((value) => Math.abs(value - centreCents)).sort((a, b) => a - b);
@@ -201,6 +244,7 @@
     return {
       ok: true,
       count: usable.length,
+      spanMs,
       frequency: hzForCents(centreCents),
       centreCents,
       spreadCents,
@@ -236,6 +280,7 @@
   global.FishtailPitchInput = {
     ALGORITHM,
     INPUT_FFT_SIZE,
+    INPUT_FFT_SIZE_MAX,
     DETECTOR_SAMPLE_RATE,
     DETECTOR_FRAME_SIZE,
     ANALYSIS_FPS,
@@ -244,8 +289,12 @@
     MIN_RMS_DBFS,
     MIN_CONFIDENCE,
     CAPTURE_HISTORY_MS,
+    CAPTURE_MIN_RELIABLE_FRAMES,
+    CAPTURE_MIN_SPAN_MS,
     PITCH_RANGES,
     makeScratch,
+    requiredInputFrameSize,
+    chooseInputFftSize,
     detectPitch,
     pitchStats,
     hzToReference,

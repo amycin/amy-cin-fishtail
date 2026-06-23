@@ -435,6 +435,27 @@ function runStabilityTests() {
         };
       })();
 
+      const liveMetronomeAudit = (() => {
+        const base = {
+          seed: "live-clock",
+          tempo: 220,
+          ppq: PPQ,
+          meters: METERS,
+          metronomeMeter: "7/8",
+          rationalSwing: 1,
+          irrationalSwing: 0.9,
+        };
+        const straight = FishtailAudioEngine.buildMetronomePattern({ ...base, tempoLatticeEnabled: false });
+        const lattice = FishtailAudioEngine.buildMetronomePattern({ ...base, tempoLatticeEnabled: true });
+        const straightSum = straight.reduce((sum, segment) => sum + segment.durationSeconds, 0);
+        const latticeSum = lattice.reduce((sum, segment) => sum + segment.durationSeconds, 0);
+        return {
+          switchOffStraight: straight.every((segment) => segment.microsecondsPerQuarter === straight[0].microsecondsPerQuarter),
+          switchOnMoves: new Set(lattice.map((segment) => segment.microsecondsPerQuarter)).size > 1,
+          endpointsMatch: Math.abs(straightSum - latticeSum) < 1e-9,
+        };
+      })();
+
       const latticeMidiAudit = (() => {
         const base = baseSettings({
           seed: "lattice-note-stability",
@@ -505,6 +526,7 @@ function runStabilityTests() {
         };
         const cvVoice = FishtailWavExport.renderCvVoiceSamples(cvPiece, "bass", cvTimeline, { sampleRate: 10, frames: 20 });
         const cvPlan = FishtailWavExport.chooseCvRenderPlan(2, 3);
+        const renderEstimate = FishtailWavExport.estimateRenderBytes(10, 48000);
         return {
           riff: text(0, 4) === "RIFF",
           wave: text(8, 12) === "WAVE",
@@ -526,6 +548,11 @@ function runStabilityTests() {
             && cvVoice.gate[19] === 1
             && cvVoice.eventCount === 2,
           cvPlan: cvPlan.sampleRate === 48000 && cvPlan.stemCount === 3 && cvPlan.estimate.wavBytes === 288044,
+          zeroLevels: FishtailWavExport.levelSetting(0, 0.25) === 0
+            && FishtailWavExport.levelSetting(undefined, 0.25) === 0.25,
+          conservativeMemory: renderEstimate.offlineBytes > 0
+            && renderEstimate.totalBytes === renderEstimate.floatBytes + renderEstimate.wavBytes + renderEstimate.offlineBytes
+            && FishtailWavExport.MAX_MOBILE_RENDER_BYTES < FishtailWavExport.MAX_RENDER_BYTES,
         };
       })();
 
@@ -612,6 +639,12 @@ function runStabilityTests() {
             && latticeMidiAudit.manifestOk,
         },
         {
+          name: "live metronome follows tempo lattice switch and shared durations",
+          ok: liveMetronomeAudit.switchOffStraight
+            && liveMetronomeAudit.switchOnMoves
+            && liveMetronomeAudit.endpointsMatch,
+        },
+        {
           name: "teardrop voice table preserves centre and symmetry",
           ok: teardropAudit.count <= 12
             && teardropAudit.count === 11
@@ -630,6 +663,10 @@ function runStabilityTests() {
           ok: wavAudit.tickerNormalizes
             && FishtailWavExport.TICKER_NORMALIZE_DBFS === -6
             && FishtailAudioEngine.METRONOME_MAX_GAIN >= 3.4,
+        },
+        {
+          name: "wav export keeps zero levels and conservative memory estimates",
+          ok: wavAudit.zeroLevels && wavAudit.conservativeMemory,
         },
         {
           name: "analogue cv zip uses 1v octave pitch and gates",
@@ -826,7 +863,9 @@ function runPitchInputTests() {
   }
 
   function frameFor(freq, options = {}) {
-    const frame = new Float32Array(frameLength);
+    const rate = options.sampleRate || sampleRate;
+    const length = options.frameLength || frameLength;
+    const frame = new Float32Array(length);
     const amp = options.amp ?? 0.55;
     const harmonics = options.harmonics || [[1, 1]];
     const vibratoCents = options.vibratoCents || 0;
@@ -834,7 +873,7 @@ function runPitchInputTests() {
     const attackFrames = options.attackFrames || 0;
     const dc = options.dc || 0;
     for (let i = 0; i < frame.length; i += 1) {
-      const t = i / sampleRate;
+      const t = i / rate;
       const cents = vibratoCents ? Math.sin(2 * Math.PI * vibratoHz * t) * vibratoCents : 0;
       const instant = freq * (2 ** (cents / 1200));
       const env = attackFrames ? Math.min(1, i / attackFrames) : 1;
@@ -900,6 +939,37 @@ function runPitchInputTests() {
   const dcOffset = pitch.detectPitch(frameFor(432, { dc: 0.2 }), sampleRate, { range: "general" }, scratch);
   results.push({ name: "removes DC offset", ok: dcOffset.ok && centsError(dcOffset.frequency, 432) < 14 });
 
+  const fftAudit = [
+    [44100, 8192],
+    [48000, 8192],
+    [88200, 16384],
+    [96000, 16384],
+    [192000, 32768],
+  ].every(([rate, expected]) => pitch.chooseInputFftSize(rate) === expected);
+  results.push({ name: "sizes analyser window for high sample rates", ok: fftAudit });
+
+  [
+    [88200, 55],
+    [96000, 30],
+    [96000, 55],
+    [192000, 30],
+    [192000, 55],
+  ].forEach(([rate, freq]) => {
+    const length = pitch.chooseInputFftSize(rate);
+    const highRateScratch = pitch.makeScratch();
+    const result = pitch.detectPitch(frameFor(freq, { sampleRate: rate, frameLength: length }), rate, { range: "bass" }, highRateScratch);
+    results.push({
+      name: `detects ${freq} Hz at ${rate / 1000} kHz`,
+      ok: result.ok && centsError(result.frequency, freq) < (freq <= 30 ? 30 : 18),
+    });
+  });
+
+  const short96k = pitch.detectPitch(frameFor(55, { sampleRate: 96000, frameLength: 8192 }), 96000, { range: "bass" }, pitch.makeScratch());
+  results.push({
+    name: "short high-rate input does not clamp final sample",
+    ok: short96k.ok && short96k.detectorSampleRate > pitch.DETECTOR_SAMPLE_RATE && centsError(short96k.frequency, 55) < 24,
+  });
+
   const now = 100000;
   const history = [];
   for (let i = 0; i < 9; i += 1) {
@@ -915,6 +985,16 @@ function runPitchInputTests() {
   results.push({
     name: "captures vibrato centre in log frequency",
     ok: stats.ok && centsError(stats.frequency, 216) < 2.5 && stats.spreadCents > 4,
+  });
+
+  const oneFrameStats = pitch.pitchStats([{ at: now, ok: true, frequency: 216, confidence: 0.99 }], now);
+  const shortSpanStats = pitch.pitchStats(history.slice(-5).map((entry, index) => ({ ...entry, at: now - (4 - index) * 40 })), now);
+  results.push({
+    name: "requires enough reliable pitch history before capture",
+    ok: !oneFrameStats.ok
+      && oneFrameStats.reason === "collecting-reliable-history"
+      && !shortSpanStats.ok
+      && shortSpanStats.reason === "collecting-reliable-history",
   });
 
   const ref216 = pitch.hzToReference(216, 432);
@@ -1409,16 +1489,17 @@ function runFugueTests() {
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="irrationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
-    && indexHtml.includes('src/audio-engine.js?v=4')
-    && indexHtml.includes('src/wav-export.js?v=3')
-    && indexHtml.includes('src/pitch-input.js?v=2')
-    && indexHtml.includes('src/app.js?v=72')
+    && indexHtml.includes('src/audio-engine.js?v=5')
+    && indexHtml.includes('src/wav-export.js?v=4')
+    && indexHtml.includes('src/pitch-input.js?v=3')
+    && indexHtml.includes('src/app.js?v=73')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Audio is analysed on this device. It is not recorded or uploaded.")
     && indexHtml.includes("Living Reference Input, pink-noise ticker")
     && indexHtml.includes("optional MediaDevices audio input")
     && indexHtml.includes("Ticker WAV export is peak-normalized to -6 dBFS")
     && indexHtml.includes("meter 4/4 from form 1")
+    && indexHtml.includes("first share 0.500")
     && stylesCss.includes(".probe-pitch-field")
     && stylesCss.includes(".living-reference")
     && stylesCss.includes("grid-column: 1 / -1")
@@ -1432,6 +1513,26 @@ function runFugueTests() {
     && indexHtml.includes("1V/oct pitch and gate WAV pairs")
     && indexHtml.includes("DC-coupled interface")
     && indexHtml.includes("analogue CV export direction");
+  const appJs = fs.readFileSync(path.join(ROOT, "src", "app.js"), "utf8");
+  const audioEngineJs = fs.readFileSync(path.join(ROOT, "src", "audio-engine.js"), "utf8");
+  const wavExportJs = fs.readFileSync(path.join(ROOT, "src", "wav-export.js"), "utf8");
+  const pitchInputJs = fs.readFileSync(path.join(ROOT, "src", "pitch-input.js"), "utf8");
+  const inputRaceOk = appJs.includes("requestRevision")
+    && appJs.includes("staleRequest")
+    && appJs.includes("hiddenPage")
+    && appJs.includes("state.inputReference.starting")
+    && appJs.includes("chooseInputFftSize(context.sampleRate)")
+    && pitchInputJs.includes("CAPTURE_MIN_RELIABLE_FRAMES")
+    && pitchInputJs.includes("CAPTURE_MIN_SPAN_MS");
+  const audioHardeningOk = audioEngineJs.includes("audio.probe?.released")
+    && audioEngineJs.includes("if (audio.probe === probe) audio.probe = null;")
+    && audioEngineJs.includes("tempoLatticeEnabled: Boolean(settings.tempoLatticeEnabled)")
+    && audioEngineJs.includes("metronome.nextTickTime += duration;")
+    && !audioEngineJs.includes("Math.max(0.025");
+  const wavHardeningOk = wavExportJs.includes("levelSetting(settings.probeLevel")
+    && wavExportJs.includes("levelSetting(settings.metronomeLevel")
+    && wavExportJs.includes("MAX_MOBILE_RENDER_BYTES")
+    && wavExportJs.includes("OFFLINE_RENDER_BUFFER_MULTIPLIER");
   const context = makeAppContext();
   const results = vm.runInContext(`
     (() => {
@@ -1687,7 +1788,7 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && probePitchSliderOk && cvExportOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
@@ -1696,6 +1797,9 @@ function runFugueTests() {
   console.log(`${panelOrderOk ? "ok" : "failed"} panel order puts probe before pitch`);
   console.log(`${probePitchSliderOk ? "ok" : "failed"} probe pitch sliders and metronome boost`);
   console.log(`${cvExportOk ? "ok" : "failed"} analogue CV export controls`);
+  console.log(`${inputRaceOk ? "ok" : "failed"} living reference race guards`);
+  console.log(`${audioHardeningOk ? "ok" : "failed"} audio engine timing and probe guards`);
+  console.log(`${wavHardeningOk ? "ok" : "failed"} wav zero-level and memory guards`);
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} fugue ${result.name}`);

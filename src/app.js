@@ -469,6 +469,8 @@ const state = {
     silentSinkNode: null,
     analysisTimer: null,
     analysisRevision: 0,
+    requestRevision: 0,
+    starting: false,
     analysisFps: FishtailPitchInput.ANALYSIS_FPS,
     selectedDeviceId: null,
     timeData: null,
@@ -476,6 +478,8 @@ const state = {
     pitchHistory: [],
     latest: null,
     captured: null,
+    analyserFftSize: FishtailPitchInput.INPUT_FFT_SIZE,
+    noiseFloorDb: -80,
     suspendedProbe: false,
     suspendedMetronome: false,
     detectorMs: 0,
@@ -766,10 +770,12 @@ function bindEvents() {
     if (event.key === "Escape" && !els.creditsModal.hidden) closeCredits();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && state.inputReference.stream) stopLivingReferenceInput("Input ended", { restoreAudio: false });
+    if (document.hidden && (state.inputReference.stream || state.inputReference.starting)) {
+      stopLivingReferenceInput("Input ended", { restoreAudio: false });
+    }
   });
   window.addEventListener("pagehide", () => {
-    if (state.inputReference.stream) stopLivingReferenceInput("Input ended", { restoreAudio: false });
+    if (state.inputReference.stream || state.inputReference.starting) stopLivingReferenceInput("Input ended", { restoreAudio: false });
   });
   navigator.mediaDevices?.addEventListener?.("devicechange", () => {
     if (state.inputReference.stream) populateReferenceInputDevices(state.inputReference.selectedDeviceId);
@@ -882,7 +888,7 @@ function readLiveAudioSettings() {
     metronomeMeter: meterChoice === "section-1" ? sectionMeter : meterChoice,
     tempo: currentTempoBpm(),
     referenceHz: currentReferenceHz(),
-    tempoLatticeEnabled: true,
+    tempoLatticeEnabled: Boolean(els.tempoLatticeInput?.checked),
     rationalSwing: percentInput(els.rationalSwingInput, 0),
     irrationalSwing: percentInput(els.irrationalSwingInput, 0),
     probeEnabled,
@@ -984,12 +990,14 @@ function clearReferenceCaptureMetadata() {
 
 function updateReferenceInputStatus(status) {
   state.inputReference.status = status;
+  const inputActive = Boolean(state.inputReference.stream);
+  const inputStarting = Boolean(state.inputReference.starting);
   if (els.referenceInputStatus) els.referenceInputStatus.textContent = status;
-  if (els.referenceListenButton) els.referenceListenButton.disabled = Boolean(state.inputReference.stream);
-  if (els.referenceStopButton) els.referenceStopButton.disabled = !state.inputReference.stream;
+  if (els.referenceListenButton) els.referenceListenButton.disabled = inputActive || inputStarting;
+  if (els.referenceStopButton) els.referenceStopButton.disabled = !inputActive && !inputStarting;
   if (els.referenceUsePitchButton) {
     const stats = FishtailPitchInput.pitchStats(state.inputReference.pitchHistory, Date.now());
-    els.referenceUsePitchButton.disabled = !state.inputReference.stream || !stats.ok;
+    els.referenceUsePitchButton.disabled = !inputActive || !stats.ok;
   }
 }
 
@@ -1058,12 +1066,24 @@ function disconnectReferenceNode(node) {
   }
 }
 
-function cleanupReferenceInputGraph() {
+function stopStreamTracks(stream) {
+  stream?.getTracks?.().forEach((track) => {
+    try {
+      track.stop();
+    } catch (error) {
+      // Some browsers throw if a permission request races a track shutdown.
+    }
+  });
+}
+
+function cleanupReferenceInputGraph(options = {}) {
   const input = state.inputReference;
+  if (options.invalidate !== false) input.requestRevision += 1;
   if (input.analysisTimer) clearTimeout(input.analysisTimer);
   input.analysisTimer = null;
   input.analysisRevision += 1;
-  input.stream?.getTracks?.().forEach((track) => track.stop());
+  input.starting = false;
+  stopStreamTracks(input.stream);
   disconnectReferenceNode(input.sourceNode);
   disconnectReferenceNode(input.highpassNode);
   disconnectReferenceNode(input.lowpassNode);
@@ -1081,7 +1101,7 @@ function cleanupReferenceInputGraph() {
 }
 
 function stopLivingReferenceInput(status = "Input ended", options = {}) {
-  const wasListening = Boolean(state.inputReference.stream);
+  const wasListening = Boolean(state.inputReference.stream || state.inputReference.starting);
   cleanupReferenceInputGraph();
   if (wasListening && options.restoreAudio !== false) restoreLiveAudioAfterReferenceInput();
   if (wasListening && options.restoreAudio === false && !options.preserveSuspended) {
@@ -1099,10 +1119,14 @@ async function startLivingReferenceInput() {
     return;
   }
   stopLivingReferenceInput("Requesting permission", { restoreAudio: false, preserveSuspended: true });
+  const requestRevision = state.inputReference.requestRevision + 1;
+  state.inputReference.requestRevision = requestRevision;
+  state.inputReference.starting = true;
   updateReferenceInputStatus("Requesting permission");
   suspendLiveAudioForReferenceInput();
   const context = ensureAudioContextFromUserGesture();
   if (!context) {
+    if (state.inputReference.requestRevision === requestRevision) state.inputReference.starting = false;
     restoreLiveAudioAfterReferenceInput();
     updateReferenceInputStatus("Input unavailable");
     return;
@@ -1110,15 +1134,30 @@ async function startLivingReferenceInput() {
   try {
     const selectedDeviceId = els.referenceDeviceInput?.value || state.inputReference.selectedDeviceId || null;
     const stream = await navigator.mediaDevices.getUserMedia(mediaConstraintsForReferenceInput(selectedDeviceId));
+    const staleRequest = state.inputReference.requestRevision !== requestRevision;
+    const hiddenPage = typeof document !== "undefined" && document.visibilityState === "hidden";
+    if (staleRequest || hiddenPage) {
+      stopStreamTracks(stream);
+      if (!staleRequest && hiddenPage) stopLivingReferenceInput("Input ended", { restoreAudio: false });
+      return;
+    }
     const track = stream.getAudioTracks()[0];
-    if (!track) throw new Error("No audio track was provided.");
+    if (!track) {
+      stopStreamTracks(stream);
+      throw new Error("No audio track was provided.");
+    }
+    state.inputReference.starting = false;
     state.inputReference.stream = stream;
     state.inputReference.track = track;
     state.inputReference.selectedDeviceId = selectedDeviceId;
     state.inputReference.pitchHistory = [];
     state.inputReference.analysisFps = FishtailPitchInput.ANALYSIS_FPS;
     state.inputReference.detectorMs = 0;
-    track.addEventListener?.("ended", () => stopLivingReferenceInput("Input ended", { restoreAudio: true }), { once: true });
+    track.addEventListener?.("ended", () => {
+      if (state.inputReference.track === track && state.inputReference.requestRevision === requestRevision) {
+        stopLivingReferenceInput("Input ended", { restoreAudio: true });
+      }
+    }, { once: true });
 
     const source = context.createMediaStreamSource(stream);
     const highpass = context.createBiquadFilter();
@@ -1129,7 +1168,8 @@ async function startLivingReferenceInput() {
     highpass.frequency.setValueAtTime(25, context.currentTime);
     lowpass.type = "lowpass";
     lowpass.frequency.setValueAtTime(3600, context.currentTime);
-    analyser.fftSize = FishtailPitchInput.INPUT_FFT_SIZE;
+    const analyserFftSize = FishtailPitchInput.chooseInputFftSize(context.sampleRate);
+    analyser.fftSize = analyserFftSize;
     analyser.smoothingTimeConstant = 0;
     silentSink.gain.setValueAtTime(0, context.currentTime);
     source.connect(highpass).connect(lowpass).connect(analyser).connect(silentSink).connect(context.destination);
@@ -1138,6 +1178,7 @@ async function startLivingReferenceInput() {
     state.inputReference.lowpassNode = lowpass;
     state.inputReference.analyserNode = analyser;
     state.inputReference.silentSinkNode = silentSink;
+    state.inputReference.analyserFftSize = analyserFftSize;
     state.inputReference.timeData = new Float32Array(analyser.fftSize);
     state.inputReference.scratch = state.inputReference.scratch || FishtailPitchInput.makeScratch();
     await populateReferenceInputDevices(selectedDeviceId);
@@ -1145,6 +1186,7 @@ async function startLivingReferenceInput() {
     if (els.referenceStabilityLabel) els.referenceStabilityLabel.textContent = "Play or sing one sustained note.";
     scheduleReferenceInputAnalysis();
   } catch (error) {
+    if (state.inputReference.requestRevision !== requestRevision) return;
     cleanupReferenceInputGraph();
     restoreLiveAudioAfterReferenceInput();
     const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
@@ -1174,8 +1216,13 @@ function analyseReferenceInputFrame(revision) {
   if (!input.stream || input.analysisRevision !== revision || !input.analyserNode || !input.timeData || !context) return;
   input.analyserNode.getFloatTimeDomainData(input.timeData);
   const started = performance.now();
+  const adaptiveMinRmsDb = Math.max(
+    FishtailPitchInput.MIN_RMS_DBFS,
+    (Number.isFinite(input.noiseFloorDb) ? input.noiseFloorDb : -80) + 8,
+  );
   const result = FishtailPitchInput.detectPitch(input.timeData, context.sampleRate, {
     range: els.referenceRangeInput?.value || "general",
+    minRmsDb: adaptiveMinRmsDb,
   }, input.scratch);
   const elapsed = performance.now() - started;
   input.detectorMs = input.detectorMs ? input.detectorMs * 0.82 + elapsed * 0.18 : elapsed;
@@ -1191,6 +1238,10 @@ function updateReferenceInputReadouts(result) {
   setReferenceInputMeter(levelPercent, confidencePercent);
   if (els.referenceInputLevelLabel) els.referenceInputLevelLabel.textContent = Number.isFinite(rmsDb) ? `Level ${rmsDb.toFixed(0)} dB` : "Level -inf dB";
   if (els.referenceConfidenceLabel) els.referenceConfidenceLabel.textContent = `Confidence ${Math.round(confidencePercent)}%`;
+  if (Number.isFinite(rmsDb) && (!result.ok || (result.confidence || 0) < 0.45)) {
+    const previous = Number.isFinite(state.inputReference.noiseFloorDb) ? state.inputReference.noiseFloorDb : rmsDb;
+    state.inputReference.noiseFloorDb = clamp(previous * 0.9 + rmsDb * 0.1, -96, -32);
+  }
   if (result.ok) {
     state.inputReference.latest = result;
     state.inputReference.pitchHistory.push({
@@ -1627,15 +1678,18 @@ function updateSoundTimeControls() {
   if (!els.tempoLatticeReadout) return;
   const timeline = previewTempoTimeline("preview");
   const swing = FishtailTempoLattice.rationalSwingAmount(percentInput(els.rationalSwingInput, 0));
-  const midpoint = (1 + swing) / 2;
   const minBpm = timeline.minInstantaneousBpm.toFixed(2);
   const maxBpm = timeline.maxInstantaneousBpm.toFixed(2);
   const duration = timeline.totalSeconds;
   const meterChoice = els.metronomeMeterInput?.value || "section-1";
-  const previewMeter = meterChoice === "section-1" ? `${state.sections[0]?.meter || "4/4"} from form 1` : meterChoice;
+  const previewMeterId = meterChoice === "section-1" ? (state.sections[0]?.meter || "4/4") : meterChoice;
+  const previewMeter = meterChoice === "section-1" ? `${previewMeterId} from form 1` : previewMeterId;
+  const previewMeterDef = METERS[previewMeterId] || METERS["4/4"];
+  const firstGroup = FishtailTempoLattice.meterAccentGroups(previewMeterDef)[0] || { length: previewMeterDef.numerator || 1 };
+  const firstShare = firstGroup.length > 1 ? (1 + swing) / firstGroup.length : 1;
   const label = els.tempoLatticeInput?.checked ? `${minBpm}-${maxBpm} BPM` : "Straight time";
   els.tempoLatticeStatusLabel.textContent = label;
-  els.tempoLatticeReadout.textContent = `${currentTempoBpm().toFixed(4)} BPM | meter ${previewMeter} | midpoint ${midpoint.toFixed(3)} | ${duration.toFixed(2)} s`;
+  els.tempoLatticeReadout.textContent = `${currentTempoBpm().toFixed(4)} BPM | meter ${previewMeter} | first share ${firstShare.toFixed(3)} | ${duration.toFixed(2)} s`;
 }
 
 function updateReferenceFrequencyFromAnchor() {

@@ -89,10 +89,11 @@
   function startProbe(audio, context, settings) {
     if (!context || settings.probeMuted) return null;
     ensureAudioState(audio, context);
-    if (audio.probe) {
+    if (audio.probe && !audio.probe.released) {
       updateProbe(audio, context, settings);
       return audio.probe;
     }
+    if (audio.probe?.released) audio.probe = null;
     const now = context.currentTime;
     const table = global.FishtailTempoLattice.buildTeardropVoiceTable(settings.referenceHz, 12);
     const mix = context.createGain();
@@ -153,6 +154,7 @@
     if (!probe || !context || probe.released) return;
     const now = context.currentTime;
     probe.released = true;
+    if (audio.probe === probe) audio.probe = null;
     cancelAndHold(probe.envelope.gain, now);
     probe.envelope.gain.exponentialRampToValueAtTime(EPSILON_GAIN, now + global.FishtailTempoLattice.TEARDROP_RELEASE_SECONDS);
     probe.oscillators.forEach((osc) => {
@@ -191,7 +193,7 @@
     return global.FishtailTempoLattice.buildTempoTimeline([section], {
       seed: settings.seed || "live-metronome",
       tempo: settings.tempo || 60,
-      tempoLatticeEnabled: true,
+      tempoLatticeEnabled: Boolean(settings.tempoLatticeEnabled),
       rationalSwing: settings.rationalSwing,
       irrationalSwing: settings.irrationalSwing,
     }, { ppq: settings.ppq || 480, meters: settings.meters }).segments;
@@ -217,7 +219,9 @@
     while (metronome.nextTickTime < context.currentTime + LOOKAHEAD_SECONDS) {
       const segment = pattern[metronome.patternIndex % pattern.length];
       scheduleMetronomeTick(metronome, context, metronome.nextTickTime, segment, settings);
-      metronome.nextTickTime += Math.max(0.025, segment.durationSeconds);
+      const duration = Number(segment.durationSeconds);
+      if (!Number.isFinite(duration) || duration <= 0) break;
+      metronome.nextTickTime += duration;
       metronome.patternIndex += 1;
     }
     audio.schedulerTimer = setTimeout(() => schedulerStep(audio, revision), SCHEDULER_MS);
@@ -302,6 +306,7 @@
     startProbe,
     updateProbe,
     stopProbe,
+    buildMetronomePattern,
     startMetronome,
     updateMetronome,
     stopMetronome,
