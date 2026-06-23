@@ -483,6 +483,7 @@ const state = {
   lastAudioExports: {
     probe: null,
     ticker: null,
+    cv: null,
   },
   probeHeld: false,
   referenceAnchorA4Hz: DEFAULT_A4_HZ,
@@ -596,6 +597,7 @@ function bindElements() {
     "metronomeLevelInput",
     "prepareProbeWavInput",
     "prepareTickerWavInput",
+    "prepareCvWavInput",
     "velocityModeInput",
     "dubModeInput",
     "referenceNoteInput",
@@ -614,6 +616,7 @@ function bindElements() {
     "downloadJsonButton",
     "downloadProbeWavButton",
     "downloadTickerWavButton",
+    "downloadCvWavButton",
     "toggleNotesButton",
     "helpButton",
     "helpModal",
@@ -735,6 +738,7 @@ function bindEvents() {
   els.downloadJsonButton.addEventListener("click", () => downloadLast("json"));
   els.downloadProbeWavButton?.addEventListener("click", () => downloadLast("probeWav"));
   els.downloadTickerWavButton?.addEventListener("click", () => downloadLast("tickerWav"));
+  els.downloadCvWavButton?.addEventListener("click", () => downloadLast("cvWav"));
   els.referenceListenButton?.addEventListener("click", startLivingReferenceInput);
   els.referenceStopButton?.addEventListener("click", () => stopLivingReferenceInput("Input ended", { restoreAudio: true }));
   els.referenceUsePitchButton?.addEventListener("click", captureLivingReferencePitch);
@@ -785,6 +789,7 @@ function bindSoundTimeEvents() {
     els.metronomeLevelInput,
     els.prepareProbeWavInput,
     els.prepareTickerWavInput,
+    els.prepareCvWavInput,
   ].filter(Boolean).forEach((input) => {
     input.addEventListener("input", () => {
       updateSoundTimeControls();
@@ -2158,6 +2163,7 @@ function setGenerationControlsDisabled(disabled) {
     els.metronomeLevelInput,
     els.prepareProbeWavInput,
     els.prepareTickerWavInput,
+    els.prepareCvWavInput,
     els.velocityModeInput,
     els.dubModeInput,
     els.referenceNoteInput,
@@ -2267,6 +2273,7 @@ function readSettings(seed) {
     metronomeLevel: percentInput(els.metronomeLevelInput, 0.88),
     prepareProbeWav: Boolean(els.prepareProbeWavInput?.checked),
     prepareTickerWav: Boolean(els.prepareTickerWavInput?.checked),
+    prepareCvWav: Boolean(els.prepareCvWavInput?.checked),
     velocityProfile: els.velocityModeInput?.checked ? "auto" : "flat",
     dubMode: Boolean(els.dubModeInput.checked),
     referenceNote: els.referenceNoteInput.value || DEFAULT_REFERENCE_NOTE,
@@ -4666,15 +4673,26 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
         live_max_gain: FishtailAudioEngine.METRONOME_MAX_GAIN,
         wav_normalize_peak_dbfs: FishtailWavExport.TICKER_NORMALIZE_DBFS,
       },
+      analogue_cv: {
+        package: "clock_plus_pitch_gate_zip",
+        sample_rate_hz: FishtailWavExport.CV_SAMPLE_RATE,
+        pitch_standard: "1V/oct",
+        reference: "C4 = 0V",
+        full_scale_volts: FishtailWavExport.CV_FULL_SCALE_VOLTS,
+        clock_pulse_seconds: FishtailWavExport.CV_CLOCK_PULSE_SECONDS,
+        dc_coupled_required_for_pitch: true,
+      },
     },
     audio_stems: {
       requested: {
         probe: Boolean(settings.prepareProbeWav),
         ticker: Boolean(settings.prepareTickerWav),
+        cv: Boolean(settings.prepareCvWav),
       },
       rendered: {
         probe: false,
         ticker: false,
+        cv: false,
       },
       bit_depth: 24,
       channels: 1,
@@ -4739,8 +4757,12 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`Pitch map: ${settings.resolution}`);
   lines.push(`Output: ${outputModeLabel(settings.outputMode)}`);
   lines.push(`Gravity Velocity: ${stats.velocitySummary?.label || "Calm Gravity"} ${settings.velocityProfile === "flat" ? "fixed at 100" : `range ${stats.velocitySummary?.stats?.min ?? 0}-${stats.velocitySummary?.stats?.max ?? 0}, linked to Fishtail tempo n=${settings.tempoDivisor}`}.`);
-  if (settings.prepareProbeWav || settings.prepareTickerWav) {
-    const requested = [settings.prepareProbeWav ? "probe" : "", settings.prepareTickerWav ? "ticker" : ""].filter(Boolean).join(", ");
+  if (settings.prepareProbeWav || settings.prepareTickerWav || settings.prepareCvWav) {
+    const requested = [
+      settings.prepareProbeWav ? "probe" : "",
+      settings.prepareTickerWav ? "ticker" : "",
+      settings.prepareCvWav ? "analogue CV ZIP" : "",
+    ].filter(Boolean).join(", ");
     lines.push(`Audio stems requested: ${requested}; rendered after MIDI generation with mono 24-bit safety checks.`);
   }
   if (settings.outputMode === "bend") {
@@ -5305,6 +5327,8 @@ function downloadLast(kind) {
     downloadAudioExport("probe");
   } else if (kind === "tickerWav") {
     downloadAudioExport("ticker");
+  } else if (kind === "cvWav") {
+    downloadAudioExport("cv");
   } else {
     downloadBlob(new Blob([state.lastPiece.report], { type: "text/plain" }), "amy-cin-fishtail-generation-notes.txt");
     els.statusLabel.textContent = "Notes save requested";
@@ -5314,17 +5338,20 @@ function downloadLast(kind) {
 function releaseAudioExports() {
   state.lastAudioExports.probe = null;
   state.lastAudioExports.ticker = null;
+  state.lastAudioExports.cv = null;
 }
 
 function updateAudioExportButtons() {
   if (els.downloadProbeWavButton) els.downloadProbeWavButton.disabled = !state.lastAudioExports.probe?.blob;
   if (els.downloadTickerWavButton) els.downloadTickerWavButton.disabled = !state.lastAudioExports.ticker?.blob;
+  if (els.downloadCvWavButton) els.downloadCvWavButton.disabled = !state.lastAudioExports.cv?.blob;
 }
 
 async function prepareRequestedAudioExports(piece) {
   const requested = [];
   if (piece.settings.prepareProbeWav) requested.push(["probe", FishtailWavExport.renderProbeWav]);
   if (piece.settings.prepareTickerWav) requested.push(["ticker", FishtailWavExport.renderTickerWav]);
+  if (piece.settings.prepareCvWav) requested.push(["cv", FishtailWavExport.renderCvZip]);
   if (!requested.length) return;
 
   const rendered = [];
@@ -5334,16 +5361,18 @@ async function prepareRequestedAudioExports(piece) {
 
   for (const [kind, renderer] of requested) {
     try {
-      els.statusLabel.textContent = `Rendering ${kind} WAV`;
+      els.statusLabel.textContent = kind === "cv" ? "Rendering CV ZIP" : `Rendering ${kind} WAV`;
       document.body.dataset.audioRendering = kind;
       const audioExport = await renderer(piece);
       state.lastAudioExports[kind] = audioExport;
       recordAudioExport(piece, audioExport);
       const peakLabel = audioExport.normalization ? `, peak ${audioExport.normalization.targetDbfs} dBFS` : "";
-      rendered.push(`${kind} ${audioExport.sampleRate / 1000} kHz${peakLabel}`);
+      const label = audioExport.label || kind;
+      const rateLabel = audioExport.sampleRate ? `${audioExport.sampleRate / 1000} kHz` : "package";
+      rendered.push(`${label} ${rateLabel}${peakLabel}`);
       updateAudioExportButtons();
     } catch (error) {
-      const message = `${kind} WAV skipped: ${error.message}`;
+      const message = `${kind === "cv" ? "CV ZIP" : `${kind} WAV`} skipped: ${error.message}`;
       failed.push(message);
       piece.manifest.audio_stems.errors.push(message);
       console.warn(message, error);
@@ -5359,7 +5388,7 @@ async function prepareRequestedAudioExports(piece) {
     piece.report = `${piece.report}\n\nAudio stems\n  ${lines.join("\n  ")}`;
     els.reportOutput.textContent = piece.report;
   }
-  els.statusLabel.textContent = rendered.length ? "WAV ready" : "MIDI saved";
+  els.statusLabel.textContent = rendered.length ? "Audio ready" : "MIDI saved";
 }
 
 function roundedFinite(value, places) {
@@ -5371,9 +5400,10 @@ function recordAudioExport(piece, audioExport) {
   piece.manifest.audio_stems.rendered[kind] = true;
   const stem = {
     filename: audioExport.filename,
+    format: audioExport.format || "wav",
     sample_rate_hz: audioExport.sampleRate,
     bit_depth: audioExport.bitDepth,
-    channels: 1,
+    channels: audioExport.channels || 1,
     duration_seconds: Number(audioExport.durationSeconds.toFixed(4)),
     piece_seconds: Number(audioExport.pieceSeconds.toFixed(4)),
     fallback_sample_rate: Boolean(audioExport.fallbackSampleRate),
@@ -5387,17 +5417,21 @@ function recordAudioExport(piece, audioExport) {
       gain: roundedFinite(normalized.gain, 6),
     };
   }
+  if (audioExport.stemCount != null) stem.stem_count = audioExport.stemCount;
+  if (audioExport.voiceCount != null) stem.voice_count = audioExport.voiceCount;
+  if (Array.isArray(audioExport.files)) stem.files = audioExport.files;
+  if (audioExport.cv) stem.cv = audioExport.cv;
   piece.manifest.audio_stems[kind] = stem;
 }
 
 function downloadAudioExport(kind) {
   const audioExport = state.lastAudioExports[kind];
   if (!audioExport?.blob) {
-    els.statusLabel.textContent = `${kind} WAV not ready`;
+    els.statusLabel.textContent = kind === "cv" ? "CV ZIP not ready" : `${kind} WAV not ready`;
     return;
   }
   downloadBlob(audioExport.blob, audioExport.filename);
-  els.statusLabel.textContent = `${kind} WAV save requested`;
+  els.statusLabel.textContent = kind === "cv" ? "CV ZIP save requested" : `${kind} WAV save requested`;
 }
 
 function toggleNotes() {

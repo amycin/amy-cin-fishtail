@@ -487,6 +487,24 @@ function runStabilityTests() {
         const normalization = FishtailWavExport.normalizePeak(tickerSamples, -6);
         const normalizedPeak = FishtailWavExport.peakAbs(tickerSamples);
         const targetPeak = FishtailWavExport.dbfsToGain(-6);
+        const cvZip = FishtailWavExport.makeZip([{ name: "hello.txt", data: new Uint8Array([65, 66]) }]);
+        const cvTimeline = {
+          totalSeconds: 2,
+          segments: [
+            { tick: 0, tickLength: 480, durationSeconds: 1 },
+            { tick: 480, tickLength: 480, durationSeconds: 1 },
+          ],
+          tickerEvents: [{ timeSeconds: 0 }, { timeSeconds: 1 }],
+        };
+        const cvPiece = {
+          settings: { outputMode: "equal" },
+          events: [
+            { voice: "bass", tick: 0, duration: 480, midi: 60, tunedFrequency: 261.6256 },
+            { voice: "bass", tick: 480, duration: 480, midi: 72, tunedFrequency: 523.2511 },
+          ],
+        };
+        const cvVoice = FishtailWavExport.renderCvVoiceSamples(cvPiece, "bass", cvTimeline, { sampleRate: 10, frames: 20 });
+        const cvPlan = FishtailWavExport.chooseCvRenderPlan(2, 3);
         return {
           riff: text(0, 4) === "RIFF",
           wave: text(8, 12) === "WAVE",
@@ -498,6 +516,16 @@ function runStabilityTests() {
           tickerNormalizes: Math.abs(normalizedPeak - targetPeak) < 1e-6
             && normalization.targetDbfs === -6
             && Math.abs(normalization.afterDbfs + 6) < 0.0001,
+          cvZip: cvZip[0] === 0x50 && cvZip[1] === 0x4b && cvZip[2] === 0x03 && cvZip[3] === 0x04,
+          cvMath: Math.abs(FishtailWavExport.eventCvVolts({ midi: 72 }, { outputMode: "equal" }) - 1) < 1e-9
+            && Math.abs(FishtailWavExport.eventCvVolts({ tunedFrequency: 864 }, { outputMode: "bend", rootMidi: 69, rootFreq: 432 }) - 1.75) < 1e-9
+            && Math.abs(FishtailWavExport.eventCvSample({ midi: 72 }, { outputMode: "equal" }) - 0.2) < 1e-9,
+          cvVoice: cvVoice.pitch[0] === 0
+            && Math.abs(cvVoice.pitch[10] - 0.2) < 1e-6
+            && cvVoice.gate[0] === 1
+            && cvVoice.gate[19] === 1
+            && cvVoice.eventCount === 2,
+          cvPlan: cvPlan.sampleRate === 48000 && cvPlan.stemCount === 3 && cvPlan.estimate.wavBytes === 288044,
         };
       })();
 
@@ -602,6 +630,14 @@ function runStabilityTests() {
           ok: wavAudit.tickerNormalizes
             && FishtailWavExport.TICKER_NORMALIZE_DBFS === -6
             && FishtailAudioEngine.METRONOME_MAX_GAIN >= 3.4,
+        },
+        {
+          name: "analogue cv zip uses 1v octave pitch and gates",
+          ok: wavAudit.cvZip
+            && wavAudit.cvMath
+            && wavAudit.cvVoice
+            && wavAudit.cvPlan
+            && FishtailWavExport.CV_FULL_SCALE_VOLTS === 5,
         },
         {
           name: "audio runtime is silent at load",
@@ -1367,16 +1403,16 @@ function runFugueTests() {
     && stylesCss.includes(".pitch-panel {\n  grid-column: 2;\n  grid-row: 3;")
     && stylesCss.includes(".sound-time-panel {\n  grid-column: 2;\n  grid-row: 2;");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=38"')
+    && indexHtml.includes('href="styles.css?v=39"')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="irrationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
     && indexHtml.includes('src/audio-engine.js?v=4')
-    && indexHtml.includes('src/wav-export.js?v=2')
+    && indexHtml.includes('src/wav-export.js?v=3')
     && indexHtml.includes('src/pitch-input.js?v=2')
-    && indexHtml.includes('src/app.js?v=71')
+    && indexHtml.includes('src/app.js?v=72')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Audio is analysed on this device. It is not recorded or uploaded.")
     && indexHtml.includes("Living Reference Input, pink-noise ticker")
@@ -1390,6 +1426,12 @@ function runFugueTests() {
     && stylesCss.includes("contain: layout paint")
     && stylesCss.includes(".torus-host > canvas")
     && stylesCss.includes("pointer-events: none");
+  const cvExportOk = indexHtml.includes('id="prepareCvWavInput" type="checkbox"')
+    && indexHtml.includes("Prepare analogue CV ZIP")
+    && indexHtml.includes('id="downloadCvWavButton" type="button" disabled>Save CV ZIP</button>')
+    && indexHtml.includes("1V/oct pitch and gate WAV pairs")
+    && indexHtml.includes("DC-coupled interface")
+    && indexHtml.includes("analogue CV export direction");
   const context = makeAppContext();
   const results = vm.runInContext(`
     (() => {
@@ -1645,7 +1687,7 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && probePitchSliderOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && probePitchSliderOk && cvExportOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
@@ -1653,6 +1695,7 @@ function runFugueTests() {
   console.log(`${velocitySwitchOk ? "ok" : "failed"} velocity switch default`);
   console.log(`${panelOrderOk ? "ok" : "failed"} panel order puts probe before pitch`);
   console.log(`${probePitchSliderOk ? "ok" : "failed"} probe pitch sliders and metronome boost`);
+  console.log(`${cvExportOk ? "ok" : "failed"} analogue CV export controls`);
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} fugue ${result.name}`);

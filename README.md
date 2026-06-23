@@ -45,6 +45,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Louder live pink-noise metronome preview with existing meter accents, rational/irrational Fishtail swing controls, and a shared tempo-lattice timing model.
 - Optional pulse-level tempo lattice in the existing MIDI conductor track. When enabled, note ticks remain on the formal grid while Set Tempo events warp tick-to-time playback for DAWs that honor tempo maps.
 - Optional generated WAV stems for a full-length Teardrop reference drone and pink-noise ticker, rendered sequentially as mono 24-bit PCM with browser memory guards and explicit save buttons. Ticker WAV export is peak-normalized to -6 dBFS for DAW-friendly headroom.
+- Optional analogue CV ZIP export for modular and old-school analogue workflows: a clean clock WAV plus 1V/oct pitch and gate WAV pairs for each generated voice. Pitch CV is a DC-coupled-interface feature; ordinary phone, tablet, and headphone outputs are usually AC-coupled and will not preserve pitch voltage.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.
 - Fishtail Fugue mode with automatic three-section minimum form shaping, subject/answer/countersubject planning, exposition entries, episodes, middle entries, and final return. DUB off uses Formal Gravity; DUB on keeps the fugue map but gives the bass and offbeat answers more room.

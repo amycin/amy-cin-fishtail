@@ -8,7 +8,7 @@ No third-party counterpoint-generator source code has been copied into this proj
 
 This version was vibe coded with Codex, collaborating as Lambda Echo.
 
-The Teardrop Probe, pink-noise ticker, and tempo-lattice direction are Amy McBride / amy_cin's Fishtail sound-design material, translated into this static browser app from the SuperCollider reference sketches kept in `reference/supercollider/`.
+The Teardrop Probe, pink-noise ticker, tempo-lattice direction, and analogue CV export direction are Amy McBride / amy_cin's Fishtail sound-design material, translated into this static browser app from the SuperCollider reference sketches and project direction kept in this repository.
 
 ## Artwork
 
@@ -28,7 +28,7 @@ The implementation is informed by general music theory and algorithmic compositi
 ## Implementation Notes
 
 - The MIDI writer in `src/app.js` is original code.
-- The Teardrop Probe, pink-noise ticker, and tempo-lattice conductor are implemented with browser-native Web Audio and Standard MIDI logic; no third-party audio engine is bundled.
+- The Teardrop Probe, pink-noise ticker, tempo-lattice conductor, and analogue CV WAV package are implemented with browser-native Web Audio, Standard MIDI, PCM, and ZIP logic; no third-party audio engine is bundled.
 - The moving torus visualisation uses Three.js, an MIT-licensed open-source 3D library.
 - The seeded random functions in `src/app.js` are small public-domain-style PRNG/hash patterns commonly circulated in JavaScript communities; they are included inline only for deterministic replay after the browser supplies a system entropy seed.
 - Browser APIs used: Canvas, WebGL through Three.js, optional Device Motion/Orientation input, Web Audio, optional Vibration API feedback, Blob download, TextEncoder, and Web Crypto `crypto.getRandomValues`.
