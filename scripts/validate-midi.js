@@ -545,6 +545,7 @@ function runStabilityTests() {
         const cvPpqnClock = FishtailWavExport.clockEventsForTimeline(indexedTimeline, { cvClockMode: "ppqn24" }, 480);
         const cvCalibration = FishtailWavExport.renderCvCalibrationStaircase({ sampleRate: 10 }, { cvFullScaleVolts: 5 });
         const probeSeconds = FishtailWavExport.probeExportPieceSeconds(cvTimeline);
+        const standardPlan = FishtailWavExport.chooseRenderPlan(2);
         const cvPlan = FishtailWavExport.chooseCvRenderPlan(2, 3);
         const renderEstimate = FishtailWavExport.estimateRenderBytes(10, 48000);
         return {
@@ -556,6 +557,10 @@ function runStabilityTests() {
             && (wav24[24] | (wav24[25] << 8) | (wav24[26] << 16) | (wav24[27] << 24)) === 48000,
           bits: wav16[34] === 16 && wav16[35] === 0 && wav24[34] === 24 && wav24[35] === 0,
           dataLength: dataBytes16 === 12 && wav16.length === 56 && dataBytes24 === 18 && wav24.length === 62,
+          standardDownloads: FishtailWavExport.STANDARD_WAV_SAMPLE_RATE === 48000
+            && FishtailWavExport.STANDARD_WAV_BIT_DEPTH === 24
+            && standardPlan.sampleRate === 48000
+            && standardPlan.estimate.wavBytes === (2 * 48000 * 3) + 44,
           tickerNormalizes: Math.abs(normalizedPeak - targetPeak) < 1e-6
             && normalization.targetDbfs === -6
             && Math.abs(normalization.afterDbfs + 6) < 0.0001,
@@ -694,7 +699,7 @@ function runStabilityTests() {
         },
         {
           name: "wav encoders write mono pcm headers",
-          ok: wavAudit.riff && wavAudit.wave && wavAudit.pcm && wavAudit.mono && wavAudit.rate && wavAudit.bits && wavAudit.dataLength,
+          ok: wavAudit.riff && wavAudit.wave && wavAudit.pcm && wavAudit.mono && wavAudit.rate && wavAudit.bits && wavAudit.dataLength && wavAudit.standardDownloads,
         },
         {
           name: "ticker wav normalizer targets -6 dBFS",
@@ -1532,9 +1537,9 @@ function runFugueTests() {
     && indexHtml.includes("Stumble")
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
     && indexHtml.includes('src/audio-engine.js?v=5')
-    && indexHtml.includes('src/wav-export.js?v=6')
+    && indexHtml.includes('src/wav-export.js?v=7')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=78')
+    && indexHtml.includes('src/app.js?v=79')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -1546,7 +1551,7 @@ function runFugueTests() {
     && indexHtml.includes("Pulse sound")
     && indexHtml.includes("Prepare pulse WAV")
     && indexHtml.includes("Save Pulse WAV")
-    && indexHtml.includes("mono 16-bit stems")
+    && indexHtml.includes("mono 48 kHz / 24-bit stems")
     && indexHtml.includes("Pulse WAV is a short first-two-bars reference tone")
     && indexHtml.includes("rendered from their save buttons once a piece exists")
     && indexHtml.includes("Large audio exports show a size estimate before rendering")
@@ -1595,8 +1600,9 @@ function runFugueTests() {
     && !audioEngineJs.includes("Math.max(0.025");
   const wavHardeningOk = wavExportJs.includes("levelSetting(settings.probeLevel")
     && wavExportJs.includes("levelSetting(settings.metronomeLevel")
+    && wavExportJs.includes("STANDARD_WAV_SAMPLE_RATE")
     && wavExportJs.includes("STANDARD_WAV_BIT_DEPTH")
-    && wavExportJs.includes("encodePcm16Mono")
+    && wavExportJs.includes("encodePcm24Mono")
     && wavExportJs.includes("MAX_MOBILE_RENDER_BYTES")
     && wavExportJs.includes("MAX_CONFIRMED_RENDER_BYTES")
     && wavExportJs.includes("PROBE_EXPORT_BARS")

@@ -4837,6 +4837,7 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
         cv: false,
       },
       bit_depth: "per_stem",
+      ordinary_wav_sample_rate_hz: FishtailWavExport.STANDARD_WAV_SAMPLE_RATE,
       ordinary_wav_bit_depth: FishtailWavExport.STANDARD_WAV_BIT_DEPTH,
       cv_bit_depth: FishtailWavExport.BIT_DEPTH,
       channels: 1,
@@ -5572,19 +5573,14 @@ function estimateWavExportPlan(kind, settings, timeline) {
     : pieceSeconds + 0.12;
   const ordinaryLimit = FishtailWavExport.renderByteLimit();
   const confirmedLimit = FishtailWavExport.MAX_CONFIRMED_RENDER_BYTES || ordinaryLimit;
-  let sampleRate = renderSeconds < 60 ? 96000 : 48000;
-  let estimate = FishtailWavExport.estimateRenderBytes(renderSeconds, sampleRate);
-  let fallback = false;
-  if (estimate.totalBytes > ordinaryLimit && sampleRate > 48000) {
-    sampleRate = 48000;
-    estimate = FishtailWavExport.estimateRenderBytes(renderSeconds, sampleRate);
-    fallback = true;
-  }
+  const sampleRate = FishtailWavExport.STANDARD_WAV_SAMPLE_RATE || 48000;
+  const bitDepth = FishtailWavExport.STANDARD_WAV_BIT_DEPTH || 24;
+  const estimate = FishtailWavExport.estimateRenderBytes(renderSeconds, sampleRate, bitDepth);
   const descriptor = audioExportDescriptor(kind);
   return {
     kind,
     label: descriptor.label,
-    detail: `${sampleRate / 1000} kHz mono ${FishtailWavExport.STANDARD_WAV_BIT_DEPTH}-bit${kind === "probe" ? ", first 2 bars" : ", whole piece"}${fallback ? " fallback" : ""}`,
+    detail: `${sampleRate / 1000} kHz mono ${bitDepth}-bit${kind === "probe" ? ", first 2 bars" : ", whole piece"}`,
     durationSeconds: renderSeconds,
     downloadBytes: estimate.wavBytes,
     workingBytes: estimate.totalBytes,
@@ -5693,6 +5689,7 @@ async function prepareRequestedAudioExports(piece) {
     requested: {},
     rendered: {},
     bit_depth: "per_stem",
+    ordinary_wav_sample_rate_hz: FishtailWavExport.STANDARD_WAV_SAMPLE_RATE,
     ordinary_wav_bit_depth: FishtailWavExport.STANDARD_WAV_BIT_DEPTH,
     cv_bit_depth: FishtailWavExport.BIT_DEPTH,
     channels: 1,
@@ -5735,6 +5732,7 @@ function recordAudioExport(piece, audioExport) {
     requested: {},
     rendered: {},
     bit_depth: "per_stem",
+    ordinary_wav_sample_rate_hz: FishtailWavExport.STANDARD_WAV_SAMPLE_RATE,
     ordinary_wav_bit_depth: FishtailWavExport.STANDARD_WAV_BIT_DEPTH,
     cv_bit_depth: FishtailWavExport.BIT_DEPTH,
     channels: 1,

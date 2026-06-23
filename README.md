@@ -44,7 +44,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Switch-on Teardrop Pulse for the current reference frequency, with one shared browser `AudioContext`, silent-at-load safety, smooth one-second pitch glide, and an 11-oscillator symmetric Teardrop voice table under the 12-node budget.
 - Louder live pink-noise metronome preview with existing meter accents, rational/irrational Fishtail swing controls, and a shared tempo-lattice timing model.
 - Optional pulse-level tempo lattice in the existing MIDI conductor track. When enabled, note ticks remain on the formal grid while Set Tempo events warp tick-to-time playback for DAWs that honor tempo maps.
-- Optional generated WAV stems for a short Teardrop Pulse reference and pink-noise ticker, rendered sequentially as broadly compatible mono 16-bit PCM with browser memory guards and explicit save buttons. Ticker WAV export is peak-normalized to -6 dBFS for DAW-friendly headroom.
+- Optional generated WAV stems for a short Teardrop Pulse reference and pink-noise ticker, rendered sequentially as mono 48 kHz / 24-bit PCM with browser memory guards and explicit save buttons. Ticker WAV export is peak-normalized to -6 dBFS for DAW-friendly headroom.
 - Optional analogue CV ZIP export for modular and old-school analogue workflows: a clean clock WAV plus 1V/oct pitch and gate WAV pairs for each generated voice. Pitch CV is a DC-coupled-interface feature; ordinary phone, tablet, and headphone outputs are usually AC-coupled and will not preserve pitch voltage.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.

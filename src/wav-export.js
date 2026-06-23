@@ -2,7 +2,8 @@
 
 (function exposeWavExport(global) {
   const BIT_DEPTH = 24;
-  const STANDARD_WAV_BIT_DEPTH = 16;
+  const STANDARD_WAV_SAMPLE_RATE = 48000;
+  const STANDARD_WAV_BIT_DEPTH = 24;
   const CHANNELS = 1;
   const MAX_RENDER_BYTES = 220 * 1024 * 1024;
   const MAX_MOBILE_RENDER_BYTES = 96 * 1024 * 1024;
@@ -38,7 +39,7 @@
 
   function encodePcmMono(samples, sampleRate, bitDepth = BIT_DEPTH) {
     const safeRate = Math.max(1, Math.round(sampleRate || 48000));
-    const safeBitDepth = bitDepth === 24 ? 24 : STANDARD_WAV_BIT_DEPTH;
+    const safeBitDepth = bitDepth === 24 ? 24 : 16;
     const bytesPerSample = pcmBytesPerSample(safeBitDepth);
     const frameCount = samples?.length || 0;
     const dataBytes = frameCount * bytesPerSample;
@@ -81,11 +82,12 @@
   }
 
   function encodePcm16Mono(samples, sampleRate) {
-    return encodePcmMono(samples, sampleRate, STANDARD_WAV_BIT_DEPTH);
+    return encodePcmMono(samples, sampleRate, 16);
   }
 
   function estimateRenderBytes(durationSeconds, sampleRate, bitDepth = STANDARD_WAV_BIT_DEPTH) {
-    const bytesPerSample = pcmBytesPerSample(bitDepth === 24 ? 24 : STANDARD_WAV_BIT_DEPTH);
+    const safeBitDepth = bitDepth === 24 ? 24 : 16;
+    const bytesPerSample = pcmBytesPerSample(safeBitDepth);
     const frames = Math.ceil(Math.max(0, durationSeconds) * sampleRate);
     const floatBytes = frames * CHANNELS * 4;
     const wavBytes = frames * CHANNELS * bytesPerSample + 44;
@@ -111,20 +113,13 @@
   }
 
   function chooseRenderPlan(durationSeconds, options = {}) {
-    const preferred = durationSeconds < 60 ? 96000 : 48000;
-    let sampleRate = preferred;
-    let estimate = estimateRenderBytes(durationSeconds, sampleRate);
+    const sampleRate = STANDARD_WAV_SAMPLE_RATE;
+    const estimate = estimateRenderBytes(durationSeconds, sampleRate, STANDARD_WAV_BIT_DEPTH);
     const byteLimit = options.allowLarge ? MAX_CONFIRMED_RENDER_BYTES : renderByteLimit();
-    let fallback = false;
-    if (estimate.totalBytes > byteLimit && sampleRate > 48000) {
-      sampleRate = 48000;
-      estimate = estimateRenderBytes(durationSeconds, sampleRate);
-      fallback = true;
-    }
     if (estimate.totalBytes > byteLimit) {
       throw new Error("Audio stem too long for safe browser rendering");
     }
-    return { sampleRate, estimate, fallback };
+    return { sampleRate, estimate, fallback: false };
   }
 
   function offlineContext(frameCount, sampleRate) {
@@ -653,7 +648,7 @@
     });
     mix.connect(filter).connect(envelope).connect(outputGain).connect(context.destination);
     const buffer = await context.startRendering();
-    const bytes = encodePcm16Mono(buffer.getChannelData(0), plan.sampleRate);
+    const bytes = encodePcm24Mono(buffer.getChannelData(0), plan.sampleRate);
     const seed = String(settings.seed || "seed").slice(0, 8);
     const filename = `amy-cin-fishtail-pulse-first${PROBE_EXPORT_BARS}bars-${filenameNumber(settings.referenceHz || 216)}hz-${seed}.wav`;
     return {
@@ -710,7 +705,7 @@
     const buffer = await context.startRendering();
     const samples = buffer.getChannelData(0);
     const normalization = normalizePeak(samples, TICKER_NORMALIZE_DBFS);
-    const bytes = encodePcm16Mono(samples, plan.sampleRate);
+    const bytes = encodePcm24Mono(samples, plan.sampleRate);
     const seed = String(settings.seed || "seed").slice(0, 8);
     const filename = `amy-cin-fishtail-ticker-${filenameNumber(settings.tempo || 60)}bpm-${seed}.wav`;
     return {
@@ -907,6 +902,7 @@
 
   global.FishtailWavExport = {
     BIT_DEPTH,
+    STANDARD_WAV_SAMPLE_RATE,
     STANDARD_WAV_BIT_DEPTH,
     CHANNELS,
     MAX_RENDER_BYTES,
