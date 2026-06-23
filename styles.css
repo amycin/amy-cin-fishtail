@@ -301,6 +301,11 @@ body.dub-mode .generator-core {
   background-size: 22px 22px, 22px 22px, auto, auto;
 }
 
+body.dub-mode .action-buttons,
+body.dub-mode .download-help {
+  background: rgba(0, 14, 6, 0.58);
+}
+
 body.dub-mode .primary-button,
 body.dub-mode button.primary-button.is-generating {
   color: #eaffef;
@@ -1025,18 +1030,23 @@ input[type="range"] {
 }
 
 .action-panel {
-  display: grid;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   grid-column: 3;
   grid-row: 1 / span 3;
-  grid-template-rows: auto auto auto;
-  align-content: start;
+  isolation: isolate;
 }
 
 .generator-core {
   position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  width: 100%;
   min-height: 320px;
   aspect-ratio: 1 / 1;
   overflow: hidden;
+  contain: layout paint;
   border-bottom: 1px solid rgba(192, 83, 42, 0.16);
   border-radius: 8px 8px 0 0;
   background:
@@ -1052,15 +1062,21 @@ input[type="range"] {
 #coreCanvas {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 
 .torus-host {
   z-index: 1;
 }
 
+.torus-host > canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
 #coreCanvas {
   z-index: 2;
-  pointer-events: none;
 }
 
 canvas {
@@ -1070,10 +1086,13 @@ canvas {
 }
 
 .action-buttons {
+  position: relative;
+  z-index: 3;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   padding: 12px 12px 6px;
+  background: linear-gradient(180deg, rgba(255, 248, 221, 0.62), rgba(255, 235, 178, 0.48));
 }
 
 .primary-button {
@@ -1081,8 +1100,11 @@ canvas {
 }
 
 .download-help {
+  position: relative;
+  z-index: 3;
   margin: 0;
   padding: 0 12px 12px;
+  background: rgba(255, 235, 178, 0.48);
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.35;

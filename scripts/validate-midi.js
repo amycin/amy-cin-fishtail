@@ -1363,6 +1363,7 @@ function runFugueTests() {
   const velocitySwitchOk = indexHtml.includes('id="velocityModeInput" type="checkbox" checked')
     && indexHtml.includes("Gravity velocity");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
+    && indexHtml.includes('href="styles.css?v=37"')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
@@ -1380,7 +1381,11 @@ function runFugueTests() {
     && indexHtml.includes("meter 4/4 from form 1")
     && stylesCss.includes(".probe-pitch-field")
     && stylesCss.includes(".living-reference")
-    && stylesCss.includes("grid-column: 1 / -1");
+    && stylesCss.includes("grid-column: 1 / -1")
+    && stylesCss.includes("isolation: isolate")
+    && stylesCss.includes("contain: layout paint")
+    && stylesCss.includes(".torus-host > canvas")
+    && stylesCss.includes("pointer-events: none");
   const context = makeAppContext();
   const results = vm.runInContext(`
     (() => {
