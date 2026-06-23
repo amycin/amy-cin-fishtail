@@ -550,6 +550,8 @@ function runStabilityTests() {
           cvMath: Math.abs(FishtailWavExport.eventCvVolts({ midi: 72 }, { outputMode: "equal" }) - 1) < 1e-9
             && Math.abs(FishtailWavExport.eventCvVolts({ tunedFrequency: 864 }, { outputMode: "bend", rootMidi: 69, rootFreq: 432 }) - 1.75) < 1e-9
             && Math.abs(FishtailWavExport.eventCvSample({ midi: 72 }, { outputMode: "equal" }) - 0.2) < 1e-9,
+          cvDefaults: FishtailWavExport.cvSettings({}).durationMode === "first60"
+            && FishtailWavExport.cvSettings({ cvDurationMode: "full" }).durationMode === "full",
           cvVoice: cvVoice.pitch[0] === 0
             && Math.abs(cvVoice.pitch[10] - 0.2) < 1e-6
             && cvVoice.gate[0] === 1
@@ -694,6 +696,7 @@ function runStabilityTests() {
           name: "analogue cv zip uses 1v octave pitch and gates",
           ok: wavAudit.cvZip
             && wavAudit.cvMath
+            && wavAudit.cvDefaults
             && wavAudit.cvVoice
             && wavAudit.cvHardening
             && FishtailWavExport.CV_FULL_SCALE_VOLTS === 5,
@@ -1514,7 +1517,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=5')
     && indexHtml.includes('src/wav-export.js?v=5')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=75')
+    && indexHtml.includes('src/app.js?v=76')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -1523,6 +1526,7 @@ function runFugueTests() {
     && indexHtml.includes("optional MediaDevices audio input")
     && indexHtml.includes("Ticker WAV export is peak-normalized to -6 dBFS")
     && indexHtml.includes("rendered from their save buttons once a piece exists")
+    && indexHtml.includes("Browser CV export defaults to one voice and the first 60 seconds")
     && indexHtml.includes("meter 4/4 from form 1")
     && indexHtml.includes("first share 0.500")
     && stylesCss.includes(".probe-pitch-field")
@@ -1535,12 +1539,15 @@ function runFugueTests() {
   const cvExportOk = indexHtml.includes('id="prepareCvWavInput" type="checkbox"')
     && indexHtml.includes("Prepare analogue CV ZIP")
     && indexHtml.includes('id="cvVoiceModeInput"')
+    && indexHtml.includes('<option value="bass" selected>Bass</option>')
+    && indexHtml.includes('id="cvDurationInput"')
+    && indexHtml.includes('<option value="first60" selected>First 60 seconds</option>')
     && indexHtml.includes('id="cvClockModeInput"')
     && indexHtml.includes('id="cvFullScaleInput"')
     && indexHtml.includes('id="cvRetriggerMsInput"')
     && indexHtml.includes('id="downloadCvWavButton" type="button" disabled>Save CV ZIP</button>')
     && indexHtml.includes("1V/oct pitch, gate, and calibration WAV files")
-    && indexHtml.includes("Browser CV export is capped at 60 seconds")
+    && indexHtml.includes("Browser CV export defaults to one voice and the first 60 seconds")
     && indexHtml.includes("DC-coupled interface")
     && indexHtml.includes("analogue CV export direction");
   const appJs = fs.readFileSync(path.join(ROOT, "src", "app.js"), "utf8");
@@ -1567,6 +1574,8 @@ function runFugueTests() {
     && wavExportJs.includes("MAX_MOBILE_RENDER_BYTES")
     && wavExportJs.includes("OFFLINE_RENDER_BUFFER_MULTIPLIER")
     && wavExportJs.includes("CV_MAX_RENDER_SECONDS")
+    && wavExportJs.includes("duration_mode: cv.durationMode")
+    && wavExportJs.includes("first${Math.round(pieceSeconds)}s")
     && wavExportJs.includes("estimateCvRenderBytes")
     && wavExportJs.includes("indexTempoTimeline")
     && wavExportJs.includes("calibration/cv-calibration-one-octave.wav");

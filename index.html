@@ -235,11 +235,18 @@
                 <label>
                   CV voices
                   <select id="cvVoiceModeInput">
-                    <option value="all" selected>All voices</option>
-                    <option value="bass">Bass</option>
+                    <option value="bass" selected>Bass</option>
                     <option value="tenor">Tenor</option>
                     <option value="alto">Alto</option>
                     <option value="soprano">Soprano</option>
+                    <option value="all">All voices</option>
+                  </select>
+                </label>
+                <label>
+                  CV duration
+                  <select id="cvDurationInput">
+                    <option value="first60" selected>First 60 seconds</option>
+                    <option value="full">Whole short piece</option>
                   </select>
                 </label>
                 <label>
@@ -379,7 +386,7 @@
                 <p><strong>Living Reference</strong> listens only after you press Listen for pitch. Play or sing one sustained monophonic note, then press Use stable pitch to freeze the recent pitch centre as Fishtail's exact reference. Capture anyway is there when the source is intentionally moving. The input is analysed locally through a silent graph; it is not monitored, recorded, uploaded, or saved with device identity.</p>
                 <p><strong>Metronome</strong> starts a louder pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. Swing starts straight by default; DUB mode sets a gentle strolling swing. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
                 <p>Plain Equal Temperament MIDI exports ordinary note numbers, so exact captured acoustic tuning depends on the receiving synth. Amy Dub Intonation, Bend MIDI, project JSON, Probe WAV, and Fishtail's tempo/reference metadata preserve the captured relationship more directly.</p>
-                <p>Prepare probe WAV and Prepare ticker WAV render optional mono 24-bit stems after MIDI generation. Ticker WAV export is peak-normalized to -6 dBFS for DAW-friendly headroom. Prepare analogue CV ZIP renders the selected voice set as clock, 1V/oct pitch, gate, and calibration WAV files. The CV controls set musical pulse / bar / 24 PPQN clock, full-scale volts, zero offset, gate polarity, and retrigger gap. Browser CV export is capped at 60 seconds for memory safety. Pitch CV needs a DC-coupled interface or DAW CV utility; ordinary phone and headphone outputs usually will not preserve DC pitch voltage.</p>
+                <p>Prepare probe WAV and Prepare ticker WAV render optional mono 24-bit stems after MIDI generation. Ticker WAV export is peak-normalized to -6 dBFS for DAW-friendly headroom. Prepare analogue CV ZIP renders the selected voice set as clock, 1V/oct pitch, gate, and calibration WAV files. The CV controls set voice package, first-60s / whole-short-piece duration, musical pulse / bar / 24 PPQN clock, full-scale volts, zero offset, gate polarity, and retrigger gap. Browser CV export defaults to one voice and the first 60 seconds for iPad memory safety. Pitch CV needs a DC-coupled interface or DAW CV utility; ordinary phone and headphone outputs usually will not preserve DC pitch voltage.</p>
               </section>
 
               <section>
@@ -505,6 +512,6 @@
     <script src="src/audio-engine.js?v=5"></script>
     <script src="src/wav-export.js?v=5"></script>
     <script src="src/pitch-input.js?v=3"></script>
-    <script src="src/app.js?v=75"></script>
+    <script src="src/app.js?v=76"></script>
   </body>
 </html>

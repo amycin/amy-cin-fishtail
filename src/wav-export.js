@@ -298,8 +298,10 @@
     const retriggerMs = Number(settings.cvRetriggerMs ?? settings.retriggerMs);
     const requestedClockMode = settings.cvClockMode ?? settings.clockMode;
     const requestedGatePolarity = settings.cvGatePolarity ?? settings.gatePolarity;
+    const requestedDurationMode = settings.cvDurationMode ?? settings.durationMode;
     const clockMode = ["pulse", "bar", "ppqn24"].includes(requestedClockMode) ? requestedClockMode : "pulse";
     const gatePolarity = requestedGatePolarity === "inverted" ? "inverted" : "positive";
+    const durationMode = requestedDurationMode === "full" ? "full" : "first60";
     return {
       fullScaleVolts: clamp(Number.isFinite(fullScale) ? fullScale : CV_FULL_SCALE_VOLTS, 1, 10),
       zeroOffsetVolts: clamp(Number.isFinite(zeroOffset) ? zeroOffset : 0, -5, 5),
@@ -307,6 +309,7 @@
       gatePolarity,
       retriggerMs: clamp(Number.isFinite(retriggerMs) ? retriggerMs : 2, 0, 5),
       clockMode,
+      durationMode,
     };
   }
 
@@ -415,7 +418,7 @@
     const estimate = estimateCvRenderBytes(renderSeconds, stemCount, options);
     const byteLimit = renderByteLimit();
     if (estimate.totalBytes > byteLimit) {
-      throw new Error("Analogue CV package too long for safe browser rendering");
+      throw new Error("Analogue CV package too large for this browser; choose one CV voice and First 60 seconds, or use a desktop browser");
     }
     return {
       sampleRate,
@@ -684,18 +687,21 @@
     const settings = piece.settings || {};
     const cv = cvSettings(settings);
     const voices = cvVoiceNamesForPiece(piece, settings);
-    const pieceSeconds = timeline.totalSeconds || 0;
-    if (pieceSeconds > CV_MAX_RENDER_SECONDS) {
-      throw new Error(`Analogue CV export is capped at ${CV_MAX_RENDER_SECONDS} seconds for browser memory safety`);
+    const fullPieceSeconds = timeline.totalSeconds || 0;
+    if (cv.durationMode === "full" && fullPieceSeconds > CV_MAX_RENDER_SECONDS) {
+      throw new Error(`Whole-piece CV export is capped at ${CV_MAX_RENDER_SECONDS} seconds for browser memory safety; choose First 60 seconds or shorten the form`);
     }
+    const pieceSeconds = cv.durationMode === "full" ? fullPieceSeconds : Math.min(fullPieceSeconds, CV_MAX_RENDER_SECONDS);
+    const truncated = pieceSeconds + 0.0001 < fullPieceSeconds;
     const renderSeconds = pieceSeconds + CV_TAIL_SECONDS;
     const stemCount = 1 + voices.length * 2;
     const plan = chooseCvRenderPlan(renderSeconds, stemCount);
     const seed = safeFilenamePart(String(settings.seed || "seed").slice(0, 8));
     const tempo = filenameNumber(settings.tempo || 60);
+    const durationSlug = truncated ? `first${Math.round(pieceSeconds)}s-` : "";
     const files = [];
     const stemManifest = [];
-    const clockFilename = `clock/amy-cin-fishtail-cv-clock-${tempo}bpm-${seed}.wav`;
+    const clockFilename = `clock/amy-cin-fishtail-cv-${durationSlug}clock-${tempo}bpm-${seed}.wav`;
     const clockSamples = renderCvClockSamples(timeline, plan, cv, piece.ppq || 480);
     files.push({ name: clockFilename, data: encodePcm24Mono(clockSamples, plan.sampleRate) });
     stemManifest.push({
@@ -771,9 +777,12 @@
       sample_rate_hz: plan.sampleRate,
       bit_depth: BIT_DEPTH,
       channels_per_file: CHANNELS,
+      full_piece_seconds: Number(fullPieceSeconds.toFixed(4)),
       piece_seconds: Number(pieceSeconds.toFixed(4)),
       duration_seconds: Number(renderSeconds.toFixed(4)),
       max_duration_seconds: CV_MAX_RENDER_SECONDS,
+      duration_mode: cv.durationMode,
+      truncated,
       memory_estimate_bytes: plan.estimate,
       byte_limit: plan.byteLimit,
       clock: {
@@ -816,6 +825,7 @@
         "- calibration/*.wav: staircase, one-octave and gate test files for interface calibration.",
         "",
         `Clock mode: ${cv.clockMode}. Musical pulses are performance pulse events, not conventional MIDI 24 PPQN clock.`,
+        `Duration mode: ${cv.durationMode}${truncated ? `; this package contains the first ${pieceSeconds.toFixed(2)} seconds of a ${fullPieceSeconds.toFixed(2)} second piece.` : "."}`,
         `Pitch scale: +/-${cv.fullScaleVolts}V maps to +/-1.0 sample; zero offset is ${cv.zeroOffsetVolts}V.`,
         `Gate: ${cv.gateVolts}V ${cv.gatePolarity}; retrigger gap ${cv.retriggerMs} ms.`,
         "",
@@ -829,7 +839,7 @@
     });
 
     const bytes = makeZip(files);
-    const filename = `amy-cin-fishtail-analogue-cv-${tempo}bpm-${seed}.zip`;
+    const filename = `amy-cin-fishtail-analogue-cv-${durationSlug}${tempo}bpm-${seed}.zip`;
     return {
       kind: "cv",
       label: "analogue CV ZIP",
