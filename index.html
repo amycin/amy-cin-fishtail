@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=35">
+    <link rel="stylesheet" href="styles.css?v=36">
   </head>
   <body>
     <main class="shell">
@@ -189,12 +189,57 @@
               </label>
               <label class="probe-pitch-field">
                 Probe pitch <span id="probePitchLabel">A3 = 216.00 Hz</span>
-                <input id="probePitchInput" type="range" min="0" max="59" step="1" value="21">
+                <input id="probePitchInput" type="range" min="0" max="83" step="1" value="45">
               </label>
               <label class="probe-pitch-field">
                 Fine pitch <span id="probeFineLabel">+0.0 ct</span>
                 <input id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0">
               </label>
+              <div class="living-reference" aria-labelledby="livingReferenceTitle">
+                <div class="living-reference-head">
+                  <h3 id="livingReferenceTitle">Living Reference</h3>
+                  <span id="referenceInputStatus" aria-live="polite">Permission needed</span>
+                </div>
+                <div class="living-controls">
+                  <button id="referenceListenButton" type="button">Listen for pitch</button>
+                  <button id="referenceStopButton" type="button" disabled>Stop listening</button>
+                  <button id="referenceUsePitchButton" type="button" disabled>Use this pitch</button>
+                </div>
+                <div class="living-selects">
+                  <label>
+                    Audio input
+                    <select id="referenceDeviceInput">
+                      <option value="">Default input</option>
+                    </select>
+                  </label>
+                  <label>
+                    Pitch range
+                    <select id="referenceRangeInput">
+                      <option value="general" selected>General 40-1500 Hz</option>
+                      <option value="bass">Bass 25-400 Hz</option>
+                      <option value="voice">Voice 55-1000 Hz</option>
+                      <option value="high">High 100-2000 Hz</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="living-meters">
+                  <div class="meter-row" aria-label="Input level">
+                    <span id="referenceInputLevelLabel">Level -inf dB</span>
+                    <span class="meter-track"><span id="referenceInputLevelBar" class="meter-fill"></span></span>
+                  </div>
+                  <div class="meter-row" aria-label="Pitch confidence">
+                    <span id="referenceConfidenceLabel">Confidence 0%</span>
+                    <span class="meter-track"><span id="referenceConfidenceBar" class="meter-fill confidence-fill"></span></span>
+                  </div>
+                </div>
+                <div class="living-readouts">
+                  <span id="referenceDetectedHzLabel">-- Hz</span>
+                  <span id="referenceDetectedNoteLabel">--</span>
+                  <span id="referenceDetectedCentsLabel">-- cents</span>
+                  <span id="referenceStabilityLabel">Play or sing one sustained note.</span>
+                </div>
+                <p class="privacy-note">Audio is analysed on this device. It is not recorded or uploaded. Chords and noisy attacks may not produce a stable fundamental.</p>
+              </div>
               <button class="switch-label switch-button" id="probeInput" type="button" role="switch" aria-checked="false" title="Turn on the live Teardrop reference probe">
                 <span>Probe sound</span>
                 <span class="switch-control" aria-hidden="true">
@@ -281,7 +326,9 @@
               <section>
                 <h3>Probe And Time</h3>
                 <p>The Probe + Time panel is the live sound and conductor-timing area. The page loads silent. Turning on <strong>Probe sound</strong> starts the Teardrop reference tone at the current Reference Hz. <strong>Probe pitch</strong> chooses the reference note, and <strong>Fine pitch</strong> trims cents by ear; both write into the same Reference Hz used by MIDI generation.</p>
+                <p><strong>Living Reference</strong> listens only after you press Listen for pitch. Play or sing one sustained monophonic note, then press Use this pitch to freeze the recent pitch centre as Fishtail's exact reference. The input is analysed locally through a silent graph; it is not monitored, recorded, uploaded, or saved with device identity.</p>
                 <p><strong>Metronome</strong> starts a louder pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. Swing starts straight by default; DUB mode sets a gentle strolling swing. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
+                <p>Plain Equal Temperament MIDI exports ordinary note numbers, so exact captured acoustic tuning depends on the receiving synth. Amy Dub Intonation, Bend MIDI, project JSON, Probe WAV, and Fishtail's tempo/reference metadata preserve the captured relationship more directly.</p>
                 <p>Prepare probe WAV and Prepare ticker WAV render optional mono 24-bit stems after MIDI generation. They are saved only when their explicit Save WAV buttons are pressed.</p>
               </section>
 
@@ -336,7 +383,7 @@
 
               <section>
                 <h3>Credits And Ownership</h3>
-                <p>Project identity, musical concept, tuning direction, Fishtail design, Teardrop Probe, pink-noise ticker, and tempo-lattice direction: Amy McBride / amy_cin. Artwork by Ocular Debris. Copyright (c) 2026 Amy McBride. All rights reserved. This version was vibe coded with Codex, collaborating as Lambda Echo. Three.js is used for the WebGL torus visual and is acknowledged in <code>CREDITS.md</code>.</p>
+                <p>Project identity, musical concept, tuning direction, Fishtail design, Teardrop Probe, Living Reference Input, pink-noise ticker, and tempo-lattice direction: Amy McBride / amy_cin. Artwork by Ocular Debris. Copyright (c) 2026 Amy McBride. All rights reserved. This version was vibe coded with Codex, collaborating as Lambda Echo. Three.js is used for the WebGL torus visual and is acknowledged in <code>CREDITS.md</code>.</p>
                 <p>The source currently runs as a static web app: HTML, CSS, JavaScript, and image assets. Keep the credits file with the project when publishing it.</p>
               </section>
             </div>
@@ -387,10 +434,10 @@
                 <ul>
                   <li>This version was vibe coded with Codex, collaborating as Lambda Echo.</li>
                   <li>The MIDI writer in <code>src/app.js</code> is original code.</li>
-                  <li>The Teardrop Probe, pink-noise ticker, and tempo-lattice conductor are implemented as browser-native Web Audio and Standard MIDI logic, translated from Amy's SuperCollider reference sketches in this repository.</li>
+                  <li>The Teardrop Probe, Living Reference Input, pink-noise ticker, and tempo-lattice conductor are implemented as browser-native Web Audio and Standard MIDI logic, translated from Amy's SuperCollider reference sketches in this repository.</li>
                   <li>The moving torus visualisation uses Three.js, an MIT-licensed open-source 3D library.</li>
                   <li>The seeded random functions are small public-domain-style PRNG/hash patterns commonly circulated in JavaScript communities; they are included inline only for deterministic replay after the browser supplies a system entropy seed.</li>
-                  <li>Browser APIs used: Canvas, WebGL through Three.js, optional Device Motion/Orientation input, Web Audio, optional Vibration API feedback, Blob download, TextEncoder, and Web Crypto <code>crypto.getRandomValues</code>.</li>
+                  <li>Browser APIs used: Canvas, WebGL through Three.js, optional Device Motion/Orientation input, Web Audio, optional MediaDevices audio input, optional Vibration API feedback, Blob download, TextEncoder, and Web Crypto <code>crypto.getRandomValues</code>.</li>
                 </ul>
               </section>
 
@@ -407,6 +454,7 @@
     <script src="src/tempo-lattice.js?v=1"></script>
     <script src="src/audio-engine.js?v=3"></script>
     <script src="src/wav-export.js?v=1"></script>
-    <script src="src/app.js?v=66"></script>
+    <script src="src/pitch-input.js?v=1"></script>
+    <script src="src/app.js?v=68"></script>
   </body>
 </html>

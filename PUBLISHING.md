@@ -6,6 +6,8 @@ Equal Temperament and Amy Dub Intonation exports keep voice tracks note-only: on
 
 The Teardrop Probe and metronome are off at page load. Browser audio starts only after a user gesture, such as turning on Probe sound or Metronome. WAV stems are rendered one at a time in the browser, with a memory estimate before allocation; MIDI and JSON generation should remain usable even if a long WAV stem is skipped.
 
+Living Reference Input also starts only after a user gesture. It analyses one monophonic input locally through Web Audio, does not use `MediaRecorder`, does not upload samples, and saves only derived pitch/reference metadata, never device identity.
+
 ## Randomness On The Web
 
 The app cannot read `/dev/urandom` directly from a visitor's computer, because browser JavaScript is sandboxed. Instead it uses `crypto.getRandomValues`, the browser Web Crypto source for strong random bytes. The generated seed is saved into the JSON manifest so a generated piece can be studied or reproduced.

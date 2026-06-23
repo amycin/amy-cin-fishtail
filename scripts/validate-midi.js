@@ -1346,13 +1346,19 @@ function runFugueTests() {
     && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
   const velocitySwitchOk = indexHtml.includes('id="velocityModeInput" type="checkbox" checked')
     && indexHtml.includes("Gravity velocity");
-  const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="59" step="1" value="21"')
+  const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="irrationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
+    && indexHtml.includes('src/pitch-input.js?v=1')
+    && indexHtml.includes("Listen for pitch")
+    && indexHtml.includes("Audio is analysed on this device. It is not recorded or uploaded.")
+    && indexHtml.includes("Living Reference Input, pink-noise ticker")
+    && indexHtml.includes("optional MediaDevices audio input")
     && indexHtml.includes("meter 4/4 from form 1")
     && stylesCss.includes(".probe-pitch-field")
+    && stylesCss.includes(".living-reference")
     && stylesCss.includes("grid-column: 1 / -1");
   const context = makeAppContext();
   const results = vm.runInContext(`
@@ -1402,7 +1408,8 @@ function runFugueTests() {
         const offSwitch = { getAttribute: () => "false" };
         els.referenceNoteInput = { value: "A3" };
         els.referenceFreqInput = { value: "216.00" };
-        els.probePitchInput = { value: "21", min: "0", max: "59" };
+        const a3Index = REFERENCE_NOTE_NAMES.indexOf("A3");
+        els.probePitchInput = { value: String(a3Index), min: "0", max: String(REFERENCE_NOTE_NAMES.length - 1) };
         els.probePitchLabel = { textContent: "" };
         els.probeFineInput = { value: "25.0", min: "-100", max: "100" };
         els.probeFineLabel = { textContent: "" };
@@ -1421,12 +1428,12 @@ function runFugueTests() {
         els.probeLevelInput = { value: "45" };
         els.metronomeLevelInput = { value: "88" };
 
-        els.probePitchInput.value = "22";
-        els.referenceNoteInput.value = REFERENCE_NOTE_NAMES[22];
+        els.probePitchInput.value = String(a3Index + 1);
+        els.referenceNoteInput.value = REFERENCE_NOTE_NAMES[a3Index + 1];
         updateReferenceFrequencyFromFineCents(readProbeFineCents());
         applyReferencePitchChange();
         const coarseHz = Number(els.referenceFreqInput.value);
-        const coarseOk = els.referenceNoteInput.value === REFERENCE_NOTE_NAMES[22]
+        const coarseOk = els.referenceNoteInput.value === REFERENCE_NOTE_NAMES[a3Index + 1]
           && Math.abs(coarseHz - (referenceBaseHzForMidi(selectedReferenceMidi()) * (2 ** (25 / 1200)))) < 0.02
           && els.probePitchLabel.textContent.includes(els.referenceNoteInput.value)
           && els.probeFineLabel.textContent === "+25.0 ct";
@@ -1440,6 +1447,38 @@ function runFugueTests() {
           && fineHz !== coarseHz
           && els.tempoLatticeReadout.textContent.includes("meter")
           && els.tempoInput.value.length > 0;
+      }
+
+      function livingReferenceMetadataIsPrivate() {
+        state.inputReference.captured = {
+          mode: "live_input",
+          captured_hz: 220,
+          reference_note: "A3",
+          reference_midi: 57,
+          deviation_before_reanchor_cents: 15.67,
+          implied_a4_hz: 440,
+          confidence: 0.94,
+          pitch_spread_cents: 3.2,
+          algorithm: FishtailPitchInput.ALGORITHM,
+          audio_recorded: false,
+          audio_uploaded: false,
+          selectedDeviceId: "must-not-leak",
+          deviceLabel: "must-not-leak",
+        };
+        const metadata = referenceSourceMetadata();
+        const text = JSON.stringify(metadata);
+        const capturedOk = metadata.mode === "live_input"
+          && metadata.captured_hz === 220
+          && metadata.implied_a4_hz === 440
+          && metadata.audio_recorded === false
+          && metadata.audio_uploaded === false
+          && !text.includes("must-not-leak")
+          && REFERENCE_NOTE_NAMES[0] === "C0"
+          && REFERENCE_NOTE_NAMES.includes("B6");
+        els.referenceNoteInput = { value: "A3" };
+        els.referenceFreqInput = { value: "221.0" };
+        updateReferenceAnchorFromFrequency();
+        return capturedOk && referenceSourceMetadata().mode === "manual";
       }
 
       function buildFuguePiece({ sections, dubMode = false, voices = 4, seed = "validation-fugue" }) {
@@ -1520,6 +1559,10 @@ function runFugueTests() {
         {
           name: "probe pitch controls drive reference Hz",
           ok: probePitchControlsDriveReference(),
+        },
+        {
+          name: "living reference metadata is private",
+          ok: livingReferenceMetadataIsPrivate(),
         },
         {
           name: "auto-repairs one section to three",

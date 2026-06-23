@@ -169,7 +169,7 @@ const CHECK_REASSURANCE_TABLE = {
 const CHECK_REASSURANCE_LINES = Object.values(CHECK_REASSURANCE_TABLE).flat();
 const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const KEY_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
-const REFERENCE_NOTE_NAMES = buildReferenceNoteNames(2, 6);
+const REFERENCE_NOTE_NAMES = buildReferenceNoteNames(0, 6);
 const VOICE_ORDER = ["bass", "tenor", "alto", "soprano"];
 const VOICE_LAYOUTS = {
   2: ["bass", "soprano"],
@@ -458,12 +458,35 @@ const state = {
     schedulerTimer: null,
     schedulerRevision: 0,
   },
+  inputReference: {
+    status: "idle",
+    stream: null,
+    track: null,
+    sourceNode: null,
+    highpassNode: null,
+    lowpassNode: null,
+    analyserNode: null,
+    silentSinkNode: null,
+    analysisTimer: null,
+    analysisRevision: 0,
+    analysisFps: FishtailPitchInput.ANALYSIS_FPS,
+    selectedDeviceId: null,
+    timeData: null,
+    scratch: null,
+    pitchHistory: [],
+    latest: null,
+    captured: null,
+    suspendedProbe: false,
+    suspendedMetronome: false,
+    detectorMs: 0,
+  },
   lastAudioExports: {
     probe: null,
     ticker: null,
   },
   probeHeld: false,
   referenceAnchorA4Hz: DEFAULT_A4_HZ,
+  referenceExactHz: null,
   pedalTouched: false,
   generating: false,
   randomising: false,
@@ -552,6 +575,20 @@ function bindElements() {
     "probePitchLabel",
     "probeFineInput",
     "probeFineLabel",
+    "referenceListenButton",
+    "referenceStopButton",
+    "referenceUsePitchButton",
+    "referenceDeviceInput",
+    "referenceRangeInput",
+    "referenceInputStatus",
+    "referenceInputLevelLabel",
+    "referenceInputLevelBar",
+    "referenceConfidenceLabel",
+    "referenceConfidenceBar",
+    "referenceDetectedHzLabel",
+    "referenceDetectedNoteLabel",
+    "referenceDetectedCentsLabel",
+    "referenceStabilityLabel",
     "metronomeMeterInput",
     "probeInput",
     "probeLevelInput",
@@ -698,6 +735,17 @@ function bindEvents() {
   els.downloadJsonButton.addEventListener("click", () => downloadLast("json"));
   els.downloadProbeWavButton?.addEventListener("click", () => downloadLast("probeWav"));
   els.downloadTickerWavButton?.addEventListener("click", () => downloadLast("tickerWav"));
+  els.referenceListenButton?.addEventListener("click", startLivingReferenceInput);
+  els.referenceStopButton?.addEventListener("click", () => stopLivingReferenceInput("Input ended", { restoreAudio: true }));
+  els.referenceUsePitchButton?.addEventListener("click", captureLivingReferencePitch);
+  els.referenceDeviceInput?.addEventListener("change", () => {
+    state.inputReference.selectedDeviceId = els.referenceDeviceInput.value || null;
+    if (state.inputReference.stream) startLivingReferenceInput();
+  });
+  els.referenceRangeInput?.addEventListener("change", () => {
+    state.inputReference.pitchHistory = [];
+    updateReferenceInputStatus(state.inputReference.stream ? "Listening" : "Permission needed");
+  });
   els.toggleNotesButton.addEventListener("click", toggleNotes);
   els.helpButton.addEventListener("click", openHelp);
   els.closeHelpButton.addEventListener("click", closeHelp);
@@ -712,6 +760,15 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !els.helpModal.hidden) closeHelp();
     if (event.key === "Escape" && !els.creditsModal.hidden) closeCredits();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state.inputReference.stream) stopLivingReferenceInput("Input ended", { restoreAudio: false });
+  });
+  window.addEventListener("pagehide", () => {
+    if (state.inputReference.stream) stopLivingReferenceInput("Input ended", { restoreAudio: false });
+  });
+  navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+    if (state.inputReference.stream) populateReferenceInputDevices(state.inputReference.selectedDeviceId);
   });
   bindSoundTimeEvents();
 }
@@ -909,6 +966,294 @@ function stopAllLiveAudio() {
   FishtailAudioEngine.stopAll(state.audio, state.audio.context);
   setSwitchControl(els.metronomeInput, false);
   setSwitchControl(els.probeInput, false);
+}
+
+function setReferenceInputMeter(levelPercent, confidencePercent) {
+  if (els.referenceInputLevelBar) els.referenceInputLevelBar.style.width = `${clamp(levelPercent || 0, 0, 100).toFixed(1)}%`;
+  if (els.referenceConfidenceBar) els.referenceConfidenceBar.style.width = `${clamp(confidencePercent || 0, 0, 100).toFixed(1)}%`;
+}
+
+function clearReferenceCaptureMetadata() {
+  state.inputReference.captured = null;
+}
+
+function updateReferenceInputStatus(status) {
+  state.inputReference.status = status;
+  if (els.referenceInputStatus) els.referenceInputStatus.textContent = status;
+  if (els.referenceListenButton) els.referenceListenButton.disabled = Boolean(state.inputReference.stream);
+  if (els.referenceStopButton) els.referenceStopButton.disabled = !state.inputReference.stream;
+  if (els.referenceUsePitchButton) {
+    const stats = FishtailPitchInput.pitchStats(state.inputReference.pitchHistory, Date.now());
+    els.referenceUsePitchButton.disabled = !state.inputReference.stream || !stats.ok;
+  }
+}
+
+function referenceMidiBounds() {
+  return {
+    minMidi: noteNameToMidi(REFERENCE_NOTE_NAMES[0]),
+    maxMidi: noteNameToMidi(REFERENCE_NOTE_NAMES[REFERENCE_NOTE_NAMES.length - 1]),
+  };
+}
+
+function mediaConstraintsForReferenceInput(deviceId) {
+  const supported = navigator.mediaDevices?.getSupportedConstraints?.() || {};
+  const audio = {};
+  if (deviceId) audio.deviceId = { ideal: deviceId };
+  if (supported.channelCount) audio.channelCount = { ideal: 1 };
+  if (supported.echoCancellation) audio.echoCancellation = { ideal: false };
+  if (supported.noiseSuppression) audio.noiseSuppression = { ideal: false };
+  if (supported.autoGainControl) audio.autoGainControl = { ideal: false };
+  if (supported.latency) audio.latency = { ideal: 0.02 };
+  return { audio, video: false };
+}
+
+async function populateReferenceInputDevices(selectedDeviceId = state.inputReference.selectedDeviceId) {
+  if (!navigator.mediaDevices?.enumerateDevices || !els.referenceDeviceInput) return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((device) => device.kind === "audioinput");
+    const current = selectedDeviceId || els.referenceDeviceInput.value || "";
+    els.referenceDeviceInput.innerHTML = '<option value="">Default input</option>';
+    inputs.forEach((device, index) => {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      option.textContent = device.label || `Audio input ${index + 1}`;
+      if (device.deviceId === current) option.selected = true;
+      els.referenceDeviceInput.append(option);
+    });
+    if (current && !inputs.some((device) => device.deviceId === current)) {
+      state.inputReference.selectedDeviceId = null;
+      els.referenceDeviceInput.value = "";
+      updateReferenceInputStatus("Input unavailable");
+    }
+  } catch (error) {
+    console.warn("Audio input device listing unavailable.", error);
+  }
+}
+
+function suspendLiveAudioForReferenceInput() {
+  state.inputReference.suspendedProbe = state.inputReference.suspendedProbe || Boolean(state.audio.probe);
+  state.inputReference.suspendedMetronome = state.inputReference.suspendedMetronome || Boolean(state.audio.metronome);
+  if (state.audio.probe) stopProbeHold();
+  if (state.audio.metronome) stopLiveMetronome();
+}
+
+function restoreLiveAudioAfterReferenceInput() {
+  if (state.inputReference.suspendedProbe && switchControlIsOn(els.probeInput)) startProbeHold();
+  if (state.inputReference.suspendedMetronome && switchControlIsOn(els.metronomeInput)) startLiveMetronome();
+  state.inputReference.suspendedProbe = false;
+  state.inputReference.suspendedMetronome = false;
+}
+
+function disconnectReferenceNode(node) {
+  try {
+    node?.disconnect?.();
+  } catch (error) {
+    // Some browsers throw if a media node is already disconnected.
+  }
+}
+
+function cleanupReferenceInputGraph() {
+  const input = state.inputReference;
+  if (input.analysisTimer) clearTimeout(input.analysisTimer);
+  input.analysisTimer = null;
+  input.analysisRevision += 1;
+  input.stream?.getTracks?.().forEach((track) => track.stop());
+  disconnectReferenceNode(input.sourceNode);
+  disconnectReferenceNode(input.highpassNode);
+  disconnectReferenceNode(input.lowpassNode);
+  disconnectReferenceNode(input.analyserNode);
+  disconnectReferenceNode(input.silentSinkNode);
+  input.stream = null;
+  input.track = null;
+  input.sourceNode = null;
+  input.highpassNode = null;
+  input.lowpassNode = null;
+  input.analyserNode = null;
+  input.silentSinkNode = null;
+  input.timeData = null;
+  input.latest = null;
+}
+
+function stopLivingReferenceInput(status = "Input ended", options = {}) {
+  const wasListening = Boolean(state.inputReference.stream);
+  cleanupReferenceInputGraph();
+  if (wasListening && options.restoreAudio !== false) restoreLiveAudioAfterReferenceInput();
+  if (wasListening && options.restoreAudio === false && !options.preserveSuspended) {
+    state.inputReference.suspendedProbe = false;
+    state.inputReference.suspendedMetronome = false;
+  }
+  updateReferenceInputStatus(status);
+  setReferenceInputMeter(0, 0);
+}
+
+async function startLivingReferenceInput() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    updateReferenceInputStatus("Input unavailable");
+    if (els.referenceStabilityLabel) els.referenceStabilityLabel.textContent = "Live reference input is unavailable here. You can still type a frequency or use the Teardrop Probe.";
+    return;
+  }
+  stopLivingReferenceInput("Requesting permission", { restoreAudio: false, preserveSuspended: true });
+  updateReferenceInputStatus("Requesting permission");
+  suspendLiveAudioForReferenceInput();
+  const context = ensureAudioContextFromUserGesture();
+  if (!context) {
+    restoreLiveAudioAfterReferenceInput();
+    updateReferenceInputStatus("Input unavailable");
+    return;
+  }
+  try {
+    const selectedDeviceId = els.referenceDeviceInput?.value || state.inputReference.selectedDeviceId || null;
+    const stream = await navigator.mediaDevices.getUserMedia(mediaConstraintsForReferenceInput(selectedDeviceId));
+    const track = stream.getAudioTracks()[0];
+    if (!track) throw new Error("No audio track was provided.");
+    state.inputReference.stream = stream;
+    state.inputReference.track = track;
+    state.inputReference.selectedDeviceId = selectedDeviceId;
+    state.inputReference.pitchHistory = [];
+    state.inputReference.analysisFps = FishtailPitchInput.ANALYSIS_FPS;
+    state.inputReference.detectorMs = 0;
+    track.addEventListener?.("ended", () => stopLivingReferenceInput("Input ended", { restoreAudio: true }), { once: true });
+
+    const source = context.createMediaStreamSource(stream);
+    const highpass = context.createBiquadFilter();
+    const lowpass = context.createBiquadFilter();
+    const analyser = context.createAnalyser();
+    const silentSink = context.createGain();
+    highpass.type = "highpass";
+    highpass.frequency.setValueAtTime(25, context.currentTime);
+    lowpass.type = "lowpass";
+    lowpass.frequency.setValueAtTime(3600, context.currentTime);
+    analyser.fftSize = FishtailPitchInput.INPUT_FFT_SIZE;
+    analyser.smoothingTimeConstant = 0;
+    silentSink.gain.setValueAtTime(0, context.currentTime);
+    source.connect(highpass).connect(lowpass).connect(analyser).connect(silentSink).connect(context.destination);
+    state.inputReference.sourceNode = source;
+    state.inputReference.highpassNode = highpass;
+    state.inputReference.lowpassNode = lowpass;
+    state.inputReference.analyserNode = analyser;
+    state.inputReference.silentSinkNode = silentSink;
+    state.inputReference.timeData = new Float32Array(analyser.fftSize);
+    state.inputReference.scratch = state.inputReference.scratch || FishtailPitchInput.makeScratch();
+    await populateReferenceInputDevices(selectedDeviceId);
+    updateReferenceInputStatus("Listening");
+    if (els.referenceStabilityLabel) els.referenceStabilityLabel.textContent = "Play or sing one sustained note.";
+    scheduleReferenceInputAnalysis();
+  } catch (error) {
+    cleanupReferenceInputGraph();
+    restoreLiveAudioAfterReferenceInput();
+    const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
+    updateReferenceInputStatus(denied ? "Permission denied" : "Input unavailable");
+    if (els.referenceStabilityLabel) {
+      els.referenceStabilityLabel.textContent = denied
+        ? "Permission denied. Use the browser site settings to allow audio input, or type a frequency manually."
+        : "Live reference input is unavailable here. You can still type a frequency or use the Teardrop Probe.";
+    }
+    console.warn("Living reference input unavailable.", error);
+  }
+}
+
+function scheduleReferenceInputAnalysis() {
+  const input = state.inputReference;
+  const revision = input.analysisRevision;
+  const delay = Math.round(1000 / Math.max(1, input.analysisFps || FishtailPitchInput.ANALYSIS_FPS));
+  input.analysisTimer = setTimeout(() => {
+    analyseReferenceInputFrame(revision);
+    if (state.inputReference.stream && state.inputReference.analysisRevision === revision) scheduleReferenceInputAnalysis();
+  }, delay);
+}
+
+function analyseReferenceInputFrame(revision) {
+  const input = state.inputReference;
+  const context = state.audio.context;
+  if (!input.stream || input.analysisRevision !== revision || !input.analyserNode || !input.timeData || !context) return;
+  input.analyserNode.getFloatTimeDomainData(input.timeData);
+  const started = performance.now();
+  const result = FishtailPitchInput.detectPitch(input.timeData, context.sampleRate, {
+    range: els.referenceRangeInput?.value || "general",
+  }, input.scratch);
+  const elapsed = performance.now() - started;
+  input.detectorMs = input.detectorMs ? input.detectorMs * 0.82 + elapsed * 0.18 : elapsed;
+  if (input.detectorMs > 12) input.analysisFps = FishtailPitchInput.SLOW_ANALYSIS_FPS;
+  updateReferenceInputReadouts(result);
+}
+
+function updateReferenceInputReadouts(result) {
+  const now = Date.now();
+  const rmsDb = Number.isFinite(result.rmsDb) ? result.rmsDb : -Infinity;
+  const levelPercent = Number.isFinite(rmsDb) ? clamp((rmsDb + 60) * (100 / 60), 0, 100) : 0;
+  const confidencePercent = clamp((result.confidence || 0) * 100, 0, 100);
+  setReferenceInputMeter(levelPercent, confidencePercent);
+  if (els.referenceInputLevelLabel) els.referenceInputLevelLabel.textContent = Number.isFinite(rmsDb) ? `Level ${rmsDb.toFixed(0)} dB` : "Level -inf dB";
+  if (els.referenceConfidenceLabel) els.referenceConfidenceLabel.textContent = `Confidence ${Math.round(confidencePercent)}%`;
+  if (result.ok) {
+    state.inputReference.latest = result;
+    state.inputReference.pitchHistory.push({
+      at: now,
+      ok: true,
+      frequency: result.frequency,
+      confidence: result.confidence,
+    });
+    state.inputReference.pitchHistory = state.inputReference.pitchHistory.filter((entry) => entry.at >= now - FishtailPitchInput.CAPTURE_HISTORY_MS * 1.6);
+    const reference = FishtailPitchInput.hzToReference(result.frequency, state.referenceAnchorA4Hz, referenceMidiBounds());
+    const stats = FishtailPitchInput.pitchStats(state.inputReference.pitchHistory, now);
+    if (els.referenceDetectedHzLabel) els.referenceDetectedHzLabel.textContent = `${result.frequency.toFixed(3)} Hz`;
+    if (els.referenceDetectedNoteLabel) els.referenceDetectedNoteLabel.textContent = reference?.referenceNote || "--";
+    if (els.referenceDetectedCentsLabel) {
+      const cents = reference?.deviationCents || 0;
+      els.referenceDetectedCentsLabel.textContent = `${cents >= 0 ? "+" : ""}${cents.toFixed(2)} cents`;
+    }
+    if (els.referenceStabilityLabel) {
+      if (stats.ok) {
+        const movement = `±${Math.max(0, stats.spreadCents).toFixed(1)} cents`;
+        els.referenceStabilityLabel.textContent = stats.state === "stable" ? `Stable ${movement}` : `Moving ${movement}`;
+        updateReferenceInputStatus(stats.state === "stable" ? "Pitch stable" : "Pitch moving");
+      } else {
+        els.referenceStabilityLabel.textContent = "Collecting pitch centre.";
+        updateReferenceInputStatus("Listening");
+      }
+    }
+  } else {
+    const status = result.reason === "too-quiet" ? "Too quiet" : "No stable fundamental";
+    if (els.referenceStabilityLabel) els.referenceStabilityLabel.textContent = status;
+    updateReferenceInputStatus(status);
+  }
+}
+
+function captureLivingReferencePitch() {
+  const stats = FishtailPitchInput.pitchStats(state.inputReference.pitchHistory, Date.now());
+  if (!stats.ok) {
+    updateReferenceInputStatus("No stable fundamental");
+    return;
+  }
+  const reference = FishtailPitchInput.hzToReference(stats.frequency, state.referenceAnchorA4Hz, referenceMidiBounds());
+  if (!reference || !REFERENCE_NOTE_NAMES.includes(reference.referenceNote)) {
+    updateReferenceInputStatus("Input unavailable");
+    return;
+  }
+  els.referenceNoteInput.value = reference.referenceNote;
+  els.referenceFreqInput.value = stats.frequency.toFixed(4);
+  state.referenceExactHz = stats.frequency;
+  state.referenceAnchorA4Hz = reference.impliedA4Hz;
+  state.inputReference.captured = {
+    mode: "live_input",
+    captured_hz: stats.frequency,
+    reference_note: reference.referenceNote,
+    reference_midi: reference.referenceMidi,
+    deviation_before_reanchor_cents: reference.deviationCents,
+    implied_a4_hz: reference.impliedA4Hz,
+    confidence: stats.confidence,
+    pitch_spread_cents: stats.spreadCents,
+    algorithm: stats.algorithm || FishtailPitchInput.ALGORITHM,
+    audio_recorded: false,
+    audio_uploaded: false,
+  };
+  applyReferencePitchChange();
+  refreshTorusTuning();
+  stopLivingReferenceInput("Captured", { restoreAudio: true });
+  if (els.referenceDetectedHzLabel) els.referenceDetectedHzLabel.textContent = `${stats.frequency.toFixed(4)} Hz`;
+  if (els.referenceDetectedNoteLabel) els.referenceDetectedNoteLabel.textContent = reference.referenceNote;
+  if (els.referenceStabilityLabel) els.referenceStabilityLabel.textContent = `Captured ${reference.referenceNote} at ${stats.frequency.toFixed(4)} Hz`;
 }
 
 function setupMotionInput() {
@@ -1286,17 +1631,23 @@ function updateSoundTimeControls() {
 }
 
 function updateReferenceFrequencyFromAnchor() {
+  state.referenceExactHz = null;
+  clearReferenceCaptureMetadata();
   const ratio = ratioForMidiFromRoot(selectedReferenceMidi(), 69);
   const hz = clamp(state.referenceAnchorA4Hz * ratio, 20, 2000);
   els.referenceFreqInput.value = hz.toFixed(2);
 }
 
 function updateReferenceAnchorFromFrequency() {
+  state.referenceExactHz = null;
+  clearReferenceCaptureMetadata();
   const ratio = ratioForMidiFromRoot(selectedReferenceMidi(), 69) || 1;
   state.referenceAnchorA4Hz = currentReferenceHz() / ratio;
 }
 
 function updateReferenceFrequencyFromFineCents(fineCents) {
+  state.referenceExactHz = null;
+  clearReferenceCaptureMetadata();
   const baseHz = referenceBaseHzForMidi(selectedReferenceMidi());
   const hz = clamp(baseHz * (2 ** (fineCents / 1200)), 20, 2000);
   els.referenceFreqInput.value = hz.toFixed(2);
@@ -1311,7 +1662,11 @@ function applyReferencePitchChange() {
 }
 
 function currentReferenceHz() {
-  return clamp(parseFloat(els.referenceFreqInput.value) || DEFAULT_REFERENCE_HZ, 20, 2000);
+  const displayed = clamp(parseFloat(els.referenceFreqInput.value) || DEFAULT_REFERENCE_HZ, 20, 2000);
+  if (state.referenceExactHz && Math.abs(displayed - state.referenceExactHz) < 0.01) {
+    return clamp(state.referenceExactHz, 20, 2000);
+  }
+  return displayed;
 }
 
 function selectedReferenceMidi() {
@@ -1823,6 +2178,7 @@ function setGenerationControlsDisabled(disabled) {
 async function generatePiece() {
   if (state.generating) return;
   state.generating = true;
+  if (state.inputReference.stream) stopLivingReferenceInput("Input ended", { restoreAudio: false });
   stopAllLiveAudio();
   playGenerateFeedback();
   state.animationPhase = 0;
@@ -1914,6 +2270,7 @@ function readSettings(seed) {
     referenceMidi: selectedReferenceMidi(),
     referenceHz: currentReferenceHz(),
     referenceAnchorA4Hz: state.referenceAnchorA4Hz,
+    referenceSource: referenceSourceMetadata(),
     tempoDivisor: clamp(parseInt(els.tempoDivisorInput.value, 10) || DEFAULT_TEMPO_DIVISOR, 1, 100000),
     breathing: Number(els.breathingInput.value) / 100,
     density: Number(els.densityInput.value) / 100,
@@ -1925,6 +2282,30 @@ function readSettings(seed) {
     rootNote: `${els.rootNoteInput.value}4`,
     rootMidi: 60 + noteToPc(els.rootNoteInput.value),
     rootFreq: clamp(parseFloat(els.rootFreqInput.value) || 432, 20, 2000),
+  };
+}
+
+function referenceSourceMetadata() {
+  const captured = state.inputReference?.captured;
+  if (!captured) {
+    return {
+      mode: "manual",
+      audio_recorded: false,
+      audio_uploaded: false,
+    };
+  }
+  return {
+    mode: "live_input",
+    captured_hz: Number(captured.captured_hz.toFixed(6)),
+    reference_note: captured.reference_note,
+    reference_midi: captured.reference_midi,
+    deviation_before_reanchor_cents: Number(captured.deviation_before_reanchor_cents.toFixed(4)),
+    implied_a4_hz: Number(captured.implied_a4_hz.toFixed(6)),
+    confidence: Number(captured.confidence.toFixed(4)),
+    pitch_spread_cents: Number(captured.pitch_spread_cents.toFixed(4)),
+    algorithm: captured.algorithm || FishtailPitchInput.ALGORITHM,
+    audio_recorded: false,
+    audio_uploaded: false,
   };
 }
 
@@ -4239,6 +4620,11 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       bpm: Number(settings.tempo.toFixed(4)),
       midi_tempo_map: settings.includeTempoMap,
     },
+    reference_source: settings.referenceSource || {
+      mode: "manual",
+      audio_recorded: false,
+      audio_uploaded: false,
+    },
     tempo_lattice: {
       enabled: Boolean(settings.tempoLatticeEnabled),
       law: stats.tempoTimeline?.law || FishtailTempoLattice.DEFAULT_LAW,
@@ -4332,6 +4718,9 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
     lines.push(`Tempo lattice: ${settings.tempoLatticeEnabled ? "on" : "off"} | rational ${(settings.rationalSwing || 0).toFixed(2)} | irrational ${(settings.irrationalSwing || 0).toFixed(2)} | events ${stats.tempoTimeline.tempoEvents.length} | range ${stats.tempoTimeline.minInstantaneousBpm.toFixed(2)}-${stats.tempoTimeline.maxInstantaneousBpm.toFixed(2)} BPM | duration ${stats.tempoTimeline.totalSeconds.toFixed(2)} s`);
   }
   lines.push(`Reference pitch: ${settings.referenceNote} = ${settings.referenceHz.toFixed(4)} Hz`);
+  if (settings.referenceSource?.mode === "live_input") {
+    lines.push(`Living reference: captured ${settings.referenceSource.captured_hz.toFixed(4)} Hz, confidence ${(settings.referenceSource.confidence * 100).toFixed(0)}%, movement ±${settings.referenceSource.pitch_spread_cents.toFixed(1)} cents; audio recorded/uploaded: no/no.`);
+  }
   lines.push(`Fishtail tempo: 60 * ${settings.referenceHz.toFixed(4)} / ${settings.tempoDivisor}`);
   lines.push(`Voices: ${settings.voices}`);
   if (stats.complexity) {
