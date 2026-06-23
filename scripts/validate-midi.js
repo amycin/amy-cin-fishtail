@@ -512,8 +512,8 @@ function runStabilityTests() {
         const cvTimeline = {
           totalSeconds: 2,
           segments: [
-            { tick: 0, tickLength: 480, durationSeconds: 1 },
-            { tick: 480, tickLength: 480, durationSeconds: 1 },
+            { tick: 0, tickLength: 480, durationSeconds: 1, pulseIndex: 0 },
+            { tick: 480, tickLength: 480, durationSeconds: 1, pulseIndex: 1 },
           ],
           tickerEvents: [{ timeSeconds: 0 }, { timeSeconds: 1 }],
         };
@@ -525,6 +525,14 @@ function runStabilityTests() {
           ],
         };
         const cvVoice = FishtailWavExport.renderCvVoiceSamples(cvPiece, "bass", cvTimeline, { sampleRate: 10, frames: 20 });
+        const cvRetriggerVoice = FishtailWavExport.renderCvVoiceSamples({
+          settings: { outputMode: "equal", cvRetriggerMs: 2 },
+          events: cvPiece.events,
+        }, "bass", cvTimeline, { sampleRate: 1000, frames: 2000 });
+        const indexedTimeline = FishtailWavExport.indexTempoTimeline(cvTimeline);
+        const cvBarClock = FishtailWavExport.clockEventsForTimeline(indexedTimeline, { cvClockMode: "bar" }, 480);
+        const cvPpqnClock = FishtailWavExport.clockEventsForTimeline(indexedTimeline, { cvClockMode: "ppqn24" }, 480);
+        const cvCalibration = FishtailWavExport.renderCvCalibrationStaircase({ sampleRate: 10 }, { cvFullScaleVolts: 5 });
         const cvPlan = FishtailWavExport.chooseCvRenderPlan(2, 3);
         const renderEstimate = FishtailWavExport.estimateRenderBytes(10, 48000);
         return {
@@ -547,7 +555,21 @@ function runStabilityTests() {
             && cvVoice.gate[0] === 1
             && cvVoice.gate[19] === 1
             && cvVoice.eventCount === 2,
-          cvPlan: cvPlan.sampleRate === 48000 && cvPlan.stemCount === 3 && cvPlan.estimate.wavBytes === 288044,
+          cvHardening: cvPlan.sampleRate === 48000
+            && cvPlan.stemCount === 3
+            && cvPlan.estimate.wavBytes === 288044
+            && cvPlan.estimate.totalBytes > cvPlan.estimate.retainedWavBytes
+            && cvPlan.byteLimit === FishtailWavExport.renderByteLimit()
+            && Math.abs(FishtailWavExport.tickToSeconds(720, indexedTimeline) - 1.5) < 1e-9
+            && cvBarClock.length === 1
+            && cvPpqnClock.length === 49
+            && cvRetriggerVoice.gate[997] === 1
+            && cvRetriggerVoice.gate[998] === 0
+            && cvRetriggerVoice.gate[1000] === 1
+            && cvCalibration.length === 50
+            && Math.abs(cvCalibration[0] + 0.4) < 1e-6
+            && Math.abs(cvCalibration[20]) < 1e-6
+            && FishtailWavExport.CV_MAX_RENDER_SECONDS === 60,
           zeroLevels: FishtailWavExport.levelSetting(0, 0.25) === 0
             && FishtailWavExport.levelSetting(undefined, 0.25) === 0.25,
           conservativeMemory: renderEstimate.offlineBytes > 0
@@ -673,7 +695,7 @@ function runStabilityTests() {
           ok: wavAudit.cvZip
             && wavAudit.cvMath
             && wavAudit.cvVoice
-            && wavAudit.cvPlan
+            && wavAudit.cvHardening
             && FishtailWavExport.CV_FULL_SCALE_VOLTS === 5,
         },
         {
@@ -1483,17 +1505,19 @@ function runFugueTests() {
     && stylesCss.includes(".pitch-panel {\n  grid-column: 2;\n  grid-row: 3;")
     && stylesCss.includes(".sound-time-panel {\n  grid-column: 2;\n  grid-row: 2;");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=39"')
+    && indexHtml.includes('href="styles.css?v=40"')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="irrationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
     && indexHtml.includes('src/audio-engine.js?v=5')
-    && indexHtml.includes('src/wav-export.js?v=4')
+    && indexHtml.includes('src/wav-export.js?v=5')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=73')
+    && indexHtml.includes('src/app.js?v=74')
     && indexHtml.includes("Listen for pitch")
+    && indexHtml.includes("Use stable pitch")
+    && indexHtml.includes("Capture anyway")
     && indexHtml.includes("Audio is analysed on this device. It is not recorded or uploaded.")
     && indexHtml.includes("Living Reference Input, pink-noise ticker")
     && indexHtml.includes("optional MediaDevices audio input")
@@ -1509,8 +1533,13 @@ function runFugueTests() {
     && stylesCss.includes("pointer-events: none");
   const cvExportOk = indexHtml.includes('id="prepareCvWavInput" type="checkbox"')
     && indexHtml.includes("Prepare analogue CV ZIP")
+    && indexHtml.includes('id="cvVoiceModeInput"')
+    && indexHtml.includes('id="cvClockModeInput"')
+    && indexHtml.includes('id="cvFullScaleInput"')
+    && indexHtml.includes('id="cvRetriggerMsInput"')
     && indexHtml.includes('id="downloadCvWavButton" type="button" disabled>Save CV ZIP</button>')
-    && indexHtml.includes("1V/oct pitch and gate WAV pairs")
+    && indexHtml.includes("1V/oct pitch, gate, and calibration WAV files")
+    && indexHtml.includes("Browser CV export is capped at 60 seconds")
     && indexHtml.includes("DC-coupled interface")
     && indexHtml.includes("analogue CV export direction");
   const appJs = fs.readFileSync(path.join(ROOT, "src", "app.js"), "utf8");
@@ -1521,6 +1550,9 @@ function runFugueTests() {
     && appJs.includes("staleRequest")
     && appJs.includes("hiddenPage")
     && appJs.includes("state.inputReference.starting")
+    && appJs.includes("resetReferenceNoiseFloor")
+    && appJs.includes("staleAfterDeviceList")
+    && appJs.includes("captureLivingReferencePitch(true)")
     && appJs.includes("chooseInputFftSize(context.sampleRate)")
     && pitchInputJs.includes("CAPTURE_MIN_RELIABLE_FRAMES")
     && pitchInputJs.includes("CAPTURE_MIN_SPAN_MS");
@@ -1532,7 +1564,11 @@ function runFugueTests() {
   const wavHardeningOk = wavExportJs.includes("levelSetting(settings.probeLevel")
     && wavExportJs.includes("levelSetting(settings.metronomeLevel")
     && wavExportJs.includes("MAX_MOBILE_RENDER_BYTES")
-    && wavExportJs.includes("OFFLINE_RENDER_BUFFER_MULTIPLIER");
+    && wavExportJs.includes("OFFLINE_RENDER_BUFFER_MULTIPLIER")
+    && wavExportJs.includes("CV_MAX_RENDER_SECONDS")
+    && wavExportJs.includes("estimateCvRenderBytes")
+    && wavExportJs.includes("indexTempoTimeline")
+    && wavExportJs.includes("calibration/cv-calibration-one-octave.wav");
   const context = makeAppContext();
   const results = vm.runInContext(`
     (() => {

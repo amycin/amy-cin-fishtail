@@ -805,6 +805,25 @@ input[type="range"] {
   background: rgba(255, 252, 239, 0.62);
 }
 
+.cv-settings {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(38, 179, 193, 0.22);
+  border-radius: 6px;
+  background: rgba(238, 249, 247, 0.58);
+}
+
+.cv-settings h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+  letter-spacing: 0;
+}
+
 .living-reference-head {
   display: flex;
   justify-content: space-between;
@@ -830,12 +849,19 @@ input[type="range"] {
 .living-selects,
 .living-readouts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.living-controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .living-selects {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.living-readouts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .living-controls button {
@@ -1394,6 +1420,7 @@ pre {
   .living-controls,
   .living-selects,
   .living-readouts,
+  .cv-settings,
   .action-buttons {
     grid-template-columns: 1fr;
   }

@@ -583,6 +583,7 @@ function bindElements() {
     "referenceListenButton",
     "referenceStopButton",
     "referenceUsePitchButton",
+    "referenceCaptureAnywayButton",
     "referenceDeviceInput",
     "referenceRangeInput",
     "referenceInputStatus",
@@ -602,6 +603,13 @@ function bindElements() {
     "prepareProbeWavInput",
     "prepareTickerWavInput",
     "prepareCvWavInput",
+    "cvVoiceModeInput",
+    "cvClockModeInput",
+    "cvFullScaleInput",
+    "cvZeroOffsetInput",
+    "cvGateVoltsInput",
+    "cvGatePolarityInput",
+    "cvRetriggerMsInput",
     "velocityModeInput",
     "dubModeInput",
     "referenceNoteInput",
@@ -745,13 +753,16 @@ function bindEvents() {
   els.downloadCvWavButton?.addEventListener("click", () => downloadLast("cvWav"));
   els.referenceListenButton?.addEventListener("click", startLivingReferenceInput);
   els.referenceStopButton?.addEventListener("click", () => stopLivingReferenceInput("Input ended", { restoreAudio: true }));
-  els.referenceUsePitchButton?.addEventListener("click", captureLivingReferencePitch);
+  els.referenceUsePitchButton?.addEventListener("click", () => captureLivingReferencePitch(false));
+  els.referenceCaptureAnywayButton?.addEventListener("click", () => captureLivingReferencePitch(true));
   els.referenceDeviceInput?.addEventListener("change", () => {
     state.inputReference.selectedDeviceId = els.referenceDeviceInput.value || null;
+    resetReferenceNoiseFloor();
     if (state.inputReference.stream) startLivingReferenceInput();
   });
   els.referenceRangeInput?.addEventListener("change", () => {
     state.inputReference.pitchHistory = [];
+    resetReferenceNoiseFloor();
     updateReferenceInputStatus(state.inputReference.stream ? "Listening" : "Permission needed");
   });
   els.toggleNotesButton.addEventListener("click", toggleNotes);
@@ -778,6 +789,7 @@ function bindEvents() {
     if (state.inputReference.stream || state.inputReference.starting) stopLivingReferenceInput("Input ended", { restoreAudio: false });
   });
   navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+    resetReferenceNoiseFloor();
     if (state.inputReference.stream) populateReferenceInputDevices(state.inputReference.selectedDeviceId);
   });
   bindSoundTimeEvents();
@@ -796,6 +808,13 @@ function bindSoundTimeEvents() {
     els.prepareProbeWavInput,
     els.prepareTickerWavInput,
     els.prepareCvWavInput,
+    els.cvVoiceModeInput,
+    els.cvClockModeInput,
+    els.cvFullScaleInput,
+    els.cvZeroOffsetInput,
+    els.cvGateVoltsInput,
+    els.cvGatePolarityInput,
+    els.cvRetriggerMsInput,
   ].filter(Boolean).forEach((input) => {
     input.addEventListener("input", () => {
       updateSoundTimeControls();
@@ -988,6 +1007,10 @@ function clearReferenceCaptureMetadata() {
   state.inputReference.captured = null;
 }
 
+function resetReferenceNoiseFloor() {
+  state.inputReference.noiseFloorDb = -80;
+}
+
 function updateReferenceInputStatus(status) {
   state.inputReference.status = status;
   const inputActive = Boolean(state.inputReference.stream);
@@ -997,7 +1020,11 @@ function updateReferenceInputStatus(status) {
   if (els.referenceStopButton) els.referenceStopButton.disabled = !inputActive && !inputStarting;
   if (els.referenceUsePitchButton) {
     const stats = FishtailPitchInput.pitchStats(state.inputReference.pitchHistory, Date.now());
-    els.referenceUsePitchButton.disabled = !inputActive || !stats.ok;
+    els.referenceUsePitchButton.disabled = !inputActive || !stats.ok || stats.state !== "stable";
+  }
+  if (els.referenceCaptureAnywayButton) {
+    const stats = FishtailPitchInput.pitchStats(state.inputReference.pitchHistory, Date.now());
+    els.referenceCaptureAnywayButton.disabled = !inputActive || !stats.ok;
   }
 }
 
@@ -1020,10 +1047,11 @@ function mediaConstraintsForReferenceInput(deviceId) {
   return { audio, video: false };
 }
 
-async function populateReferenceInputDevices(selectedDeviceId = state.inputReference.selectedDeviceId) {
+async function populateReferenceInputDevices(selectedDeviceId = state.inputReference.selectedDeviceId, options = {}) {
   if (!navigator.mediaDevices?.enumerateDevices || !els.referenceDeviceInput) return;
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
+    if (options.requestRevision != null && state.inputReference.requestRevision !== options.requestRevision) return;
     const inputs = devices.filter((device) => device.kind === "audioinput");
     const current = selectedDeviceId || els.referenceDeviceInput.value || "";
     els.referenceDeviceInput.innerHTML = '<option value="">Default input</option>';
@@ -1122,6 +1150,7 @@ async function startLivingReferenceInput() {
   const requestRevision = state.inputReference.requestRevision + 1;
   state.inputReference.requestRevision = requestRevision;
   state.inputReference.starting = true;
+  resetReferenceNoiseFloor();
   updateReferenceInputStatus("Requesting permission");
   suspendLiveAudioForReferenceInput();
   const context = ensureAudioContextFromUserGesture();
@@ -1151,6 +1180,7 @@ async function startLivingReferenceInput() {
     state.inputReference.track = track;
     state.inputReference.selectedDeviceId = selectedDeviceId;
     state.inputReference.pitchHistory = [];
+    resetReferenceNoiseFloor();
     state.inputReference.analysisFps = FishtailPitchInput.ANALYSIS_FPS;
     state.inputReference.detectorMs = 0;
     track.addEventListener?.("ended", () => {
@@ -1181,7 +1211,14 @@ async function startLivingReferenceInput() {
     state.inputReference.analyserFftSize = analyserFftSize;
     state.inputReference.timeData = new Float32Array(analyser.fftSize);
     state.inputReference.scratch = state.inputReference.scratch || FishtailPitchInput.makeScratch();
-    await populateReferenceInputDevices(selectedDeviceId);
+    await populateReferenceInputDevices(selectedDeviceId, { requestRevision });
+    const staleAfterDeviceList = state.inputReference.requestRevision !== requestRevision || state.inputReference.track !== track;
+    const hiddenAfterDeviceList = typeof document !== "undefined" && document.visibilityState === "hidden";
+    if (staleAfterDeviceList || hiddenAfterDeviceList) {
+      stopStreamTracks(stream);
+      if (!staleAfterDeviceList && hiddenAfterDeviceList) stopLivingReferenceInput("Input ended", { restoreAudio: false });
+      return;
+    }
     updateReferenceInputStatus("Listening");
     if (els.referenceStabilityLabel) els.referenceStabilityLabel.textContent = "Play or sing one sustained note.";
     scheduleReferenceInputAnalysis();
@@ -1279,10 +1316,17 @@ function updateReferenceInputReadouts(result) {
   }
 }
 
-function captureLivingReferencePitch() {
+function captureLivingReferencePitch(allowMoving = false) {
   const stats = FishtailPitchInput.pitchStats(state.inputReference.pitchHistory, Date.now());
   if (!stats.ok) {
     updateReferenceInputStatus("No stable fundamental");
+    return;
+  }
+  if (!allowMoving && stats.state !== "stable") {
+    updateReferenceInputStatus("Pitch moving");
+    if (els.referenceStabilityLabel) {
+      els.referenceStabilityLabel.textContent = `Moving ±${Math.max(0, stats.spreadCents).toFixed(1)} cents; use Capture anyway to take this centre.`;
+    }
     return;
   }
   const reference = FishtailPitchInput.hzToReference(stats.frequency, state.referenceAnchorA4Hz, referenceMidiBounds());
@@ -1303,6 +1347,8 @@ function captureLivingReferencePitch() {
     implied_a4_hz: reference.impliedA4Hz,
     confidence: stats.confidence,
     pitch_spread_cents: stats.spreadCents,
+    pitch_state: stats.state,
+    capture_anyway: Boolean(allowMoving && stats.state !== "stable"),
     algorithm: stats.algorithm || FishtailPitchInput.ALGORITHM,
     audio_recorded: false,
     audio_uploaded: false,
@@ -2218,6 +2264,13 @@ function setGenerationControlsDisabled(disabled) {
     els.prepareProbeWavInput,
     els.prepareTickerWavInput,
     els.prepareCvWavInput,
+    els.cvVoiceModeInput,
+    els.cvClockModeInput,
+    els.cvFullScaleInput,
+    els.cvZeroOffsetInput,
+    els.cvGateVoltsInput,
+    els.cvGatePolarityInput,
+    els.cvRetriggerMsInput,
     els.velocityModeInput,
     els.dubModeInput,
     els.referenceNoteInput,
@@ -2328,6 +2381,13 @@ function readSettings(seed) {
     prepareProbeWav: Boolean(els.prepareProbeWavInput?.checked),
     prepareTickerWav: Boolean(els.prepareTickerWavInput?.checked),
     prepareCvWav: Boolean(els.prepareCvWavInput?.checked),
+    cvVoiceMode: els.cvVoiceModeInput?.value || "all",
+    cvClockMode: els.cvClockModeInput?.value || "pulse",
+    cvFullScaleVolts: clamp(parseFloat(els.cvFullScaleInput?.value) || 5, 1, 10),
+    cvZeroOffsetVolts: clamp(parseFloat(els.cvZeroOffsetInput?.value) || 0, -5, 5),
+    cvGateVolts: clamp(parseFloat(els.cvGateVoltsInput?.value) || 5, 0.5, 10),
+    cvGatePolarity: els.cvGatePolarityInput?.value === "inverted" ? "inverted" : "positive",
+    cvRetriggerMs: clamp(parseFloat(els.cvRetriggerMsInput?.value) || 0, 0, 5),
     velocityProfile: els.velocityModeInput?.checked ? "auto" : "flat",
     dubMode: Boolean(els.dubModeInput.checked),
     referenceNote: els.referenceNoteInput.value || DEFAULT_REFERENCE_NOTE,
@@ -4732,8 +4792,15 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
         sample_rate_hz: FishtailWavExport.CV_SAMPLE_RATE,
         pitch_standard: "1V/oct",
         reference: "C4 = 0V",
-        full_scale_volts: FishtailWavExport.CV_FULL_SCALE_VOLTS,
+        voice_mode: settings.cvVoiceMode,
+        clock_mode: settings.cvClockMode,
+        full_scale_volts: settings.cvFullScaleVolts,
+        zero_offset_volts: settings.cvZeroOffsetVolts,
+        gate_volts: settings.cvGateVolts,
+        gate_polarity: settings.cvGatePolarity,
+        retrigger_gap_ms: settings.cvRetriggerMs,
         clock_pulse_seconds: FishtailWavExport.CV_CLOCK_PULSE_SECONDS,
+        max_duration_seconds: FishtailWavExport.CV_MAX_RENDER_SECONDS,
         dc_coupled_required_for_pitch: true,
       },
     },

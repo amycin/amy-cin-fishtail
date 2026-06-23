@@ -11,10 +11,13 @@
   const CV_SAMPLE_RATE = 48000;
   const CV_FULL_SCALE_VOLTS = 5;
   const CV_REFERENCE_MIDI = 60;
-  const CV_GATE_HIGH = 1;
   const CV_CLOCK_PULSE_SECONDS = 0.02;
+  const CV_PPQN_PULSE_SECONDS = 0.005;
   const CV_TAIL_SECONDS = 0.12;
+  const CV_MAX_RENDER_SECONDS = 60;
   const CV_VOICE_ORDER = ["bass", "tenor", "alto", "soprano"];
+  const CV_CALIBRATION_FILES = 3;
+  const CV_CALIBRATION_SECONDS = 10;
 
   function clamp(value, min, max) {
     return global.FishtailTempoLattice?.clamp
@@ -288,43 +291,138 @@
     return Math.log2(tunedHz / rootFreq) + ((rootMidi - CV_REFERENCE_MIDI) / 12);
   }
 
+  function cvSettings(settings = {}) {
+    const fullScale = Number(settings.cvFullScaleVolts ?? settings.fullScaleVolts);
+    const zeroOffset = Number(settings.cvZeroOffsetVolts ?? settings.zeroOffsetVolts);
+    const gateVolts = Number(settings.cvGateVolts ?? settings.gateVolts);
+    const retriggerMs = Number(settings.cvRetriggerMs ?? settings.retriggerMs);
+    const requestedClockMode = settings.cvClockMode ?? settings.clockMode;
+    const requestedGatePolarity = settings.cvGatePolarity ?? settings.gatePolarity;
+    const clockMode = ["pulse", "bar", "ppqn24"].includes(requestedClockMode) ? requestedClockMode : "pulse";
+    const gatePolarity = requestedGatePolarity === "inverted" ? "inverted" : "positive";
+    return {
+      fullScaleVolts: clamp(Number.isFinite(fullScale) ? fullScale : CV_FULL_SCALE_VOLTS, 1, 10),
+      zeroOffsetVolts: clamp(Number.isFinite(zeroOffset) ? zeroOffset : 0, -5, 5),
+      gateVolts: clamp(Number.isFinite(gateVolts) ? gateVolts : 5, 0.5, 10),
+      gatePolarity,
+      retriggerMs: clamp(Number.isFinite(retriggerMs) ? retriggerMs : 2, 0, 5),
+      clockMode,
+    };
+  }
+
+  function cvSampleForVolts(volts, settings = {}, options = {}) {
+    const cv = settings.fullScaleVolts ? settings : cvSettings(settings);
+    const offset = options.applyZeroOffset === false ? 0 : cv.zeroOffsetVolts;
+    return clamp((Number(volts || 0) + offset) / cv.fullScaleVolts, -1, 1);
+  }
+
   function eventCvSample(event, settings = {}) {
-    return clamp(eventCvVolts(event, settings) / CV_FULL_SCALE_VOLTS, -1, 1);
+    return cvSampleForVolts(eventCvVolts(event, settings), settings);
+  }
+
+  function indexTempoTimeline(timeline) {
+    const rawSegments = [...(timeline?.segments || [])].sort((a, b) => (Number(a.tick) || 0) - (Number(b.tick) || 0));
+    const segments = [];
+    let elapsed = 0;
+    rawSegments.forEach((segment) => {
+      const startTick = Math.max(0, Number(segment.tick) || 0);
+      const tickLength = Math.max(1, Number(segment.tickLength) || 1);
+      const durationSeconds = Math.max(0, Number(segment.durationSeconds) || 0);
+      segments.push({
+        ...segment,
+        tick: startTick,
+        startTick,
+        tickLength,
+        endTick: startTick + tickLength,
+        durationSeconds,
+        startSeconds: elapsed,
+        endSeconds: elapsed + durationSeconds,
+      });
+      elapsed += durationSeconds;
+    });
+    return {
+      indexed: true,
+      source: timeline,
+      segments,
+      tickerEvents: timeline?.tickerEvents || [],
+      totalSeconds: Number.isFinite(Number(timeline?.totalSeconds)) ? Number(timeline.totalSeconds) : elapsed,
+      endTick: segments.length ? segments[segments.length - 1].endTick : 0,
+    };
   }
 
   function tickToSeconds(tick, timeline) {
     const safeTick = Math.max(0, Number(tick) || 0);
-    const segments = [...(timeline?.segments || [])].sort((a, b) => a.tick - b.tick);
+    const indexed = timeline?.indexed ? timeline : indexTempoTimeline(timeline);
+    const segments = indexed.segments || [];
     if (!segments.length) return 0;
-    let elapsed = 0;
-    for (const segment of segments) {
-      const startTick = Math.max(0, Number(segment.tick) || 0);
-      const tickLength = Math.max(1, Number(segment.tickLength) || 1);
-      const durationSeconds = Math.max(0, Number(segment.durationSeconds) || 0);
-      const endTick = startTick + tickLength;
-      if (safeTick < startTick) return elapsed;
-      if (safeTick <= endTick) {
-        const local = clamp((safeTick - startTick) / tickLength, 0, 1);
-        return elapsed + durationSeconds * local;
+    if (safeTick < segments[0].startTick) return 0;
+    let lo = 0;
+    let hi = segments.length - 1;
+    let index = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (segments[mid].startTick <= safeTick) {
+        index = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
       }
-      elapsed += durationSeconds;
     }
-    return Number.isFinite(Number(timeline?.totalSeconds)) ? Number(timeline.totalSeconds) : elapsed;
+    const segment = segments[index];
+    if (safeTick <= segment.endTick) {
+      const local = clamp((safeTick - segment.startTick) / segment.tickLength, 0, 1);
+      return segment.startSeconds + segment.durationSeconds * local;
+    }
+    return Math.min(indexed.totalSeconds, segment.endSeconds);
   }
 
-  function chooseCvRenderPlan(durationSeconds, stemCount) {
+  function estimateCvRenderBytes(durationSeconds, stemCount, options = {}) {
     const sampleRate = CV_SAMPLE_RATE;
     const frames = Math.ceil(Math.max(0, durationSeconds) * sampleRate);
+    const safeStemCount = Math.max(1, Math.round(stemCount || 1));
+    const calibrationFileCount = Math.max(0, Math.round(options.calibrationFileCount ?? CV_CALIBRATION_FILES));
+    const calibrationSeconds = Math.max(0, Number(options.calibrationSeconds ?? CV_CALIBRATION_SECONDS) || 0);
     const perStemBytes = frames * CHANNELS * 3 + 44;
-    const totalBytes = perStemBytes * Math.max(1, stemCount);
-    if (totalBytes > MAX_RENDER_BYTES) {
+    const retainedWavBytes = perStemBytes * safeStemCount;
+    const zipDuplicateBytes = retainedWavBytes;
+    const workingFloatBytes = frames * CHANNELS * 4 * 2;
+    const calibrationFrames = Math.ceil(calibrationSeconds * sampleRate);
+    const calibrationWavBytes = calibrationFrames * CHANNELS * 3 + 44 * calibrationFileCount;
+    const calibrationWorkingBytes = calibrationFrames * CHANNELS * 4;
+    const calibrationZipDuplicateBytes = calibrationWavBytes;
+    const totalBytes = retainedWavBytes
+      + zipDuplicateBytes
+      + workingFloatBytes
+      + calibrationWavBytes
+      + calibrationZipDuplicateBytes
+      + calibrationWorkingBytes;
+    return {
+      frames,
+      wavBytes: perStemBytes,
+      retainedWavBytes,
+      zipDuplicateBytes,
+      workingFloatBytes,
+      calibrationWavBytes,
+      calibrationZipDuplicateBytes,
+      calibrationWorkingBytes,
+      totalBytes,
+    };
+  }
+
+  function chooseCvRenderPlan(durationSeconds, stemCount, options = {}) {
+    const sampleRate = CV_SAMPLE_RATE;
+    const renderSeconds = Math.max(0, Number(durationSeconds) || 0);
+    const estimate = estimateCvRenderBytes(renderSeconds, stemCount, options);
+    const byteLimit = renderByteLimit();
+    if (estimate.totalBytes > byteLimit) {
       throw new Error("Analogue CV package too long for safe browser rendering");
     }
     return {
       sampleRate,
-      frames,
-      stemCount,
-      estimate: { frames, wavBytes: perStemBytes, totalBytes },
+      frames: estimate.frames,
+      stemCount: Math.max(1, Math.round(stemCount || 1)),
+      estimate,
+      byteLimit,
       fallback: false,
     };
   }
@@ -342,13 +440,54 @@
     });
   }
 
-  function renderCvClockSamples(timeline, plan) {
+  function cvVoiceNamesForPiece(piece, settings = {}) {
+    const voices = voiceNamesForPiece(piece);
+    const requested = settings.cvVoiceMode || "all";
+    if (!requested || requested === "all") return voices;
+    if (!voices.includes(requested)) throw new Error(`Selected CV voice has no generated events: ${requested}`);
+    return [requested];
+  }
+
+  function clockEventsForTimeline(timeline, settings = {}, ppq = 480) {
+    const indexed = timeline?.indexed ? timeline : indexTempoTimeline(timeline);
+    const cv = cvSettings(settings);
+    if (cv.clockMode === "bar") {
+      return (indexed.segments || [])
+        .filter((segment) => Number(segment.pulseIndex || 0) === 0)
+        .map((segment) => ({ timeSeconds: segment.startSeconds, accentLevel: 1 }));
+    }
+    if (cv.clockMode === "ppqn24") {
+      const stepTicks = Math.max(1, (Number(ppq) || 480) / 24);
+      const events = [];
+      for (let tick = 0; tick <= indexed.endTick; tick += stepTicks) {
+        events.push({ timeSeconds: tickToSeconds(tick, indexed), accentLevel: tick === 0 ? 1 : 0.25 });
+      }
+      return events;
+    }
+    return (indexed.tickerEvents || []).map((event) => ({
+      timeSeconds: Number(event.timeSeconds) || 0,
+      accentLevel: Number(event.accentLevel) || 0.25,
+    }));
+  }
+
+  function gateSamplesForSettings(settings = {}) {
+    const cv = cvSettings(settings);
+    const high = cvSampleForVolts(cv.gateVolts, cv, { applyZeroOffset: false });
+    const low = cvSampleForVolts(0, cv, { applyZeroOffset: false });
+    return cv.gatePolarity === "inverted" ? { on: low, off: high, high, low } : { on: high, off: low, high, low };
+  }
+
+  function renderCvClockSamples(timeline, plan, settings = {}, ppq = 480) {
     const samples = new Float32Array(plan.frames);
-    const pulseFrames = Math.max(1, Math.round(CV_CLOCK_PULSE_SECONDS * plan.sampleRate));
-    (timeline?.tickerEvents || []).forEach((event) => {
+    const cv = cvSettings(settings);
+    const gate = gateSamplesForSettings(cv);
+    samples.fill(gate.off);
+    const pulseSeconds = cv.clockMode === "ppqn24" ? CV_PPQN_PULSE_SECONDS : CV_CLOCK_PULSE_SECONDS;
+    const pulseFrames = Math.max(1, Math.round(pulseSeconds * plan.sampleRate));
+    clockEventsForTimeline(timeline, cv, ppq).forEach((event) => {
       const start = frameAt(event.timeSeconds || 0, plan.sampleRate, samples.length);
       const end = Math.min(samples.length, start + pulseFrames);
-      if (end > start) samples.fill(CV_GATE_HIGH, start, end);
+      if (end > start) samples.fill(gate.on, start, end);
     });
     return samples;
   }
@@ -356,28 +495,68 @@
   function renderCvVoiceSamples(piece, voice, timeline, plan) {
     const pitch = new Float32Array(plan.frames);
     const gate = new Float32Array(plan.frames);
+    const settings = piece.settings || {};
+    const cv = cvSettings(settings);
+    const gateLevels = gateSamplesForSettings(cv);
+    const retriggerFrames = Math.round((cv.retriggerMs / 1000) * plan.sampleRate);
     const events = (piece?.events || [])
       .filter((event) => event.voice === voice)
       .sort((a, b) => a.tick - b.tick || b.duration - a.duration);
-    const firstValue = events.length ? eventCvSample(events[0], piece.settings || {}) : 0;
+    const indexed = timeline?.indexed ? timeline : indexTempoTimeline(timeline);
+    const firstValue = events.length ? eventCvSample(events[0], settings) : cvSampleForVolts(0, cv);
     pitch.fill(firstValue);
+    gate.fill(gateLevels.off);
     let lastValue = firstValue;
     let cursor = 0;
 
     events.forEach((event) => {
-      const start = frameAt(tickToSeconds(event.tick, timeline), plan.sampleRate, plan.frames);
-      const end = frameAt(tickToSeconds((event.tick || 0) + Math.max(1, event.duration || 1), timeline), plan.sampleRate, plan.frames);
-      const value = eventCvSample(event, piece.settings || {});
+      const start = frameAt(tickToSeconds(event.tick, indexed), plan.sampleRate, plan.frames);
+      const end = frameAt(tickToSeconds((event.tick || 0) + Math.max(1, event.duration || 1), indexed), plan.sampleRate, plan.frames);
+      const value = eventCvSample(event, settings);
       if (start > cursor) pitch.fill(lastValue, cursor, start);
       if (end > start) {
         pitch.fill(value, start, end);
-        gate.fill(CV_GATE_HIGH, start, end);
+        const gateEnd = retriggerFrames > 0 ? Math.max(start + 1, end - retriggerFrames) : end;
+        gate.fill(gateLevels.on, start, gateEnd);
         lastValue = value;
         cursor = end;
       }
     });
     if (cursor < plan.frames) pitch.fill(lastValue, cursor);
     return { pitch, gate, eventCount: events.length };
+  }
+
+  function renderCvCalibrationStaircase(plan, settings = {}) {
+    const samples = new Float32Array(Math.max(1, Math.round(5 * plan.sampleRate)));
+    const cv = cvSettings(settings);
+    const steps = [-2, -1, 0, 1, 2];
+    const stepFrames = Math.max(1, Math.floor(samples.length / steps.length));
+    steps.forEach((volts, index) => {
+      const start = index * stepFrames;
+      const end = index === steps.length - 1 ? samples.length : Math.min(samples.length, start + stepFrames);
+      samples.fill(cvSampleForVolts(volts, cv), start, end);
+    });
+    return samples;
+  }
+
+  function renderCvOneOctaveTest(plan, settings = {}) {
+    const samples = new Float32Array(Math.max(1, Math.round(3 * plan.sampleRate)));
+    const cv = cvSettings(settings);
+    const half = Math.floor(samples.length / 2);
+    samples.fill(cvSampleForVolts(0, cv), 0, half);
+    samples.fill(cvSampleForVolts(1, cv), half);
+    return samples;
+  }
+
+  function renderCvGateTest(plan, settings = {}) {
+    const samples = new Float32Array(Math.max(1, Math.round(2 * plan.sampleRate)));
+    const levels = gateSamplesForSettings(settings);
+    samples.fill(levels.off);
+    const pulseFrames = Math.max(1, Math.round(0.25 * plan.sampleRate));
+    for (let start = 0; start < samples.length; start += pulseFrames * 2) {
+      samples.fill(levels.on, start, Math.min(samples.length, start + pulseFrames));
+    }
+    return samples;
   }
 
   function timelineForPiece(piece) {
@@ -501,10 +680,14 @@
   }
 
   async function renderCvZip(piece) {
-    const timeline = timelineForPiece(piece);
+    const timeline = indexTempoTimeline(timelineForPiece(piece));
     const settings = piece.settings || {};
-    const voices = voiceNamesForPiece(piece);
+    const cv = cvSettings(settings);
+    const voices = cvVoiceNamesForPiece(piece, settings);
     const pieceSeconds = timeline.totalSeconds || 0;
+    if (pieceSeconds > CV_MAX_RENDER_SECONDS) {
+      throw new Error(`Analogue CV export is capped at ${CV_MAX_RENDER_SECONDS} seconds for browser memory safety`);
+    }
     const renderSeconds = pieceSeconds + CV_TAIL_SECONDS;
     const stemCount = 1 + voices.length * 2;
     const plan = chooseCvRenderPlan(renderSeconds, stemCount);
@@ -513,14 +696,17 @@
     const files = [];
     const stemManifest = [];
     const clockFilename = `clock/amy-cin-fishtail-cv-clock-${tempo}bpm-${seed}.wav`;
-    const clockSamples = renderCvClockSamples(timeline, plan);
+    const clockSamples = renderCvClockSamples(timeline, plan, cv, piece.ppq || 480);
     files.push({ name: clockFilename, data: encodePcm24Mono(clockSamples, plan.sampleRate) });
     stemManifest.push({
       kind: "clock",
       voice: null,
       filename: clockFilename,
-      high_sample: CV_GATE_HIGH,
-      pulse_seconds: CV_CLOCK_PULSE_SECONDS,
+      mode: cv.clockMode,
+      label: cv.clockMode === "pulse" ? "musical pulse clock" : cv.clockMode === "bar" ? "bar-start pulse clock" : "24 PPQN pulse clock",
+      high_sample: gateSamplesForSettings(cv).high,
+      low_sample: gateSamplesForSettings(cv).low,
+      pulse_seconds: cv.clockMode === "ppqn24" ? CV_PPQN_PULSE_SECONDS : CV_CLOCK_PULSE_SECONDS,
     });
 
     voices.forEach((voice) => {
@@ -541,7 +727,40 @@
         voice,
         filename: gateFilename,
         event_count: rendered.eventCount,
-        high_sample: CV_GATE_HIGH,
+        high_sample: gateSamplesForSettings(cv).high,
+        low_sample: gateSamplesForSettings(cv).low,
+        polarity: cv.gatePolarity,
+        retrigger_gap_ms: cv.retriggerMs,
+      });
+    });
+
+    const calibrationManifest = [
+      {
+        kind: "pitch_calibration_staircase",
+        filename: "calibration/cv-calibration-staircase-1voct.wav",
+        description: "-2V, -1V, 0V, +1V, +2V one-second steps for interface calibration.",
+        samples: renderCvCalibrationStaircase(plan, cv),
+      },
+      {
+        kind: "pitch_calibration_one_octave",
+        filename: "calibration/cv-calibration-one-octave.wav",
+        description: "0V then +1V for a one-octave oscillator calibration check.",
+        samples: renderCvOneOctaveTest(plan, cv),
+      },
+      {
+        kind: "gate_calibration_test",
+        filename: "calibration/cv-gate-polarity-test.wav",
+        description: "Alternating gate pulses using the selected gate voltage and polarity.",
+        samples: renderCvGateTest(plan, cv),
+      },
+    ];
+    calibrationManifest.forEach((calibration) => {
+      files.push({ name: calibration.filename, data: encodePcm24Mono(calibration.samples, plan.sampleRate) });
+      stemManifest.push({
+        kind: calibration.kind,
+        voice: null,
+        filename: calibration.filename,
+        description: calibration.description,
       });
     });
 
@@ -554,17 +773,34 @@
       channels_per_file: CHANNELS,
       piece_seconds: Number(pieceSeconds.toFixed(4)),
       duration_seconds: Number(renderSeconds.toFixed(4)),
+      max_duration_seconds: CV_MAX_RENDER_SECONDS,
+      memory_estimate_bytes: plan.estimate,
+      byte_limit: plan.byteLimit,
       clock: {
-        source: "same tempo lattice ticker events used by MIDI conductor timing",
-        pulse_seconds: CV_CLOCK_PULSE_SECONDS,
-        high_sample: CV_GATE_HIGH,
+        source: cv.clockMode === "pulse"
+          ? "musical pulse events from the same tempo lattice used by MIDI conductor timing"
+          : cv.clockMode === "bar"
+            ? "bar-start pulses derived from the tempo lattice"
+            : "24 PPQN pulses derived from the tempo lattice",
+        mode: cv.clockMode,
+        pulse_seconds: cv.clockMode === "ppqn24" ? CV_PPQN_PULSE_SECONDS : CV_CLOCK_PULSE_SECONDS,
+        high_sample: gateSamplesForSettings(cv).high,
+        low_sample: gateSamplesForSettings(cv).low,
+        note: cv.clockMode === "pulse" ? "This is a musical pulse clock, not a 24 PPQN transport clock." : "Use the mode field to distinguish musical pulse, bar-start, and 24 PPQN clocks.",
       },
       pitch_cv: {
         standard: "1V/oct CV-style audio",
         reference: "C4 = 0V",
-        full_scale: `+/-${CV_FULL_SCALE_VOLTS}V maps to +/-1.0 sample`,
+        full_scale: `+/-${cv.fullScaleVolts}V maps to +/-1.0 sample`,
+        zero_offset_volts: cv.zeroOffsetVolts,
         note: "Use a DC-coupled interface or DAW CV utility; ordinary headphone outputs are usually AC-coupled and will not pass pitch CV correctly.",
       },
+      gate_cv: {
+        gate_volts: cv.gateVolts,
+        polarity: cv.gatePolarity,
+        retrigger_gap_ms: cv.retriggerMs,
+      },
+      calibration: calibrationManifest.map(({ kind, filename, description }) => ({ kind, filename, description })),
       stems: stemManifest,
     };
     files.push({ name: "manifest.json", data: stringBytes(JSON.stringify(manifest, null, 2)) });
@@ -574,9 +810,14 @@
         "amy_cin fishtail analogue CV package",
         "",
         "This ZIP contains mono 24-bit WAV files for modular / analogue workflows:",
-        "- clock/*.wav: clean +5V-style clock pulses from the same tempo lattice used by the MIDI conductor map.",
+        "- clock/*.wav: the selected pulse clock derived from the same tempo lattice used by the MIDI conductor map.",
         "- pitch/*.wav: 1V/oct CV-style pitch tracks, C4 = 0V, one octave = one volt.",
-        "- gate/*.wav: +5V-style gates that follow each written voice note.",
+        "- gate/*.wav: gates that follow each written voice note, with the selected voltage, polarity and retrigger gap.",
+        "- calibration/*.wav: staircase, one-octave and gate test files for interface calibration.",
+        "",
+        `Clock mode: ${cv.clockMode}. Musical pulses are performance pulse events, not conventional MIDI 24 PPQN clock.`,
+        `Pitch scale: +/-${cv.fullScaleVolts}V maps to +/-1.0 sample; zero offset is ${cv.zeroOffsetVolts}V.`,
+        `Gate: ${cv.gateVolts}V ${cv.gatePolarity}; retrigger gap ${cv.retriggerMs} ms.`,
         "",
         "Important: WAV files do not guarantee real-world volts by themselves.",
         "Use a DC-coupled audio interface, modular audio-to-CV tool, or DAW CV utility and calibrate your oscillator.",
@@ -604,7 +845,7 @@
       channels: CHANNELS,
       stemCount,
       voiceCount: voices.length,
-      files: stemManifest.map((stem) => stem.filename),
+      files: files.map((file) => file.name),
       cv: manifest.pitch_cv,
     };
   }
@@ -620,6 +861,8 @@
     CV_FULL_SCALE_VOLTS,
     CV_REFERENCE_MIDI,
     CV_CLOCK_PULSE_SECONDS,
+    CV_PPQN_PULSE_SECONDS,
+    CV_MAX_RENDER_SECONDS,
     dbfsToGain,
     levelSetting,
     peakAbs,
@@ -627,11 +870,20 @@
     encodePcm24Mono,
     renderByteLimit,
     makeZip,
+    cvSettings,
+    cvSampleForVolts,
+    indexTempoTimeline,
     tickToSeconds,
+    estimateCvRenderBytes,
     eventCvVolts,
     eventCvSample,
     chooseCvRenderPlan,
+    clockEventsForTimeline,
     renderCvVoiceSamples,
+    renderCvClockSamples,
+    renderCvCalibrationStaircase,
+    renderCvOneOctaveTest,
+    renderCvGateTest,
     estimateRenderBytes,
     chooseRenderPlan,
     renderProbeWav,
