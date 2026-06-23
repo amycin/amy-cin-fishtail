@@ -5,6 +5,7 @@
   const CHANNELS = 1;
   const MAX_RENDER_BYTES = 220 * 1024 * 1024;
   const MAX_MOBILE_RENDER_BYTES = 96 * 1024 * 1024;
+  const MAX_CONFIRMED_RENDER_BYTES = 512 * 1024 * 1024;
   const OFFLINE_RENDER_BUFFER_MULTIPLIER = 3;
   const EPSILON_GAIN = 0.0001;
   const TICKER_NORMALIZE_DBFS = -6;
@@ -18,6 +19,7 @@
   const CV_VOICE_ORDER = ["bass", "tenor", "alto", "soprano"];
   const CV_CALIBRATION_FILES = 3;
   const CV_CALIBRATION_SECONDS = 10;
+  const PROBE_EXPORT_BARS = 2;
 
   function clamp(value, min, max) {
     return global.FishtailTempoLattice?.clamp
@@ -87,11 +89,11 @@
     return mobileRenderLikely() ? MAX_MOBILE_RENDER_BYTES : MAX_RENDER_BYTES;
   }
 
-  function chooseRenderPlan(durationSeconds) {
+  function chooseRenderPlan(durationSeconds, options = {}) {
     const preferred = durationSeconds < 60 ? 96000 : 48000;
     let sampleRate = preferred;
     let estimate = estimateRenderBytes(durationSeconds, sampleRate);
-    const byteLimit = renderByteLimit();
+    const byteLimit = options.allowLarge ? MAX_CONFIRMED_RENDER_BYTES : renderByteLimit();
     let fallback = false;
     if (estimate.totalBytes > byteLimit && sampleRate > 48000) {
       sampleRate = 48000;
@@ -416,7 +418,7 @@
     const sampleRate = CV_SAMPLE_RATE;
     const renderSeconds = Math.max(0, Number(durationSeconds) || 0);
     const estimate = estimateCvRenderBytes(renderSeconds, stemCount, options);
-    const byteLimit = renderByteLimit();
+    const byteLimit = options.allowLarge ? MAX_CONFIRMED_RENDER_BYTES : renderByteLimit();
     if (estimate.totalBytes > byteLimit) {
       throw new Error("Analogue CV package too large for this browser; choose one CV voice and First 60 seconds, or use a desktop browser");
     }
@@ -573,12 +575,32 @@
     throw new Error("Tempo timeline is missing");
   }
 
+  function probeExportPieceSeconds(timeline, bars = PROBE_EXPORT_BARS) {
+    const fullSeconds = Math.max(0, Number(timeline?.totalSeconds) || 0);
+    const segments = [...(timeline?.segments || [])].sort((a, b) => (Number(a.tick) || 0) - (Number(b.tick) || 0));
+    if (!segments.length) return Math.min(fullSeconds, 8);
+    const wantedBars = Math.max(1, Math.round(Number(bars) || PROBE_EXPORT_BARS));
+    const seenBars = new Set();
+    let seconds = 0;
+    for (const segment of segments) {
+      const fallbackBar = Math.floor((Number(segment.tick) || 0) / Math.max(1, Number(segment.tickLength) || 1));
+      const key = `${Number(segment.sectionIndex) || 0}:${Number.isFinite(Number(segment.barIndex)) ? Number(segment.barIndex) : fallbackBar}`;
+      if (!seenBars.has(key)) {
+        if (seenBars.size >= wantedBars) break;
+        seenBars.add(key);
+      }
+      seconds += Math.max(0, Number(segment.durationSeconds) || 0);
+    }
+    return Math.min(fullSeconds || seconds, Math.max(0.5, seconds || fullSeconds));
+  }
+
   async function renderProbeWav(piece) {
     const timeline = timelineForPiece(piece);
     const settings = piece.settings || {};
-    const pieceSeconds = timeline.totalSeconds || 0;
+    const fullPieceSeconds = timeline.totalSeconds || 0;
+    const pieceSeconds = probeExportPieceSeconds(timeline);
     const renderSeconds = pieceSeconds + global.FishtailTempoLattice.TEARDROP_RELEASE_SECONDS + 0.08;
-    const plan = chooseRenderPlan(renderSeconds);
+    const plan = chooseRenderPlan(renderSeconds, { allowLarge: Boolean(settings.audioExportConfirmed) });
     const context = offlineContext(plan.estimate.frames, plan.sampleRate);
     const table = global.FishtailTempoLattice.buildTeardropVoiceTable(settings.referenceHz || 216, 12);
     const mix = context.createGain();
@@ -612,9 +634,10 @@
     const buffer = await context.startRendering();
     const bytes = encodePcm24Mono(buffer.getChannelData(0), plan.sampleRate);
     const seed = String(settings.seed || "seed").slice(0, 8);
-    const filename = `amy-cin-fishtail-probe-${filenameNumber(settings.referenceHz || 216)}hz-${seed}.wav`;
+    const filename = `amy-cin-fishtail-probe-first${PROBE_EXPORT_BARS}bars-${filenameNumber(settings.referenceHz || 216)}hz-${seed}.wav`;
     return {
       kind: "probe",
+      label: `probe ${PROBE_EXPORT_BARS}-bar reference`,
       bytes,
       blob: wavBlob(bytes),
       filename,
@@ -622,6 +645,7 @@
       bitDepth: BIT_DEPTH,
       durationSeconds: renderSeconds,
       pieceSeconds,
+      fullPieceSeconds,
       fallbackSampleRate: plan.fallback,
     };
   }
@@ -631,7 +655,7 @@
     const settings = piece.settings || {};
     const pieceSeconds = timeline.totalSeconds || 0;
     const renderSeconds = pieceSeconds + 0.12;
-    const plan = chooseRenderPlan(renderSeconds);
+    const plan = chooseRenderPlan(renderSeconds, { allowLarge: Boolean(settings.audioExportConfirmed) });
     const context = offlineContext(plan.estimate.frames, plan.sampleRate);
     const source = context.createBufferSource();
     source.buffer = global.FishtailAudioEngine.makePinkNoiseBuffer(context);
@@ -688,14 +712,14 @@
     const cv = cvSettings(settings);
     const voices = cvVoiceNamesForPiece(piece, settings);
     const fullPieceSeconds = timeline.totalSeconds || 0;
-    if (cv.durationMode === "full" && fullPieceSeconds > CV_MAX_RENDER_SECONDS) {
+    if (cv.durationMode === "full" && fullPieceSeconds > CV_MAX_RENDER_SECONDS && !settings.audioExportConfirmed) {
       throw new Error(`Whole-piece CV export is capped at ${CV_MAX_RENDER_SECONDS} seconds for browser memory safety; choose First 60 seconds or shorten the form`);
     }
     const pieceSeconds = cv.durationMode === "full" ? fullPieceSeconds : Math.min(fullPieceSeconds, CV_MAX_RENDER_SECONDS);
     const truncated = pieceSeconds + 0.0001 < fullPieceSeconds;
     const renderSeconds = pieceSeconds + CV_TAIL_SECONDS;
     const stemCount = 1 + voices.length * 2;
-    const plan = chooseCvRenderPlan(renderSeconds, stemCount);
+    const plan = chooseCvRenderPlan(renderSeconds, stemCount, { allowLarge: Boolean(settings.audioExportConfirmed) });
     const seed = safeFilenamePart(String(settings.seed || "seed").slice(0, 8));
     const tempo = filenameNumber(settings.tempo || 60);
     const durationSlug = truncated ? `first${Math.round(pieceSeconds)}s-` : "";
@@ -865,6 +889,7 @@
     CHANNELS,
     MAX_RENDER_BYTES,
     MAX_MOBILE_RENDER_BYTES,
+    MAX_CONFIRMED_RENDER_BYTES,
     OFFLINE_RENDER_BUFFER_MULTIPLIER,
     TICKER_NORMALIZE_DBFS,
     CV_SAMPLE_RATE,
@@ -873,6 +898,7 @@
     CV_CLOCK_PULSE_SECONDS,
     CV_PPQN_PULSE_SECONDS,
     CV_MAX_RENDER_SECONDS,
+    PROBE_EXPORT_BARS,
     dbfsToGain,
     levelSetting,
     peakAbs,
@@ -884,6 +910,7 @@
     cvSampleForVolts,
     indexTempoTimeline,
     tickToSeconds,
+    probeExportPieceSeconds,
     estimateCvRenderBytes,
     eventCvVolts,
     eventCvSample,

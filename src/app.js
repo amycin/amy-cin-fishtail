@@ -1689,8 +1689,12 @@ function updateTempoControls() {
 }
 
 function currentSectionMetaForTimeline() {
+  return sectionMetaFromSections(state.sections.map(normalizeSection));
+}
+
+function sectionMetaFromSections(sections) {
   let currentTick = 0;
-  return state.sections.map(normalizeSection).map((section) => {
+  return (sections || []).map(normalizeSection).map((section) => {
     const meter = METERS[section.meter] || METERS["4/4"];
     const barTicks = meter.numerator * meter.pulse;
     const meta = {
@@ -2296,6 +2300,19 @@ function setGenerationControlsDisabled(disabled) {
 
 async function generatePiece() {
   if (state.generating) return;
+  const seed = await makeSystemSeed();
+  const rng = makeRng(seed);
+  const settings = readSettings(seed);
+  const requestedAudioKinds = requestedAudioKindsForSettings(settings);
+  if (requestedAudioKinds.length) {
+    const confirmed = confirmAudioExportEstimate(requestedAudioKinds, { settings, action: "generation" });
+    settings.audioExportConfirmed = confirmed;
+    if (!confirmed) {
+      settings.prepareProbeWav = false;
+      settings.prepareTickerWav = false;
+      settings.prepareCvWav = false;
+    }
+  }
   state.generating = true;
   if (state.inputReference.stream) stopLivingReferenceInput("Input ended", { restoreAudio: false });
   stopAllLiveAudio();
@@ -2316,9 +2333,6 @@ async function generatePiece() {
   els.pieceLengthLabel.textContent = "Preparing";
   const startedAt = Date.now();
   try {
-    const seed = await makeSystemSeed();
-    const rng = makeRng(seed);
-    const settings = readSettings(seed);
     await wait(650);
     els.statusLabel.textContent = "Generating";
     await wait(450);
@@ -2385,6 +2399,7 @@ function readSettings(seed) {
     prepareProbeWav: Boolean(els.prepareProbeWavInput?.checked),
     prepareTickerWav: Boolean(els.prepareTickerWavInput?.checked),
     prepareCvWav: Boolean(els.prepareCvWavInput?.checked),
+    audioExportConfirmed: false,
     cvVoiceMode: els.cvVoiceModeInput?.value || "bass",
     cvDurationMode: els.cvDurationInput?.value || "first60",
     cvClockMode: els.cvClockModeInput?.value || "pulse",
@@ -5520,6 +5535,132 @@ function updateAudioExportButton(kind, canRender) {
   button.textContent = rendering ? descriptor.renderingText : ready ? descriptor.readyText : descriptor.renderText;
 }
 
+function requestedAudioKindsForSettings(settings) {
+  const kinds = [];
+  if (settings.prepareProbeWav) kinds.push("probe");
+  if (settings.prepareTickerWav) kinds.push("ticker");
+  if (settings.prepareCvWav) kinds.push("cv");
+  return kinds;
+}
+
+function formatBytes(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${Math.round(value)} B`;
+}
+
+function formatSeconds(seconds) {
+  const safe = Math.max(0, Number(seconds) || 0);
+  if (safe >= 90) return `${Math.floor(safe / 60)}m ${Math.round(safe % 60)}s`;
+  return `${safe.toFixed(1)}s`;
+}
+
+function estimateTimelineForSettings(settings) {
+  const sectionMeta = sectionMetaFromSections(settings.sections || state.sections);
+  return FishtailTempoLattice.buildTempoTimeline(sectionMeta, settings, { ppq: PPQ, meters: METERS });
+}
+
+function estimateWavExportPlan(kind, settings, timeline) {
+  const pieceSeconds = timeline.totalSeconds || 0;
+  const probeSeconds = kind === "probe" ? FishtailWavExport.probeExportPieceSeconds(timeline) : pieceSeconds;
+  const renderSeconds = kind === "probe"
+    ? probeSeconds + FishtailTempoLattice.TEARDROP_RELEASE_SECONDS + 0.08
+    : pieceSeconds + 0.12;
+  const ordinaryLimit = FishtailWavExport.renderByteLimit();
+  const confirmedLimit = FishtailWavExport.MAX_CONFIRMED_RENDER_BYTES || ordinaryLimit;
+  let sampleRate = renderSeconds < 60 ? 96000 : 48000;
+  let estimate = FishtailWavExport.estimateRenderBytes(renderSeconds, sampleRate);
+  let fallback = false;
+  if (estimate.totalBytes > ordinaryLimit && sampleRate > 48000) {
+    sampleRate = 48000;
+    estimate = FishtailWavExport.estimateRenderBytes(renderSeconds, sampleRate);
+    fallback = true;
+  }
+  const descriptor = audioExportDescriptor(kind);
+  return {
+    kind,
+    label: descriptor.label,
+    detail: `${sampleRate / 1000} kHz mono 24-bit${kind === "probe" ? ", first 2 bars" : ", whole piece"}${fallback ? " fallback" : ""}`,
+    durationSeconds: renderSeconds,
+    downloadBytes: estimate.wavBytes,
+    workingBytes: estimate.totalBytes,
+    exceedsOrdinary: estimate.totalBytes > ordinaryLimit,
+    exceedsConfirmed: estimate.totalBytes > confirmedLimit,
+  };
+}
+
+function estimateCvVoiceCount(settings, piece) {
+  const requested = settings.cvVoiceMode || "bass";
+  if (requested !== "all") return 1;
+  if (piece?.events?.length) return Math.max(1, new Set(piece.events.map((event) => event.voice).filter(Boolean)).size);
+  return Math.max(1, activeVoiceLayout(settings.voices || 4).length);
+}
+
+function estimateCvExportPlan(settings, timeline, piece = null) {
+  const cv = FishtailWavExport.cvSettings(settings);
+  const fullPieceSeconds = timeline.totalSeconds || 0;
+  const pieceSeconds = cv.durationMode === "full"
+    ? fullPieceSeconds
+    : Math.min(fullPieceSeconds, FishtailWavExport.CV_MAX_RENDER_SECONDS);
+  const renderSeconds = pieceSeconds + 0.12;
+  const voiceCount = estimateCvVoiceCount(settings, piece);
+  const stemCount = 1 + voiceCount * 2;
+  const estimate = FishtailWavExport.estimateCvRenderBytes(renderSeconds, stemCount);
+  const ordinaryLimit = FishtailWavExport.renderByteLimit();
+  const confirmedLimit = FishtailWavExport.MAX_CONFIRMED_RENDER_BYTES || ordinaryLimit;
+  const truncated = pieceSeconds + 0.0001 < fullPieceSeconds;
+  return {
+    kind: "cv",
+    label: "CV ZIP",
+    detail: `${settings.cvVoiceMode || "bass"} voice mode, ${cv.durationMode === "full" ? "whole short piece" : "first 60 seconds"}${truncated ? " truncated" : ""}, ${stemCount} stems`,
+    durationSeconds: renderSeconds,
+    downloadBytes: estimate.retainedWavBytes + estimate.calibrationWavBytes,
+    workingBytes: estimate.totalBytes,
+    exceedsOrdinary: estimate.totalBytes > ordinaryLimit,
+    exceedsConfirmed: estimate.totalBytes > confirmedLimit,
+  };
+}
+
+function estimateAudioExportPlans(kinds, options = {}) {
+  const piece = options.piece || null;
+  const settings = piece?.settings || options.settings || {};
+  const timeline = piece?.tempoTimeline || estimateTimelineForSettings(settings);
+  return kinds.map((kind) => (kind === "cv"
+    ? estimateCvExportPlan(settings, timeline, piece)
+    : estimateWavExportPlan(kind, settings, timeline)));
+}
+
+function confirmAudioExportEstimate(kinds, options = {}) {
+  if (!kinds.length) return true;
+  const plans = estimateAudioExportPlans(kinds, options);
+  const totalDownload = plans.reduce((sum, plan) => sum + plan.downloadBytes, 0);
+  const peakWorking = plans.reduce((max, plan) => Math.max(max, plan.workingBytes), 0);
+  const lines = [
+    "Audio export estimate",
+    "",
+    ...plans.map((plan) => {
+      const risk = plan.exceedsConfirmed
+        ? " -- may still be too large"
+        : plan.exceedsOrdinary
+          ? " -- larger than ordinary mobile budget"
+          : "";
+      return `${plan.label}: ${formatBytes(plan.downloadBytes)} file, about ${formatBytes(plan.workingBytes)} temporary memory, ${formatSeconds(plan.durationSeconds)} (${plan.detail})${risk}`;
+    }),
+    "",
+    `Total download: about ${formatBytes(totalDownload)}`,
+    `Peak temporary memory: about ${formatBytes(peakWorking)}`,
+    "Large exports can take a while and may make smaller browsers reload the page.",
+    "",
+    options.action === "generation"
+      ? "OK = generate and render these files. Cancel = generate MIDI only."
+      : "OK = render and save this file. Cancel = skip.",
+  ];
+  if (typeof window === "undefined" || typeof window.confirm !== "function") return true;
+  return window.confirm(lines.join("\n"));
+}
+
 async function renderAudioExport(kind, piece) {
   const descriptor = audioExportDescriptor(kind);
   els.statusLabel.textContent = descriptor.renderingText;
@@ -5605,6 +5746,7 @@ function recordAudioExport(piece, audioExport) {
   }
   if (audioExport.stemCount != null) stem.stem_count = audioExport.stemCount;
   if (audioExport.voiceCount != null) stem.voice_count = audioExport.voiceCount;
+  if (audioExport.fullPieceSeconds != null) stem.full_piece_seconds = Number(audioExport.fullPieceSeconds.toFixed(4));
   if (Array.isArray(audioExport.files)) stem.files = audioExport.files;
   if (audioExport.cv) stem.cv = audioExport.cv;
   piece.manifest.audio_stems[kind] = stem;
@@ -5614,6 +5756,12 @@ async function downloadAudioExport(kind) {
   const descriptor = audioExportDescriptor(kind);
   let audioExport = state.lastAudioExports[kind];
   if (!audioExport?.blob && state.lastPiece && !state.lastPiece.audit?.issues?.length) {
+    const confirmed = confirmAudioExportEstimate([kind], { piece: state.lastPiece, action: "save" });
+    if (!confirmed) {
+      els.statusLabel.textContent = `${descriptor.label} skipped`;
+      return;
+    }
+    state.lastPiece.settings.audioExportConfirmed = true;
     try {
       audioExport = await renderAudioExport(kind, state.lastPiece);
     } catch (error) {

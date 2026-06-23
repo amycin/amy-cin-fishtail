@@ -533,6 +533,7 @@ function runStabilityTests() {
         const cvBarClock = FishtailWavExport.clockEventsForTimeline(indexedTimeline, { cvClockMode: "bar" }, 480);
         const cvPpqnClock = FishtailWavExport.clockEventsForTimeline(indexedTimeline, { cvClockMode: "ppqn24" }, 480);
         const cvCalibration = FishtailWavExport.renderCvCalibrationStaircase({ sampleRate: 10 }, { cvFullScaleVolts: 5 });
+        const probeSeconds = FishtailWavExport.probeExportPieceSeconds(cvTimeline);
         const cvPlan = FishtailWavExport.chooseCvRenderPlan(2, 3);
         const renderEstimate = FishtailWavExport.estimateRenderBytes(10, 48000);
         return {
@@ -572,6 +573,7 @@ function runStabilityTests() {
             && Math.abs(cvCalibration[0] + 0.4) < 1e-6
             && Math.abs(cvCalibration[20]) < 1e-6
             && FishtailWavExport.CV_MAX_RENDER_SECONDS === 60,
+          probeShortExport: probeSeconds === 2 && FishtailWavExport.PROBE_EXPORT_BARS === 2,
           zeroLevels: FishtailWavExport.levelSetting(0, 0.25) === 0
             && FishtailWavExport.levelSetting(undefined, 0.25) === 0.25,
           conservativeMemory: renderEstimate.offlineBytes > 0
@@ -690,7 +692,7 @@ function runStabilityTests() {
         },
         {
           name: "wav export keeps zero levels and conservative memory estimates",
-          ok: wavAudit.zeroLevels && wavAudit.conservativeMemory,
+          ok: wavAudit.zeroLevels && wavAudit.conservativeMemory && wavAudit.probeShortExport,
         },
         {
           name: "analogue cv zip uses 1v octave pitch and gates",
@@ -1517,15 +1519,17 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=5')
     && indexHtml.includes('src/wav-export.js?v=5')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=76')
+    && indexHtml.includes('src/app.js?v=77')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
     && indexHtml.includes("Audio is analysed on this device. It is not recorded or uploaded.")
     && indexHtml.includes("Living Reference Input, pink-noise ticker")
     && indexHtml.includes("optional MediaDevices audio input")
-    && indexHtml.includes("Ticker WAV export is peak-normalized to -6 dBFS")
+    && indexHtml.includes("ticker WAV stays whole-piece and peak-normalized to -6 dBFS")
+    && indexHtml.includes("Probe WAV is a short first-two-bars reference tone")
     && indexHtml.includes("rendered from their save buttons once a piece exists")
+    && indexHtml.includes("Large audio exports show a size estimate before rendering")
     && indexHtml.includes("Browser CV export defaults to one voice and the first 60 seconds")
     && indexHtml.includes("meter 4/4 from form 1")
     && indexHtml.includes("first share 0.500")
@@ -1572,6 +1576,9 @@ function runFugueTests() {
   const wavHardeningOk = wavExportJs.includes("levelSetting(settings.probeLevel")
     && wavExportJs.includes("levelSetting(settings.metronomeLevel")
     && wavExportJs.includes("MAX_MOBILE_RENDER_BYTES")
+    && wavExportJs.includes("MAX_CONFIRMED_RENDER_BYTES")
+    && wavExportJs.includes("PROBE_EXPORT_BARS")
+    && wavExportJs.includes("probeExportPieceSeconds")
     && wavExportJs.includes("OFFLINE_RENDER_BUFFER_MULTIPLIER")
     && wavExportJs.includes("CV_MAX_RENDER_SECONDS")
     && wavExportJs.includes("duration_mode: cv.durationMode")
@@ -1582,6 +1589,12 @@ function runFugueTests() {
   const audioSaveOk = appJs.includes("Render + Save Probe WAV")
     && appJs.includes("Render + Save Ticker WAV")
     && appJs.includes("Render + Save CV ZIP")
+    && appJs.includes("confirmAudioExportEstimate")
+    && appJs.includes("Audio export estimate")
+    && appJs.includes("first 2 bars")
+    && appJs.includes("whole piece")
+    && appJs.includes("Cancel = generate MIDI only")
+    && appJs.includes("estimateAudioExportPlans")
     && appJs.includes("saveBlobFromButton")
     && appJs.includes("nav?.share")
     && appJs.includes("iPadLikeBrowser")
