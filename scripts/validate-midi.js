@@ -1362,8 +1362,12 @@ function runFugueTests() {
     && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
   const velocitySwitchOk = indexHtml.includes('id="velocityModeInput" type="checkbox" checked')
     && indexHtml.includes("Gravity velocity");
+  const panelOrderOk = indexHtml.indexOf('class="panel sound-time-panel"') > indexHtml.indexOf('class="panel voices-panel"')
+    && indexHtml.indexOf('class="panel pitch-panel"') > indexHtml.indexOf('class="panel sound-time-panel"')
+    && stylesCss.includes(".pitch-panel {\n  grid-column: 2;\n  grid-row: 3;")
+    && stylesCss.includes(".sound-time-panel {\n  grid-column: 2;\n  grid-row: 2;");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=37"')
+    && indexHtml.includes('href="styles.css?v=38"')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
@@ -1641,12 +1645,13 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && probePitchSliderOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && probePitchSliderOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
   console.log(`${notesClosedOk ? "ok" : "failed"} notes default closed`);
   console.log(`${velocitySwitchOk ? "ok" : "failed"} velocity switch default`);
+  console.log(`${panelOrderOk ? "ok" : "failed"} panel order puts probe before pitch`);
   console.log(`${probePitchSliderOk ? "ok" : "failed"} probe pitch sliders and metronome boost`);
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";

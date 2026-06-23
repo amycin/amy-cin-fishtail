@@ -442,12 +442,12 @@ h2 {
 
 .pitch-panel {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 3;
 }
 
 .sound-time-panel {
   grid-column: 2;
-  grid-row: 3;
+  grid-row: 2;
 }
 
 .panel {

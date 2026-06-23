@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=37">
+    <link rel="stylesheet" href="styles.css?v=38">
   </head>
   <body>
     <main class="shell">
@@ -119,49 +119,6 @@
             </div>
           </section>
 
-          <section class="panel pitch-panel">
-            <div class="panel-head">
-              <h2>Pitch</h2>
-            </div>
-            <div class="field-grid">
-              <label>
-                Reference pitch
-                <select id="referenceNoteInput"></select>
-              </label>
-              <label>
-                Reference Hz
-                <input id="referenceFreqInput" type="number" min="20" max="2000" step="0.01" value="216.00">
-              </label>
-              <label>
-                Map
-                <select id="resolutionInput">
-                  <option value="nearest-ratio">Nearest ratio</option>
-                  <option value="literal" selected>Literal notes</option>
-                </select>
-              </label>
-              <label>
-                Output
-                <select id="outputModeInput">
-                  <option value="equal" selected>Equal Temperament</option>
-                  <option value="retuner">Amy Dub Intonation</option>
-                  <option value="bend">Bend MIDI</option>
-                </select>
-              </label>
-              <label class="tuning-root-only">
-                Intonation root
-                <select id="rootNoteInput"></select>
-              </label>
-              <label class="tuning-root-only">
-                Root Hz
-                <input id="rootFreqInput" type="number" min="20" max="2000" step="0.01" value="432.00">
-              </label>
-              <label class="tuning-root-only check-label">
-                <input id="linkRootInput" type="checkbox" checked>
-                Link root to reference
-              </label>
-            </div>
-          </section>
-
           <section class="panel sound-time-panel">
             <div class="panel-head">
               <h2>Probe + Time</h2>
@@ -269,6 +226,49 @@
                 Prepare ticker WAV
               </label>
               <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | meter 4/4 from form 1 | midpoint 0.500</output>
+            </div>
+          </section>
+
+          <section class="panel pitch-panel">
+            <div class="panel-head">
+              <h2>Pitch</h2>
+            </div>
+            <div class="field-grid">
+              <label>
+                Reference pitch
+                <select id="referenceNoteInput"></select>
+              </label>
+              <label>
+                Reference Hz
+                <input id="referenceFreqInput" type="number" min="20" max="2000" step="0.01" value="216.00">
+              </label>
+              <label>
+                Map
+                <select id="resolutionInput">
+                  <option value="nearest-ratio">Nearest ratio</option>
+                  <option value="literal" selected>Literal notes</option>
+                </select>
+              </label>
+              <label>
+                Output
+                <select id="outputModeInput">
+                  <option value="equal" selected>Equal Temperament</option>
+                  <option value="retuner">Amy Dub Intonation</option>
+                  <option value="bend">Bend MIDI</option>
+                </select>
+              </label>
+              <label class="tuning-root-only">
+                Intonation root
+                <select id="rootNoteInput"></select>
+              </label>
+              <label class="tuning-root-only">
+                Root Hz
+                <input id="rootFreqInput" type="number" min="20" max="2000" step="0.01" value="432.00">
+              </label>
+              <label class="tuning-root-only check-label">
+                <input id="linkRootInput" type="checkbox" checked>
+                Link root to reference
+              </label>
             </div>
           </section>
 
