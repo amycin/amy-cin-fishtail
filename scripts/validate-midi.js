@@ -10,6 +10,7 @@ const APP_SCRIPT_PATHS = [
   path.join(ROOT, "src", "tempo-lattice.js"),
   path.join(ROOT, "src", "audio-engine.js"),
   path.join(ROOT, "src", "wav-export.js"),
+  path.join(ROOT, "src", "pitch-input.js"),
   path.join(ROOT, "src", "app.js"),
 ];
 const TEMPO_30_BYTES = [0x1e, 0x84, 0x80];
@@ -25,6 +26,7 @@ function main() {
     failed = !runSmokeTests();
     failed = !runStabilityTests() || failed;
     failed = !runVelocityTests() || failed;
+    failed = !runPitchInputTests() || failed;
     failed = !runParallelRuleTests() || failed;
     failed = !runRefrainAndSuspensionTests() || failed;
     failed = !runFugueTests() || failed;
@@ -758,6 +760,126 @@ function runVelocityTests() {
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} velocity ${result.name}`);
+    if (!result.ok) ok = false;
+  }
+  return ok;
+}
+
+function runPitchInputTests() {
+  const context = makeAppContext();
+  const pitch = context.FishtailPitchInput;
+  const sampleRate = 48000;
+  const frameLength = 8192;
+  const scratch = pitch.makeScratch();
+
+  function centsError(actual, expected) {
+    return Math.abs(1200 * Math.log2(actual / expected));
+  }
+
+  function frameFor(freq, options = {}) {
+    const frame = new Float32Array(frameLength);
+    const amp = options.amp ?? 0.55;
+    const harmonics = options.harmonics || [[1, 1]];
+    const vibratoCents = options.vibratoCents || 0;
+    const vibratoHz = options.vibratoHz || 5;
+    const attackFrames = options.attackFrames || 0;
+    const dc = options.dc || 0;
+    for (let i = 0; i < frame.length; i += 1) {
+      const t = i / sampleRate;
+      const cents = vibratoCents ? Math.sin(2 * Math.PI * vibratoHz * t) * vibratoCents : 0;
+      const instant = freq * (2 ** (cents / 1200));
+      const env = attackFrames ? Math.min(1, i / attackFrames) : 1;
+      let sample = 0;
+      harmonics.forEach(([multiple, weight]) => {
+        sample += Math.sin(2 * Math.PI * instant * multiple * t) * weight;
+      });
+      frame[i] = sample * amp * env + dc;
+    }
+    return frame;
+  }
+
+  function noiseFrame() {
+    const frame = new Float32Array(frameLength);
+    let seed = 2166136261;
+    for (let i = 0; i < frame.length; i += 1) {
+      seed ^= i + 17;
+      seed = Math.imul(seed, 16777619);
+      frame[i] = (((seed >>> 0) / 0xffffffff) * 2 - 1) * 0.2;
+    }
+    return frame;
+  }
+
+  const toneCases = [
+    ["30 Hz", 30, "bass"],
+    ["40 Hz", 40, "general"],
+    ["55 Hz", 55, "voice"],
+    ["110 Hz", 110, "voice"],
+    ["216 Hz", 216, "general"],
+    ["432 Hz", 432, "general"],
+    ["880 Hz", 880, "high"],
+    ["1500 Hz", 1500, "high"],
+    ["2000 Hz", 2000, "high"],
+  ];
+  const results = toneCases.map(([name, freq, range]) => {
+    const result = pitch.detectPitch(frameFor(freq), sampleRate, { range }, scratch);
+    return {
+      name: `detects ${name}`,
+      ok: result.ok && centsError(result.frequency, freq) < (freq <= 40 ? 28 : 14),
+    };
+  });
+
+  const harmonic = pitch.detectPitch(frameFor(216, {
+    harmonics: [[1, 0.35], [2, 1], [3, 0.75], [4, 0.4]],
+  }), sampleRate, { range: "general" }, scratch);
+  results.push({
+    name: "detects fundamental below stronger harmonics",
+    ok: harmonic.ok && centsError(harmonic.frequency, 216) < 18,
+  });
+
+  const quiet = pitch.detectPitch(frameFor(216, { amp: 0.0005 }), sampleRate, { range: "general" }, scratch);
+  results.push({ name: "rejects low-level tone", ok: !quiet.ok && quiet.reason === "too-quiet" });
+
+  const noise = pitch.detectPitch(noiseFrame(), sampleRate, { range: "general" }, scratch);
+  results.push({ name: "rejects noise as stable pitch", ok: !noise.ok || noise.confidence < 0.8 });
+
+  const silence = pitch.detectPitch(new Float32Array(frameLength), sampleRate, { range: "general" }, scratch);
+  results.push({ name: "rejects silence", ok: !silence.ok && silence.reason === "too-quiet" });
+
+  const dcOffset = pitch.detectPitch(frameFor(432, { dc: 0.2 }), sampleRate, { range: "general" }, scratch);
+  results.push({ name: "removes DC offset", ok: dcOffset.ok && centsError(dcOffset.frequency, 432) < 14 });
+
+  const now = 100000;
+  const history = [];
+  for (let i = 0; i < 9; i += 1) {
+    const cents = Math.sin(i * Math.PI / 4) * 18;
+    history.push({
+      at: now - (8 - i) * 80,
+      ok: true,
+      frequency: 216 * (2 ** (cents / 1200)),
+      confidence: 0.94,
+    });
+  }
+  const stats = pitch.pitchStats(history, now);
+  results.push({
+    name: "captures vibrato centre in log frequency",
+    ok: stats.ok && centsError(stats.frequency, 216) < 2.5 && stats.spreadCents > 4,
+  });
+
+  const ref216 = pitch.hzToReference(216, 432);
+  const ref220 = pitch.hzToReference(220, 432);
+  results.push({
+    name: "maps 216 Hz to A3 at A4 432",
+    ok: ref216.referenceNote === "A3" && Math.abs(ref216.impliedA4Hz - 432) < 0.0001,
+  });
+  results.push({
+    name: "maps 220 Hz to exact A3 under A4 440",
+    ok: ref220.referenceNote === "A3" && Math.abs(ref220.impliedA4Hz - 440) < 0.0001,
+  });
+
+  let ok = true;
+  for (const result of results) {
+    const status = result.ok ? "ok" : "failed";
+    console.log(`${status} pitch-input ${result.name}`);
     if (!result.ok) ok = false;
   }
   return ok;
