@@ -7,6 +7,8 @@ const DEFAULT_REFERENCE_HZ = 216;
 const DEFAULT_TEMPO_DIVISOR = 216;
 const REFERENCE_FINE_CENTS_MIN = -100;
 const REFERENCE_FINE_CENTS_MAX = 100;
+const DUB_RATIONAL_SWING_DEFAULT = 28;
+const DUB_IRRATIONAL_SWING_DEFAULT = 6;
 const GENERATE_FADE_MS = 900;
 const GENERATE_TAIL_MS = 1800;
 const GENERATE_MIN_MS = 4200;
@@ -819,13 +821,13 @@ function readLiveAudioSettings() {
     tempo: currentTempoBpm(),
     referenceHz: currentReferenceHz(),
     tempoLatticeEnabled: true,
-    rationalSwing: percentInput(els.rationalSwingInput, 0.5),
+    rationalSwing: percentInput(els.rationalSwingInput, 0),
     irrationalSwing: percentInput(els.irrationalSwingInput, 0),
     probeEnabled,
     probeMuted: !probeEnabled,
     probeLevel: percentInput(els.probeLevelInput, 0.45),
     metronomeEnabled: switchControlIsOn(els.metronomeInput),
-    metronomeLevel: percentInput(els.metronomeLevelInput, 0.72),
+    metronomeLevel: percentInput(els.metronomeLevelInput, 0.88),
   };
 }
 
@@ -1152,12 +1154,20 @@ function isTuningRootVisible() {
 function updateDubModeUi() {
   const enabled = Boolean(els.dubModeInput?.checked);
   document.body?.classList.toggle("dub-mode", enabled);
+  applyDubSwingPreset(enabled);
   if (enabled) {
     if (els.styleInput) els.styleInput.value = FUGUE_STYLE_ID;
     els.statusLabel.textContent = "DUB armed";
   } else if (els.statusLabel.textContent === "DUB armed") {
     els.statusLabel.textContent = "Ready";
   }
+  if (els.tempoLatticeReadout) updateSoundTimeControls();
+  if (els.referenceFreqInput) updateLiveAudioFromControls();
+}
+
+function applyDubSwingPreset(enabled) {
+  if (els.rationalSwingInput) els.rationalSwingInput.value = enabled ? String(DUB_RATIONAL_SWING_DEFAULT) : "0";
+  if (els.irrationalSwingInput) els.irrationalSwingInput.value = enabled ? String(DUB_IRRATIONAL_SWING_DEFAULT) : "0";
 }
 
 function pedalInputs() {
@@ -1248,7 +1258,7 @@ function currentTimingSettings(seed = "preview") {
     seed,
     tempo: currentTempoBpm(),
     tempoLatticeEnabled: Boolean(els.tempoLatticeInput?.checked),
-    rationalSwing: percentInput(els.rationalSwingInput, 0.5),
+    rationalSwing: percentInput(els.rationalSwingInput, 0),
     irrationalSwing: percentInput(els.irrationalSwingInput, 0),
   };
 }
@@ -1263,7 +1273,7 @@ function previewTempoTimeline(seed = "preview") {
 function updateSoundTimeControls() {
   if (!els.tempoLatticeReadout) return;
   const timeline = previewTempoTimeline("preview");
-  const swing = FishtailTempoLattice.rationalSwingAmount(percentInput(els.rationalSwingInput, 0.5));
+  const swing = FishtailTempoLattice.rationalSwingAmount(percentInput(els.rationalSwingInput, 0));
   const midpoint = (1 + swing) / 2;
   const minBpm = timeline.minInstantaneousBpm.toFixed(2);
   const maxBpm = timeline.maxInstantaneousBpm.toFixed(2);
@@ -1888,14 +1898,14 @@ function readSettings(seed) {
     tempo: clamp(parseFloat(els.tempoInput.value) || 72, 30, 220),
     includeTempoMap: Boolean(els.embedTempoInput.checked),
     tempoLatticeEnabled: Boolean(els.tempoLatticeInput?.checked),
-    rationalSwing: percentInput(els.rationalSwingInput, 0.5),
+    rationalSwing: percentInput(els.rationalSwingInput, 0),
     irrationalSwing: percentInput(els.irrationalSwingInput, 0),
     metronomeMeterMode: els.metronomeMeterInput?.value || "section-1",
     probeEnabled: switchControlIsOn(els.probeInput),
     probeMuted: !switchControlIsOn(els.probeInput),
     probeLevel: percentInput(els.probeLevelInput, 0.45),
     metronomeEnabled: switchControlIsOn(els.metronomeInput),
-    metronomeLevel: percentInput(els.metronomeLevelInput, 0.72),
+    metronomeLevel: percentInput(els.metronomeLevelInput, 0.88),
     prepareProbeWav: Boolean(els.prepareProbeWavInput?.checked),
     prepareTickerWav: Boolean(els.prepareTickerWavInput?.checked),
     velocityProfile: els.velocityModeInput?.checked ? "auto" : "flat",

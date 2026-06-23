@@ -181,7 +181,7 @@
               </label>
               <label>
                 Rational swing
-                <input id="rationalSwingInput" type="range" min="0" max="100" value="50">
+                <input id="rationalSwingInput" type="range" min="0" max="100" value="0">
               </label>
               <label>
                 Irrational swing
@@ -213,7 +213,7 @@
               </button>
               <label>
                 Metronome level
-                <input id="metronomeLevelInput" type="range" min="0" max="100" value="72">
+                <input id="metronomeLevelInput" type="range" min="0" max="100" value="88">
               </label>
               <label class="check-row">
                 <input id="prepareProbeWavInput" type="checkbox">
@@ -223,7 +223,7 @@
                 <input id="prepareTickerWavInput" type="checkbox">
                 Prepare ticker WAV
               </label>
-              <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | meter 4/4 from form 1 | midpoint 0.560</output>
+              <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | meter 4/4 from form 1 | midpoint 0.500</output>
             </div>
           </section>
 
@@ -281,7 +281,7 @@
               <section>
                 <h3>Probe And Time</h3>
                 <p>The Probe + Time panel is the live sound and conductor-timing area. The page loads silent. Turning on <strong>Probe sound</strong> starts the Teardrop reference tone at the current Reference Hz. <strong>Probe pitch</strong> chooses the reference note, and <strong>Fine pitch</strong> trims cents by ear; both write into the same Reference Hz used by MIDI generation.</p>
-                <p><strong>Metronome</strong> starts a pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
+                <p><strong>Metronome</strong> starts a louder pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. Swing starts straight by default; DUB mode sets a gentle strolling swing. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
                 <p>Prepare probe WAV and Prepare ticker WAV render optional mono 24-bit stems after MIDI generation. They are saved only when their explicit Save WAV buttons are pressed.</p>
               </section>
 
@@ -405,8 +405,8 @@
     </main>
 
     <script src="src/tempo-lattice.js?v=1"></script>
-    <script src="src/audio-engine.js?v=2"></script>
+    <script src="src/audio-engine.js?v=3"></script>
     <script src="src/wav-export.js?v=1"></script>
-    <script src="src/app.js?v=65"></script>
+    <script src="src/app.js?v=66"></script>
   </body>
 </html>

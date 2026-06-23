@@ -1226,7 +1226,9 @@ function runFugueTests() {
     && indexHtml.includes("Gravity velocity");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="59" step="1" value="21"')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
-    && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="72"')
+    && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
+    && indexHtml.includes('id="irrationalSwingInput" type="range" min="0" max="100" value="0"')
+    && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
     && indexHtml.includes("meter 4/4 from form 1")
     && stylesCss.includes(".probe-pitch-field")
     && stylesCss.includes("grid-column: 1 / -1");
@@ -1237,9 +1239,19 @@ function runFugueTests() {
         els.dubModeInput = { checked: true };
         els.styleInput = { value: "counterpoint" };
         els.statusLabel = { textContent: "Ready" };
+        els.rationalSwingInput = { value: "0" };
+        els.irrationalSwingInput = { value: "0" };
         document.body = { classList: { toggle() {} } };
         updateDubModeUi();
-        return els.styleInput.value === "fishtail_fugue" && els.statusLabel.textContent === "DUB armed";
+        const dubOnOk = els.styleInput.value === "fishtail_fugue"
+          && els.statusLabel.textContent === "DUB armed"
+          && els.rationalSwingInput.value === "28"
+          && els.irrationalSwingInput.value === "6";
+        els.dubModeInput.checked = false;
+        updateDubModeUi();
+        return dubOnOk
+          && els.rationalSwingInput.value === "0"
+          && els.irrationalSwingInput.value === "0";
       }
 
       function dubDiceWeighting() {
@@ -1285,7 +1297,7 @@ function runFugueTests() {
         els.probeInput = offSwitch;
         els.metronomeInput = offSwitch;
         els.probeLevelInput = { value: "45" };
-        els.metronomeLevelInput = { value: "72" };
+        els.metronomeLevelInput = { value: "88" };
 
         els.probePitchInput.value = "22";
         els.referenceNoteInput.value = REFERENCE_NOTE_NAMES[22];
