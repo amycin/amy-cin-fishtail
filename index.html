@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=33">
+    <link rel="stylesheet" href="styles.css?v=34">
   </head>
   <body>
     <main class="shell">
@@ -180,35 +180,32 @@
                 <select id="metronomeMeterInput"></select>
               </label>
               <label>
-                Rational
+                Rational swing
                 <input id="rationalSwingInput" type="range" min="0" max="100" value="50">
               </label>
               <label>
-                Irrational
+                Irrational swing
                 <input id="irrationalSwingInput" type="range" min="0" max="100" value="0">
               </label>
-              <label class="switch-label" title="Mute the live reference probe">
-                <span>Probe mute</span>
-                <span class="switch-control">
-                  <input id="probeMuteInput" type="checkbox" checked>
+              <button class="switch-label switch-button" id="probeInput" type="button" role="switch" aria-checked="false" title="Turn on the live Teardrop reference probe">
+                <span>Probe sound</span>
+                <span class="switch-control" aria-hidden="true">
                   <span class="switch-track" aria-hidden="true"></span>
                 </span>
-              </label>
-              <button class="hold-button" id="probeHoldButton" type="button">Hold Probe</button>
+              </button>
               <label>
                 Probe level
-                <input id="probeLevelInput" type="range" min="0" max="100" value="20">
+                <input id="probeLevelInput" type="range" min="0" max="100" value="45">
               </label>
-              <label class="switch-label" title="Live pink-noise tempo preview">
+              <button class="switch-label switch-button" id="metronomeInput" type="button" role="switch" aria-checked="false" title="Live pink-noise tempo preview">
                 <span>Metronome</span>
-                <span class="switch-control">
-                  <input id="metronomeInput" type="checkbox">
+                <span class="switch-control" aria-hidden="true">
                   <span class="switch-track" aria-hidden="true"></span>
                 </span>
-              </label>
+              </button>
               <label>
                 Metronome level
-                <input id="metronomeLevelInput" type="range" min="0" max="100" value="25">
+                <input id="metronomeLevelInput" type="range" min="0" max="100" value="35">
               </label>
               <label class="check-row">
                 <input id="prepareProbeWavInput" type="checkbox">
@@ -274,6 +271,13 @@
               </section>
 
               <section>
+                <h3>Probe And Time</h3>
+                <p>The Probe + Time panel is the live sound and conductor-timing area. The page loads silent. Turning on <strong>Probe sound</strong> starts the Teardrop reference tone at the current Reference Hz; changing pitch glides the sound instead of rebuilding it abruptly.</p>
+                <p><strong>Metronome</strong> starts a pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
+                <p>Prepare probe WAV and Prepare ticker WAV render optional mono 24-bit stems after MIDI generation. They are saved only when their explicit Save WAV buttons are pressed.</p>
+              </section>
+
+              <section>
                 <h3>Randomness</h3>
                 <p>The app runs locally in the browser. It uses the browser Web Crypto random source to make a seed, then uses that seed for repeatable musical choices inside the generator. On an ordinary web page, JavaScript cannot read <code>/dev/urandom</code> directly, but modern browsers expose secure random bytes through <code>crypto.getRandomValues</code>. Advanced users can optionally mix in a custom entropy endpoint; see <code>PUBLISHING.md</code>.</p>
                 <p><strong>D4</strong> rolls a gentler form with a tasteful chance of Refrain or Gentle Development after the first section. <strong>D20</strong> rolls a wider form with more varied keys, meters, Refrain returns, Development rows, and occasional Dubby treatments. The first section stays <strong>Fishtail/Source</strong> so later rows have source material to return to or develop.</p>
@@ -324,7 +328,7 @@
 
               <section>
                 <h3>Credits And Ownership</h3>
-                <p>Project identity, musical concept, tuning direction, and Fishtail design: Amy McBride / amy_cin. Artwork by Ocular Debris. Copyright (c) 2026 Amy McBride. All rights reserved. This version was vibe coded with Codex, collaborating as Lambda Echo. Three.js is used for the WebGL torus visual and is acknowledged in <code>CREDITS.md</code>.</p>
+                <p>Project identity, musical concept, tuning direction, Fishtail design, Teardrop Probe, pink-noise ticker, and tempo-lattice direction: Amy McBride / amy_cin. Artwork by Ocular Debris. Copyright (c) 2026 Amy McBride. All rights reserved. This version was vibe coded with Codex, collaborating as Lambda Echo. Three.js is used for the WebGL torus visual and is acknowledged in <code>CREDITS.md</code>.</p>
                 <p>The source currently runs as a static web app: HTML, CSS, JavaScript, and image assets. Keep the credits file with the project when publishing it.</p>
               </section>
             </div>
@@ -375,6 +379,7 @@
                 <ul>
                   <li>This version was vibe coded with Codex, collaborating as Lambda Echo.</li>
                   <li>The MIDI writer in <code>src/app.js</code> is original code.</li>
+                  <li>The Teardrop Probe, pink-noise ticker, and tempo-lattice conductor are implemented as browser-native Web Audio and Standard MIDI logic, translated from Amy's SuperCollider reference sketches in this repository.</li>
                   <li>The moving torus visualisation uses Three.js, an MIT-licensed open-source 3D library.</li>
                   <li>The seeded random functions are small public-domain-style PRNG/hash patterns commonly circulated in JavaScript communities; they are included inline only for deterministic replay after the browser supplies a system entropy seed.</li>
                   <li>Browser APIs used: Canvas, WebGL through Three.js, optional Device Motion/Orientation input, Web Audio, optional Vibration API feedback, Blob download, TextEncoder, and Web Crypto <code>crypto.getRandomValues</code>.</li>
@@ -394,6 +399,6 @@
     <script src="src/tempo-lattice.js?v=1"></script>
     <script src="src/audio-engine.js?v=1"></script>
     <script src="src/wav-export.js?v=1"></script>
-    <script src="src/app.js?v=57"></script>
+    <script src="src/app.js?v=63"></script>
   </body>
 </html>

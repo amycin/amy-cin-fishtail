@@ -545,8 +545,7 @@ function bindElements() {
     "rationalSwingInput",
     "irrationalSwingInput",
     "metronomeMeterInput",
-    "probeMuteInput",
-    "probeHoldButton",
+    "probeInput",
     "probeLevelInput",
     "metronomeInput",
     "metronomeLevelInput",
@@ -710,7 +709,6 @@ function bindSoundTimeEvents() {
     els.rationalSwingInput,
     els.irrationalSwingInput,
     els.metronomeMeterInput,
-    els.probeMuteInput,
     els.probeLevelInput,
     els.metronomeLevelInput,
     els.prepareProbeWavInput,
@@ -726,42 +724,46 @@ function bindSoundTimeEvents() {
     });
   });
 
-  els.metronomeInput?.addEventListener("change", () => {
+  els.metronomeInput?.addEventListener("click", () => {
+    toggleSwitchControl(els.metronomeInput);
     updateSoundTimeControls();
-    if (els.metronomeInput.checked) startLiveMetronome();
+    if (switchControlIsOn(els.metronomeInput)) startLiveMetronome();
     else stopLiveMetronome();
   });
 
-  if (els.probeHoldButton) {
-    els.probeHoldButton.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      if (typeof els.probeHoldButton.setPointerCapture === "function" && event.pointerId != null) {
-        try {
-          els.probeHoldButton.setPointerCapture(event.pointerId);
-        } catch (error) {
-          // Pointer capture is not available for every input path.
-        }
-      }
-      startProbeHold();
-    });
-    ["pointerup", "pointercancel", "lostpointercapture"].forEach((type) => {
-      els.probeHoldButton.addEventListener(type, stopProbeHold);
-    });
-    els.probeHoldButton.addEventListener("keydown", (event) => {
-      if ((event.key === " " || event.key === "Enter") && !event.repeat) {
-        event.preventDefault();
-        startProbeHold();
-      }
-    });
-    els.probeHoldButton.addEventListener("keyup", (event) => {
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        stopProbeHold();
-      }
-    });
-  }
+  const handleProbeToggle = () => {
+    toggleSwitchControl(els.probeInput);
+    updateSoundTimeControls();
+    if (switchControlIsOn(els.probeInput)) startProbeHold();
+    else stopProbeHold();
+  };
+  els.probeInput?.addEventListener("click", handleProbeToggle);
 
-  window.addEventListener("blur", stopProbeHold);
+  window.addEventListener("blur", () => {
+    stopProbeHold();
+    setSwitchControl(els.probeInput, false);
+  });
+}
+
+function switchControlIsOn(control) {
+  if (!control) return false;
+  if ("checked" in control) return Boolean(control.checked);
+  return control.getAttribute("aria-checked") === "true";
+}
+
+function setSwitchControl(control, on) {
+  if (!control) return;
+  const enabled = Boolean(on);
+  if ("checked" in control) {
+    control.checked = enabled;
+  } else {
+    control.setAttribute("aria-checked", enabled ? "true" : "false");
+    control.classList.toggle("is-on", enabled);
+  }
+}
+
+function toggleSwitchControl(control) {
+  setSwitchControl(control, !switchControlIsOn(control));
 }
 
 function ensureAudioContextFromUserGesture() {
@@ -770,14 +772,32 @@ function ensureAudioContextFromUserGesture() {
   const context = state.audio.context || state.audioContext || new AudioContextClass();
   state.audio.context = context;
   state.audioContext = context;
-  if (context.state === "suspended") context.resume();
+  if (context.state === "suspended") {
+    context.resume().catch((error) => {
+      console.warn("Audio context resume was deferred.", error);
+    });
+  }
   FishtailAudioEngine.ensureAudioState(state.audio, context);
   return context;
+}
+
+function requestAudioContextResume(context, label, control) {
+  if (!context || context.state !== "suspended") return;
+  context.resume().then(() => {
+    if (label === "Probe" && state.probeHeld && switchControlIsOn(els.probeInput)) {
+      els.statusLabel.textContent = `Probe ${currentReferenceHz().toFixed(2)} Hz`;
+    }
+  }).catch((error) => {
+    els.statusLabel.textContent = `${label} paused`;
+    if (control) setSwitchControl(control, false);
+    console.warn(`${label} audio resume failed.`, error);
+  });
 }
 
 function readLiveAudioSettings() {
   const sectionMeter = state.sections[0]?.meter || "4/4";
   const meterChoice = els.metronomeMeterInput?.value || "section-1";
+  const probeEnabled = switchControlIsOn(els.probeInput);
   return {
     seed: state.lastPiece?.settings?.seed || "live-metronome",
     ppq: PPQ,
@@ -788,10 +808,11 @@ function readLiveAudioSettings() {
     tempoLatticeEnabled: true,
     rationalSwing: percentInput(els.rationalSwingInput, 0.5),
     irrationalSwing: percentInput(els.irrationalSwingInput, 0),
-    probeMuted: Boolean(els.probeMuteInput?.checked),
-    probeLevel: percentInput(els.probeLevelInput, 0.2),
-    metronomeEnabled: Boolean(els.metronomeInput?.checked),
-    metronomeLevel: percentInput(els.metronomeLevelInput, 0.25),
+    probeEnabled,
+    probeMuted: !probeEnabled,
+    probeLevel: percentInput(els.probeLevelInput, 0.45),
+    metronomeEnabled: switchControlIsOn(els.metronomeInput),
+    metronomeLevel: percentInput(els.metronomeLevelInput, 0.35),
   };
 }
 
@@ -806,10 +827,9 @@ function currentTempoBpm() {
 
 function startProbeHold() {
   state.probeHeld = true;
-  els.probeHoldButton?.classList.add("is-held");
   const settings = readLiveAudioSettings();
   if (settings.probeMuted) {
-    els.statusLabel.textContent = "Probe muted";
+    els.statusLabel.textContent = "Probe off";
     return;
   }
   const context = ensureAudioContextFromUserGesture();
@@ -817,26 +837,40 @@ function startProbeHold() {
     els.statusLabel.textContent = "Audio unavailable";
     return;
   }
-  FishtailAudioEngine.startProbe(state.audio, context, settings);
+  if (!switchControlIsOn(els.probeInput)) return;
   els.statusLabel.textContent = `Probe ${settings.referenceHz.toFixed(2)} Hz`;
+  requestAudioContextResume(context, "Probe", els.probeInput);
+  try {
+    FishtailAudioEngine.startProbe(state.audio, context, settings);
+  } catch (error) {
+    els.statusLabel.textContent = "Probe failed";
+    console.warn("Probe sound unavailable.", error);
+  }
 }
 
 function stopProbeHold() {
   if (!state.probeHeld && !state.audio.probe) return;
   state.probeHeld = false;
-  els.probeHoldButton?.classList.remove("is-held");
   FishtailAudioEngine.stopProbe(state.audio, state.audio.context);
+  els.statusLabel.textContent = switchControlIsOn(els.metronomeInput) ? "Metronome on" : "Probe off";
 }
 
 function startLiveMetronome() {
   const context = ensureAudioContextFromUserGesture();
   if (!context) {
     els.statusLabel.textContent = "Audio unavailable";
-    if (els.metronomeInput) els.metronomeInput.checked = false;
+    setSwitchControl(els.metronomeInput, false);
     return;
   }
-  FishtailAudioEngine.startMetronome(state.audio, context, readLiveAudioSettings());
+  if (!switchControlIsOn(els.metronomeInput)) return;
   els.statusLabel.textContent = "Metronome on";
+  requestAudioContextResume(context, "Metronome", els.metronomeInput);
+  try {
+    FishtailAudioEngine.startMetronome(state.audio, context, readLiveAudioSettings());
+  } catch (error) {
+    els.statusLabel.textContent = "Metronome failed";
+    console.warn("Metronome unavailable.", error);
+  }
 }
 
 function stopLiveMetronome() {
@@ -858,7 +892,8 @@ function updateLiveAudioFromControls() {
 function stopAllLiveAudio() {
   stopProbeHold();
   FishtailAudioEngine.stopAll(state.audio, state.audio.context);
-  if (els.metronomeInput) els.metronomeInput.checked = false;
+  setSwitchControl(els.metronomeInput, false);
+  setSwitchControl(els.probeInput, false);
 }
 
 function setupMotionInput() {
@@ -1678,8 +1713,7 @@ function setGenerationControlsDisabled(disabled) {
     els.rationalSwingInput,
     els.irrationalSwingInput,
     els.metronomeMeterInput,
-    els.probeMuteInput,
-    els.probeHoldButton,
+    els.probeInput,
     els.probeLevelInput,
     els.metronomeInput,
     els.metronomeLevelInput,
@@ -1786,10 +1820,11 @@ function readSettings(seed) {
     rationalSwing: percentInput(els.rationalSwingInput, 0.5),
     irrationalSwing: percentInput(els.irrationalSwingInput, 0),
     metronomeMeterMode: els.metronomeMeterInput?.value || "section-1",
-    probeMuted: Boolean(els.probeMuteInput?.checked),
-    probeLevel: percentInput(els.probeLevelInput, 0.2),
-    metronomeEnabled: Boolean(els.metronomeInput?.checked),
-    metronomeLevel: percentInput(els.metronomeLevelInput, 0.25),
+    probeEnabled: switchControlIsOn(els.probeInput),
+    probeMuted: !switchControlIsOn(els.probeInput),
+    probeLevel: percentInput(els.probeLevelInput, 0.45),
+    metronomeEnabled: switchControlIsOn(els.metronomeInput),
+    metronomeLevel: percentInput(els.metronomeLevelInput, 0.35),
     prepareProbeWav: Boolean(els.prepareProbeWavInput?.checked),
     prepareTickerWav: Boolean(els.prepareTickerWavInput?.checked),
     velocityProfile: els.velocityModeInput?.checked ? "auto" : "flat",
