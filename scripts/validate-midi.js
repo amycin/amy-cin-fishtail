@@ -427,11 +427,20 @@ function runStabilityTests() {
         const same = FishtailTempoLattice.buildTempoTimeline(section, settings, { ppq: PPQ, meters: METERS });
         const other = FishtailTempoLattice.buildTempoTimeline(section, { ...settings, seed: "timeline-other" }, { ppq: PPQ, meters: METERS });
         const straight = FishtailTempoLattice.buildTempoTimeline(section, { ...settings, tempoLatticeEnabled: false }, { ppq: PPQ, meters: METERS });
+        const stumble = FishtailTempoLattice.buildTempoTimeline([{ bars: 1, meter: "4/4", startTick: 0, barTicks: METERS["4/4"].numerator * METERS["4/4"].pulse, numerator: 4, denominator: 4 }], {
+          ...settings,
+          rationalSwing: 0,
+          irrationalSwing: 0.6,
+          seed: "stumble-audit",
+        }, { ppq: PPQ, meters: METERS });
+        const stumbleWeights = stumble.segments.map((segment) => segment.durationWeight);
+        const stumbleSpread = Math.max(...stumbleWeights) - Math.min(...stumbleWeights);
         return {
           perMeter,
           deterministic: JSON.stringify(one.segments.map((segment) => segment.durationWeight)) === JSON.stringify(same.segments.map((segment) => segment.durationWeight)),
           seedChanges: JSON.stringify(one.segments.map((segment) => segment.durationWeight)) !== JSON.stringify(other.segments.map((segment) => segment.durationWeight)),
           straight: straight.tempoEvents.length === 1 && straight.segments.every((segment) => segment.microsecondsPerQuarter === straight.baseMicrosecondsPerQuarter),
+          irrationalMoves: stumbleSpread > 0.1 && stumble.barEndpointsPreserved,
         };
       })();
 
@@ -658,7 +667,7 @@ function runStabilityTests() {
         },
         {
           name: "tempo lattice is meter-safe deterministic and straight-safe",
-          ok: timelineAudit.perMeter && timelineAudit.deterministic && timelineAudit.seedChanges && timelineAudit.straight,
+          ok: timelineAudit.perMeter && timelineAudit.deterministic && timelineAudit.seedChanges && timelineAudit.straight && timelineAudit.irrationalMoves,
         },
         {
           name: "tempo lattice conductor does not move note events",
@@ -1514,10 +1523,13 @@ function runFugueTests() {
     && stylesCss.includes(".sound-time-panel {\n  grid-column: 2;\n  grid-row: 2;");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
     && indexHtml.includes('href="styles.css?v=40"')
+    && indexHtml.includes('src/tempo-lattice.js?v=2')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="irrationalSwingInput" type="range" min="0" max="100" value="0"')
+    && indexHtml.includes("Stroll to swagger")
+    && indexHtml.includes("Stumble")
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
     && indexHtml.includes('src/audio-engine.js?v=5')
     && indexHtml.includes('src/wav-export.js?v=6')

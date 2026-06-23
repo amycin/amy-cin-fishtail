@@ -28,7 +28,12 @@
       hash ^= text.charCodeAt(i);
       hash = Math.imul(hash, 16777619);
     }
-    return (hash >>> 0) / 0xffffffff;
+    hash ^= hash >>> 16;
+    hash = Math.imul(hash, 2246822507);
+    hash ^= hash >>> 13;
+    hash = Math.imul(hash, 3266489909);
+    hash ^= hash >>> 16;
+    return (hash >>> 0) / 0x100000000;
   }
 
   function rationalSwingAmount(value) {
@@ -69,15 +74,33 @@
     return Array.from({ length }, (_, index) => 1 + swingAmount * ((centre - index) / Math.max(1, centre)));
   }
 
+  function irrationalGroupOffsets({ length, amount, seed, sectionIndex, barIndex, groupIndex }) {
+    const safeLength = Math.max(1, Math.round(length) || 1);
+    const safeAmount = clamp(Number(amount) || 0, 0, 1);
+    if (safeLength <= 1 || !safeAmount) return Array.from({ length: safeLength }, () => 0);
+    const depth = safeAmount * (0.08 + 0.24 * hashUnit(seed || "fishtail", "tempo-lattice-depth", sectionIndex, barIndex, groupIndex));
+    if (safeLength === 2) {
+      const direction = hashUnit(seed || "fishtail", "tempo-lattice-direction", sectionIndex, barIndex, groupIndex) < 0.5 ? -1 : 1;
+      return [direction * depth, -direction * depth];
+    }
+    const raw = Array.from({ length: safeLength }, (_, pulseOffset) => (
+      hashUnit(seed || "fishtail", "tempo-lattice-stumble", sectionIndex, barIndex, groupIndex, pulseOffset) * 2 - 1
+    ));
+    const mean = raw.reduce((sum, value) => sum + value, 0) / safeLength;
+    const centred = raw.map((value) => value - mean);
+    const maxAbs = centred.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
+    if (maxAbs < 1e-9) {
+      return centred.map((_, index) => (index % 2 === 0 ? depth : -depth));
+    }
+    return centred.map((value) => value * depth / maxAbs);
+  }
+
   function swingGroupWeights({ length, rationalAmount, irrationalAmount, seed, sectionIndex, barIndex, groupIndex }) {
     const rational = rationalSwingAmount(rationalAmount);
     const irrational = clamp(Number(irrationalAmount) || 0, 0, 1);
     const baseWeights = rationalGroupWeights(length, rational);
-    const rawWeights = baseWeights.map((weight, pulseOffset) => {
-      if (!irrational) return weight;
-      const centred = hashUnit(seed || "fishtail", "tempo-lattice", sectionIndex, barIndex, groupIndex, pulseOffset) * 2 - 1;
-      return weight + centred * irrational * 0.45;
-    });
+    const offsets = irrationalGroupOffsets({ length, amount: irrational, seed, sectionIndex, barIndex, groupIndex });
+    const rawWeights = baseWeights.map((weight, pulseOffset) => weight + (offsets[pulseOffset] || 0));
     const minWeight = 0.08;
     const positive = rawWeights.map((weight) => Math.max(minWeight, weight));
     const targetSum = length;
