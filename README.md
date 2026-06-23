@@ -2,7 +2,7 @@
 
 A local, browser-based MIDI invention and counterpoint generator for Amy's Fishtail gravity-counterpoint idea.
 
-The current build is a static web app. It generates ordinary `.mid` files plus a JSON manifest and text report, and can optionally prepare 24-bit mono WAV reference stems in the browser. It does not need live MIDI, and generated pieces/settings are created locally. The WebGL torus visual loads Three.js from a public CDN unless that dependency is vendored locally later.
+The current build is a static web app. It generates ordinary `.mid` files plus a JSON manifest and text report, and can optionally prepare browser-rendered WAV reference stems and analogue CV packages. It does not need live MIDI, and generated pieces/settings are created locally. The WebGL torus visual loads Three.js from a public CDN unless that dependency is vendored locally later.
 
 ## Run
 
@@ -39,12 +39,12 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Weighted random form generation with D4 and D20-style dice controls.
 - Section controls for bars, key, mode, time signature, and cadence.
 - Style switch for Imitation + Invention, Counterpoint, or Fishtail Fugue generation.
-- Reference-pitch menu, Probe pitch / Fine pitch ear-tuning sliders, and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A3 = 216 Hz with A4 anchored at 432 Hz and `n = 216`, giving 60.0000 BPM.
+- Reference-pitch menu, Pulse pitch / Fine pitch ear-tuning sliders, and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A3 = 216 Hz with A4 anchored at 432 Hz and `n = 216`, giving 60.0000 BPM.
 - Living Reference Input for capture-and-freeze monophonic pitch: press Listen, sing or play one sustained note through a mic/line-in/USB input exposed by the browser, then press Use this pitch to set the exact Fishtail reference locally. Audio is analysed on-device only and is not recorded, uploaded, or saved with device identity.
-- Switch-on Teardrop Probe for the current reference frequency, with one shared browser `AudioContext`, silent-at-load safety, smooth one-second pitch glide, and an 11-oscillator symmetric Teardrop voice table under the 12-node budget.
+- Switch-on Teardrop Pulse for the current reference frequency, with one shared browser `AudioContext`, silent-at-load safety, smooth one-second pitch glide, and an 11-oscillator symmetric Teardrop voice table under the 12-node budget.
 - Louder live pink-noise metronome preview with existing meter accents, rational/irrational Fishtail swing controls, and a shared tempo-lattice timing model.
 - Optional pulse-level tempo lattice in the existing MIDI conductor track. When enabled, note ticks remain on the formal grid while Set Tempo events warp tick-to-time playback for DAWs that honor tempo maps.
-- Optional generated WAV stems for a full-length Teardrop reference drone and pink-noise ticker, rendered sequentially as mono 24-bit PCM with browser memory guards and explicit save buttons. Ticker WAV export is peak-normalized to -6 dBFS for DAW-friendly headroom.
+- Optional generated WAV stems for a short Teardrop Pulse reference and pink-noise ticker, rendered sequentially as broadly compatible mono 16-bit PCM with browser memory guards and explicit save buttons. Ticker WAV export is peak-normalized to -6 dBFS for DAW-friendly headroom.
 - Optional analogue CV ZIP export for modular and old-school analogue workflows: a clean clock WAV plus 1V/oct pitch and gate WAV pairs for each generated voice. Pitch CV is a DC-coupled-interface feature; ordinary phone, tablet, and headphone outputs are usually AC-coupled and will not preserve pitch voltage.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.

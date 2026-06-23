@@ -2,6 +2,7 @@
 
 (function exposeWavExport(global) {
   const BIT_DEPTH = 24;
+  const STANDARD_WAV_BIT_DEPTH = 16;
   const CHANNELS = 1;
   const MAX_RENDER_BYTES = 220 * 1024 * 1024;
   const MAX_MOBILE_RENDER_BYTES = 96 * 1024 * 1024;
@@ -31,10 +32,16 @@
     for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i));
   }
 
-  function encodePcm24Mono(samples, sampleRate) {
+  function pcmBytesPerSample(bitDepth) {
+    return bitDepth === 24 ? 3 : 2;
+  }
+
+  function encodePcmMono(samples, sampleRate, bitDepth = BIT_DEPTH) {
     const safeRate = Math.max(1, Math.round(sampleRate || 48000));
+    const safeBitDepth = bitDepth === 24 ? 24 : STANDARD_WAV_BIT_DEPTH;
+    const bytesPerSample = pcmBytesPerSample(safeBitDepth);
     const frameCount = samples?.length || 0;
-    const dataBytes = frameCount * 3;
+    const dataBytes = frameCount * bytesPerSample;
     const buffer = new ArrayBuffer(44 + dataBytes);
     const view = new DataView(buffer);
     ascii(view, 0, "RIFF");
@@ -45,29 +52,43 @@
     view.setUint16(20, 1, true);
     view.setUint16(22, CHANNELS, true);
     view.setUint32(24, safeRate, true);
-    view.setUint32(28, safeRate * CHANNELS * 3, true);
-    view.setUint16(32, CHANNELS * 3, true);
-    view.setUint16(34, BIT_DEPTH, true);
+    view.setUint32(28, safeRate * CHANNELS * bytesPerSample, true);
+    view.setUint16(32, CHANNELS * bytesPerSample, true);
+    view.setUint16(34, safeBitDepth, true);
     ascii(view, 36, "data");
     view.setUint32(40, dataBytes, true);
     let offset = 44;
     for (let i = 0; i < frameCount; i += 1) {
       const sample = Number.isFinite(samples[i]) ? clamp(samples[i], -1, 1) : 0;
-      let value = sample < 0 ? Math.round(sample * 8388608) : Math.round(sample * 8388607);
-      value = clamp(value, -8388608, 8388607);
-      if (value < 0) value += 0x1000000;
-      view.setUint8(offset, value & 0xff);
-      view.setUint8(offset + 1, (value >>> 8) & 0xff);
-      view.setUint8(offset + 2, (value >>> 16) & 0xff);
-      offset += 3;
+      if (safeBitDepth === 24) {
+        let value = sample < 0 ? Math.round(sample * 8388608) : Math.round(sample * 8388607);
+        value = clamp(value, -8388608, 8388607);
+        if (value < 0) value += 0x1000000;
+        view.setUint8(offset, value & 0xff);
+        view.setUint8(offset + 1, (value >>> 8) & 0xff);
+        view.setUint8(offset + 2, (value >>> 16) & 0xff);
+      } else {
+        const value = clamp(sample < 0 ? Math.round(sample * 32768) : Math.round(sample * 32767), -32768, 32767);
+        view.setInt16(offset, value, true);
+      }
+      offset += bytesPerSample;
     }
     return new Uint8Array(buffer);
   }
 
-  function estimateRenderBytes(durationSeconds, sampleRate) {
+  function encodePcm24Mono(samples, sampleRate) {
+    return encodePcmMono(samples, sampleRate, 24);
+  }
+
+  function encodePcm16Mono(samples, sampleRate) {
+    return encodePcmMono(samples, sampleRate, STANDARD_WAV_BIT_DEPTH);
+  }
+
+  function estimateRenderBytes(durationSeconds, sampleRate, bitDepth = STANDARD_WAV_BIT_DEPTH) {
+    const bytesPerSample = pcmBytesPerSample(bitDepth === 24 ? 24 : STANDARD_WAV_BIT_DEPTH);
     const frames = Math.ceil(Math.max(0, durationSeconds) * sampleRate);
     const floatBytes = frames * CHANNELS * 4;
-    const wavBytes = frames * CHANNELS * 3 + 44;
+    const wavBytes = frames * CHANNELS * bytesPerSample + 44;
     const offlineBytes = floatBytes * OFFLINE_RENDER_BUFFER_MULTIPLIER;
     return {
       frames,
@@ -632,17 +653,17 @@
     });
     mix.connect(filter).connect(envelope).connect(outputGain).connect(context.destination);
     const buffer = await context.startRendering();
-    const bytes = encodePcm24Mono(buffer.getChannelData(0), plan.sampleRate);
+    const bytes = encodePcm16Mono(buffer.getChannelData(0), plan.sampleRate);
     const seed = String(settings.seed || "seed").slice(0, 8);
-    const filename = `amy-cin-fishtail-probe-first${PROBE_EXPORT_BARS}bars-${filenameNumber(settings.referenceHz || 216)}hz-${seed}.wav`;
+    const filename = `amy-cin-fishtail-pulse-first${PROBE_EXPORT_BARS}bars-${filenameNumber(settings.referenceHz || 216)}hz-${seed}.wav`;
     return {
       kind: "probe",
-      label: `probe ${PROBE_EXPORT_BARS}-bar reference`,
+      label: `pulse ${PROBE_EXPORT_BARS}-bar reference`,
       bytes,
       blob: wavBlob(bytes),
       filename,
       sampleRate: plan.sampleRate,
-      bitDepth: BIT_DEPTH,
+      bitDepth: STANDARD_WAV_BIT_DEPTH,
       durationSeconds: renderSeconds,
       pieceSeconds,
       fullPieceSeconds,
@@ -689,7 +710,7 @@
     const buffer = await context.startRendering();
     const samples = buffer.getChannelData(0);
     const normalization = normalizePeak(samples, TICKER_NORMALIZE_DBFS);
-    const bytes = encodePcm24Mono(samples, plan.sampleRate);
+    const bytes = encodePcm16Mono(samples, plan.sampleRate);
     const seed = String(settings.seed || "seed").slice(0, 8);
     const filename = `amy-cin-fishtail-ticker-${filenameNumber(settings.tempo || 60)}bpm-${seed}.wav`;
     return {
@@ -698,7 +719,7 @@
       blob: wavBlob(bytes),
       filename,
       sampleRate: plan.sampleRate,
-      bitDepth: BIT_DEPTH,
+      bitDepth: STANDARD_WAV_BIT_DEPTH,
       durationSeconds: renderSeconds,
       pieceSeconds,
       fallbackSampleRate: plan.fallback,
@@ -886,6 +907,7 @@
 
   global.FishtailWavExport = {
     BIT_DEPTH,
+    STANDARD_WAV_BIT_DEPTH,
     CHANNELS,
     MAX_RENDER_BYTES,
     MAX_MOBILE_RENDER_BYTES,
@@ -903,7 +925,9 @@
     levelSetting,
     peakAbs,
     normalizePeak,
+    encodePcmMono,
     encodePcm24Mono,
+    encodePcm16Mono,
     renderByteLimit,
     makeZip,
     cvSettings,

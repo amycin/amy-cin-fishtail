@@ -121,7 +121,7 @@
 
           <section class="panel sound-time-panel">
             <div class="panel-head">
-              <h2>Probe + Time</h2>
+              <h2>Pulse + Time</h2>
               <span id="tempoLatticeStatusLabel">Straight time</span>
             </div>
             <div class="field-grid sound-grid">
@@ -145,7 +145,7 @@
                 <input id="irrationalSwingInput" type="range" min="0" max="100" value="0">
               </label>
               <label class="probe-pitch-field">
-                Probe pitch <span id="probePitchLabel">A3 = 216.00 Hz</span>
+                Pulse pitch <span id="probePitchLabel">A3 = 216.00 Hz</span>
                 <input id="probePitchInput" type="range" min="0" max="83" step="1" value="45">
               </label>
               <label class="probe-pitch-field">
@@ -198,14 +198,14 @@
                 </div>
                 <p class="privacy-note">Audio is analysed on this device. It is not recorded or uploaded. Chords and noisy attacks may not produce a stable fundamental.</p>
               </div>
-              <button class="switch-label switch-button" id="probeInput" type="button" role="switch" aria-checked="false" title="Turn on the live Teardrop reference probe">
-                <span>Probe sound</span>
+              <button class="switch-label switch-button" id="probeInput" type="button" role="switch" aria-checked="false" title="Turn on the live Teardrop reference pulse">
+                <span>Pulse sound</span>
                 <span class="switch-control" aria-hidden="true">
                   <span class="switch-track" aria-hidden="true"></span>
                 </span>
               </button>
               <label>
-                Probe level
+                Pulse level
                 <input id="probeLevelInput" type="range" min="0" max="100" value="45">
               </label>
               <button class="switch-label switch-button" id="metronomeInput" type="button" role="switch" aria-checked="false" title="Live pink-noise tempo preview">
@@ -220,7 +220,7 @@
               </label>
               <label class="check-row">
                 <input id="prepareProbeWavInput" type="checkbox">
-                Prepare probe WAV
+                Prepare pulse WAV
               </label>
               <label class="check-row">
                 <input id="prepareTickerWavInput" type="checkbox">
@@ -337,7 +337,7 @@
               <button class="primary-button" id="generateButton" type="button">Generate + Save MIDI</button>
               <button id="downloadMidiButton" type="button" disabled>Save MIDI Again</button>
               <button id="downloadJsonButton" type="button" disabled>Save Project JSON</button>
-              <button id="downloadProbeWavButton" type="button" disabled>Save Probe WAV</button>
+              <button id="downloadProbeWavButton" type="button" disabled>Save Pulse WAV</button>
               <button id="downloadTickerWavButton" type="button" disabled>Save Ticker WAV</button>
               <button id="downloadCvWavButton" type="button" disabled>Save CV ZIP</button>
               <button id="toggleNotesButton" type="button">Show Notes</button>
@@ -381,12 +381,12 @@
               </section>
 
               <section>
-                <h3>Probe And Time</h3>
-                <p>The Probe + Time panel is the live sound and conductor-timing area. The page loads silent. Turning on <strong>Probe sound</strong> starts the Teardrop reference tone at the current Reference Hz. <strong>Probe pitch</strong> chooses the reference note, and <strong>Fine pitch</strong> trims cents by ear; both write into the same Reference Hz used by MIDI generation.</p>
+                <h3>Pulse And Time</h3>
+                <p>The Pulse + Time panel is the live sound and conductor-timing area. The page loads silent. Turning on <strong>Pulse sound</strong> starts the Teardrop reference tone at the current Reference Hz. <strong>Pulse pitch</strong> chooses the reference note, and <strong>Fine pitch</strong> trims cents by ear; both write into the same Reference Hz used by MIDI generation.</p>
                 <p><strong>Living Reference</strong> listens only after you press Listen for pitch. Play or sing one sustained monophonic note, then press Use stable pitch to freeze the recent pitch centre as Fishtail's exact reference. Capture anyway is there when the source is intentionally moving. The input is analysed locally through a silent graph; it is not monitored, recorded, uploaded, or saved with device identity.</p>
                 <p><strong>Metronome</strong> starts a louder pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. Swing starts straight by default; DUB mode sets a gentle strolling swing. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
-                <p>Plain Equal Temperament MIDI exports ordinary note numbers, so exact captured acoustic tuning depends on the receiving synth. Amy Dub Intonation, Bend MIDI, project JSON, Probe WAV, and Fishtail's tempo/reference metadata preserve the captured relationship more directly.</p>
-                <p>Prepare probe WAV and Prepare ticker WAV render optional mono 24-bit stems after MIDI generation. Probe WAV is a short first-two-bars reference tone; ticker WAV stays whole-piece and peak-normalized to -6 dBFS for DAW-friendly alignment. Prepare analogue CV ZIP renders the selected voice set as clock, 1V/oct pitch, gate, and calibration WAV files. Fishtail shows estimated file size and temporary render memory before audio export. The CV controls set voice package, first-60s / whole-short-piece duration, musical pulse / bar / 24 PPQN clock, full-scale volts, zero offset, gate polarity, and retrigger gap. Browser CV export defaults to one voice and the first 60 seconds for iPad memory safety. Pitch CV needs a DC-coupled interface or DAW CV utility; ordinary phone and headphone outputs usually will not preserve DC pitch voltage.</p>
+                <p>Plain Equal Temperament MIDI exports ordinary note numbers, so exact captured acoustic tuning depends on the receiving synth. Amy Dub Intonation, Bend MIDI, project JSON, Pulse WAV, and Fishtail's tempo/reference metadata preserve the captured relationship more directly.</p>
+                <p>Prepare pulse WAV and Prepare ticker WAV render optional mono 16-bit stems after MIDI generation for broad device compatibility. Pulse WAV is a short first-two-bars reference tone; ticker WAV stays whole-piece and peak-normalized to -6 dBFS for DAW-friendly alignment. Prepare analogue CV ZIP renders the selected voice set as clock, 1V/oct pitch, gate, and calibration WAV files. Fishtail shows estimated file size and temporary render memory before audio export. The CV controls set voice package, first-60s / whole-short-piece duration, musical pulse / bar / 24 PPQN clock, full-scale volts, zero offset, gate polarity, and retrigger gap. Browser CV export defaults to one voice and the first 60 seconds for iPad memory safety. Pitch CV needs a DC-coupled interface or DAW CV utility; ordinary phone and headphone outputs usually will not preserve DC pitch voltage.</p>
               </section>
 
               <section>
@@ -440,7 +440,7 @@
 
               <section>
                 <h3>Credits And Ownership</h3>
-                <p>Project identity, musical concept, tuning direction, Fishtail design, Teardrop Probe, Living Reference Input, pink-noise ticker, tempo-lattice direction, and analogue CV export direction: Amy McBride / amy_cin. Artwork by Ocular Debris. Copyright (c) 2026 Amy McBride. All rights reserved. This version was vibe coded with Codex, collaborating as Lambda Echo. Three.js is used for the WebGL torus visual and is acknowledged in <code>CREDITS.md</code>.</p>
+                <p>Project identity, musical concept, tuning direction, Fishtail design, Teardrop Pulse, Living Reference Input, pink-noise ticker, tempo-lattice direction, and analogue CV export direction: Amy McBride / amy_cin. Artwork by Ocular Debris. Copyright (c) 2026 Amy McBride. All rights reserved. This version was vibe coded with Codex, collaborating as Lambda Echo. Three.js is used for the WebGL torus visual and is acknowledged in <code>CREDITS.md</code>.</p>
                 <p>The source currently runs as a static web app: HTML, CSS, JavaScript, and image assets. Keep the credits file with the project when publishing it.</p>
               </section>
             </div>
@@ -491,7 +491,7 @@
                 <ul>
                   <li>This version was vibe coded with Codex, collaborating as Lambda Echo.</li>
                   <li>The MIDI writer in <code>src/app.js</code> is original code.</li>
-                  <li>The Teardrop Probe, Living Reference Input, pink-noise ticker, tempo-lattice conductor, and analogue CV WAV package are implemented as browser-native Web Audio, Standard MIDI, and PCM/ZIP logic.</li>
+                  <li>The Teardrop Pulse, Living Reference Input, pink-noise ticker, tempo-lattice conductor, and analogue CV WAV package are implemented as browser-native Web Audio, Standard MIDI, and PCM/ZIP logic.</li>
                   <li>The moving torus visualisation uses Three.js, an MIT-licensed open-source 3D library.</li>
                   <li>The seeded random functions are small public-domain-style PRNG/hash patterns commonly circulated in JavaScript communities; they are included inline only for deterministic replay after the browser supplies a system entropy seed.</li>
                   <li>Browser APIs used: Canvas, WebGL through Three.js, optional Device Motion/Orientation input, Web Audio, optional MediaDevices audio input, optional Vibration API feedback, Blob download, TextEncoder, and Web Crypto <code>crypto.getRandomValues</code>.</li>
@@ -510,8 +510,8 @@
 
     <script src="src/tempo-lattice.js?v=1"></script>
     <script src="src/audio-engine.js?v=5"></script>
-    <script src="src/wav-export.js?v=5"></script>
+    <script src="src/wav-export.js?v=6"></script>
     <script src="src/pitch-input.js?v=3"></script>
-    <script src="src/app.js?v=77"></script>
+    <script src="src/app.js?v=78"></script>
   </body>
 </html>

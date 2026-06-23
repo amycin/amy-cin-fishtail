@@ -888,8 +888,8 @@ function ensureAudioContextFromUserGesture() {
 function requestAudioContextResume(context, label, control) {
   if (!context || context.state !== "suspended") return;
   context.resume().then(() => {
-    if (label === "Probe" && state.probeHeld && switchControlIsOn(els.probeInput)) {
-      els.statusLabel.textContent = `Probe ${currentReferenceHz().toFixed(2)} Hz`;
+    if (label === "Pulse" && state.probeHeld && switchControlIsOn(els.probeInput)) {
+      els.statusLabel.textContent = `Pulse ${currentReferenceHz().toFixed(2)} Hz`;
     }
   }).catch((error) => {
     els.statusLabel.textContent = `${label} paused`;
@@ -933,7 +933,7 @@ function startProbeHold() {
   state.probeHeld = true;
   const settings = readLiveAudioSettings();
   if (settings.probeMuted) {
-    els.statusLabel.textContent = "Probe off";
+    els.statusLabel.textContent = "Pulse off";
     return;
   }
   const context = ensureAudioContextFromUserGesture();
@@ -942,13 +942,13 @@ function startProbeHold() {
     return;
   }
   if (!switchControlIsOn(els.probeInput)) return;
-  els.statusLabel.textContent = `Probe ${settings.referenceHz.toFixed(2)} Hz`;
-  requestAudioContextResume(context, "Probe", els.probeInput);
+  els.statusLabel.textContent = `Pulse ${settings.referenceHz.toFixed(2)} Hz`;
+  requestAudioContextResume(context, "Pulse", els.probeInput);
   try {
     FishtailAudioEngine.startProbe(state.audio, context, settings);
   } catch (error) {
-    els.statusLabel.textContent = "Probe failed";
-    console.warn("Probe sound unavailable.", error);
+    els.statusLabel.textContent = "Pulse failed";
+    console.warn("Pulse sound unavailable.", error);
   }
 }
 
@@ -956,7 +956,7 @@ function stopProbeHold() {
   if (!state.probeHeld && !state.audio.probe) return;
   state.probeHeld = false;
   FishtailAudioEngine.stopProbe(state.audio, state.audio.context);
-  els.statusLabel.textContent = switchControlIsOn(els.metronomeInput) ? "Metronome on" : "Probe off";
+  els.statusLabel.textContent = switchControlIsOn(els.metronomeInput) ? "Metronome on" : "Pulse off";
 }
 
 function startLiveMetronome() {
@@ -1145,7 +1145,7 @@ function stopLivingReferenceInput(status = "Input ended", options = {}) {
 async function startLivingReferenceInput() {
   if (!navigator.mediaDevices?.getUserMedia) {
     updateReferenceInputStatus("Input unavailable");
-    if (els.referenceStabilityLabel) els.referenceStabilityLabel.textContent = "Live reference input is unavailable here. You can still type a frequency or use the Teardrop Probe.";
+    if (els.referenceStabilityLabel) els.referenceStabilityLabel.textContent = "Live reference input is unavailable here. You can still type a frequency or use the Teardrop Pulse.";
     return;
   }
   stopLivingReferenceInput("Requesting permission", { restoreAudio: false, preserveSuspended: true });
@@ -1233,7 +1233,7 @@ async function startLivingReferenceInput() {
     if (els.referenceStabilityLabel) {
       els.referenceStabilityLabel.textContent = denied
         ? "Permission denied. Use the browser site settings to allow audio input, or type a frequency manually."
-        : "Live reference input is unavailable here. You can still type a frequency or use the Teardrop Probe.";
+        : "Live reference input is unavailable here. You can still type a frequency or use the Teardrop Pulse.";
     }
     console.warn("Living reference input unavailable.", error);
   }
@@ -4836,7 +4836,9 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
         ticker: false,
         cv: false,
       },
-      bit_depth: 24,
+      bit_depth: "per_stem",
+      ordinary_wav_bit_depth: FishtailWavExport.STANDARD_WAV_BIT_DEPTH,
+      cv_bit_depth: FishtailWavExport.BIT_DEPTH,
       channels: 1,
     },
     sections: sectionMeta,
@@ -4901,11 +4903,11 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`Gravity Velocity: ${stats.velocitySummary?.label || "Calm Gravity"} ${settings.velocityProfile === "flat" ? "fixed at 100" : `range ${stats.velocitySummary?.stats?.min ?? 0}-${stats.velocitySummary?.stats?.max ?? 0}, linked to Fishtail tempo n=${settings.tempoDivisor}`}.`);
   if (settings.prepareProbeWav || settings.prepareTickerWav || settings.prepareCvWav) {
     const requested = [
-      settings.prepareProbeWav ? "probe" : "",
+      settings.prepareProbeWav ? "pulse" : "",
       settings.prepareTickerWav ? "ticker" : "",
       settings.prepareCvWav ? "analogue CV ZIP" : "",
     ].filter(Boolean).join(", ");
-    lines.push(`Audio stems requested: ${requested}; rendered after MIDI generation with mono 24-bit safety checks.`);
+    lines.push(`Audio stems requested: ${requested}; rendered after MIDI generation with per-stem PCM safety checks.`);
   }
   if (settings.outputMode === "bend") {
     lines.push(`Bend reference: ${settings.rootNote} = ${settings.rootFreq.toFixed(4)} Hz, derived from ${settings.referenceNote} at ${settings.referenceHz.toFixed(4)} Hz`);
@@ -5500,10 +5502,10 @@ function audioExportButton(kind) {
 function audioExportDescriptor(kind) {
   if (kind === "probe") {
     return {
-      label: "Probe WAV",
-      readyText: "Save Probe WAV",
-      renderText: "Render + Save Probe WAV",
-      renderingText: "Rendering Probe WAV",
+      label: "Pulse WAV",
+      readyText: "Save Pulse WAV",
+      renderText: "Render + Save Pulse WAV",
+      renderingText: "Rendering Pulse WAV",
       renderer: FishtailWavExport.renderProbeWav,
     };
   }
@@ -5582,7 +5584,7 @@ function estimateWavExportPlan(kind, settings, timeline) {
   return {
     kind,
     label: descriptor.label,
-    detail: `${sampleRate / 1000} kHz mono 24-bit${kind === "probe" ? ", first 2 bars" : ", whole piece"}${fallback ? " fallback" : ""}`,
+    detail: `${sampleRate / 1000} kHz mono ${FishtailWavExport.STANDARD_WAV_BIT_DEPTH}-bit${kind === "probe" ? ", first 2 bars" : ", whole piece"}${fallback ? " fallback" : ""}`,
     durationSeconds: renderSeconds,
     downloadBytes: estimate.wavBytes,
     workingBytes: estimate.totalBytes,
@@ -5687,7 +5689,14 @@ async function prepareRequestedAudioExports(piece) {
 
   const rendered = [];
   const failed = [];
-  piece.manifest.audio_stems = piece.manifest.audio_stems || { requested: {}, rendered: {}, bit_depth: 24, channels: 1 };
+  piece.manifest.audio_stems = piece.manifest.audio_stems || {
+    requested: {},
+    rendered: {},
+    bit_depth: "per_stem",
+    ordinary_wav_bit_depth: FishtailWavExport.STANDARD_WAV_BIT_DEPTH,
+    cv_bit_depth: FishtailWavExport.BIT_DEPTH,
+    channels: 1,
+  };
   piece.manifest.audio_stems.errors = [];
 
   for (const kind of requested) {
@@ -5722,7 +5731,14 @@ function roundedFinite(value, places) {
 
 function recordAudioExport(piece, audioExport) {
   const kind = audioExport.kind;
-  piece.manifest.audio_stems = piece.manifest.audio_stems || { requested: {}, rendered: {}, bit_depth: 24, channels: 1 };
+  piece.manifest.audio_stems = piece.manifest.audio_stems || {
+    requested: {},
+    rendered: {},
+    bit_depth: "per_stem",
+    ordinary_wav_bit_depth: FishtailWavExport.STANDARD_WAV_BIT_DEPTH,
+    cv_bit_depth: FishtailWavExport.BIT_DEPTH,
+    channels: 1,
+  };
   piece.manifest.audio_stems.rendered = piece.manifest.audio_stems.rendered || {};
   piece.manifest.audio_stems.rendered[kind] = true;
   const stem = {
