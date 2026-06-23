@@ -483,6 +483,10 @@ function runStabilityTests() {
         const wav = FishtailWavExport.encodePcm24Mono(new Float32Array([0, 1, -1, 2, -2, NaN]), 48000);
         const text = (start, end) => String.fromCharCode(...wav.slice(start, end));
         const dataBytes = wav[40] | (wav[41] << 8) | (wav[42] << 16) | (wav[43] << 24);
+        const tickerSamples = new Float32Array([0, 0.1, -0.25, 0.05]);
+        const normalization = FishtailWavExport.normalizePeak(tickerSamples, -6);
+        const normalizedPeak = FishtailWavExport.peakAbs(tickerSamples);
+        const targetPeak = FishtailWavExport.dbfsToGain(-6);
         return {
           riff: text(0, 4) === "RIFF",
           wave: text(8, 12) === "WAVE",
@@ -491,6 +495,9 @@ function runStabilityTests() {
           rate: (wav[24] | (wav[25] << 8) | (wav[26] << 16) | (wav[27] << 24)) === 48000,
           bits: wav[34] === 24 && wav[35] === 0,
           dataLength: dataBytes === 18 && wav.length === 62,
+          tickerNormalizes: Math.abs(normalizedPeak - targetPeak) < 1e-6
+            && normalization.targetDbfs === -6
+            && Math.abs(normalization.afterDbfs + 6) < 0.0001,
         };
       })();
 
@@ -589,6 +596,12 @@ function runStabilityTests() {
         {
           name: "wav encoder writes mono 24-bit pcm headers",
           ok: wavAudit.riff && wavAudit.wave && wavAudit.pcm && wavAudit.mono && wavAudit.rate && wavAudit.bits && wavAudit.dataLength,
+        },
+        {
+          name: "ticker wav normalizer targets -6 dBFS",
+          ok: wavAudit.tickerNormalizes
+            && FishtailWavExport.TICKER_NORMALIZE_DBFS === -6
+            && FishtailAudioEngine.METRONOME_MAX_GAIN >= 3.4,
         },
         {
           name: "audio runtime is silent at load",
@@ -1351,11 +1364,15 @@ function runFugueTests() {
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="irrationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
+    && indexHtml.includes('src/audio-engine.js?v=4')
+    && indexHtml.includes('src/wav-export.js?v=2')
     && indexHtml.includes('src/pitch-input.js?v=1')
+    && indexHtml.includes('src/app.js?v=69')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Audio is analysed on this device. It is not recorded or uploaded.")
     && indexHtml.includes("Living Reference Input, pink-noise ticker")
     && indexHtml.includes("optional MediaDevices audio input")
+    && indexHtml.includes("Ticker WAV export is peak-normalized to -6 dBFS")
     && indexHtml.includes("meter 4/4 from form 1")
     && stylesCss.includes(".probe-pitch-field")
     && stylesCss.includes(".living-reference")

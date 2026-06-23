@@ -329,7 +329,7 @@
                 <p><strong>Living Reference</strong> listens only after you press Listen for pitch. Play or sing one sustained monophonic note, then press Use this pitch to freeze the recent pitch centre as Fishtail's exact reference. The input is analysed locally through a silent graph; it is not monitored, recorded, uploaded, or saved with device identity.</p>
                 <p><strong>Metronome</strong> starts a louder pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. Swing starts straight by default; DUB mode sets a gentle strolling swing. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
                 <p>Plain Equal Temperament MIDI exports ordinary note numbers, so exact captured acoustic tuning depends on the receiving synth. Amy Dub Intonation, Bend MIDI, project JSON, Probe WAV, and Fishtail's tempo/reference metadata preserve the captured relationship more directly.</p>
-                <p>Prepare probe WAV and Prepare ticker WAV render optional mono 24-bit stems after MIDI generation. They are saved only when their explicit Save WAV buttons are pressed.</p>
+                <p>Prepare probe WAV and Prepare ticker WAV render optional mono 24-bit stems after MIDI generation. Ticker WAV export is peak-normalized to -6 dBFS for DAW-friendly headroom. Stems are saved only when their explicit Save WAV buttons are pressed.</p>
               </section>
 
               <section>
@@ -452,9 +452,9 @@
     </main>
 
     <script src="src/tempo-lattice.js?v=1"></script>
-    <script src="src/audio-engine.js?v=3"></script>
-    <script src="src/wav-export.js?v=1"></script>
+    <script src="src/audio-engine.js?v=4"></script>
+    <script src="src/wav-export.js?v=2"></script>
     <script src="src/pitch-input.js?v=1"></script>
-    <script src="src/app.js?v=68"></script>
+    <script src="src/app.js?v=69"></script>
   </body>
 </html>

@@ -5,6 +5,7 @@
   const CHANNELS = 1;
   const MAX_RENDER_BYTES = 220 * 1024 * 1024;
   const EPSILON_GAIN = 0.0001;
+  const TICKER_NORMALIZE_DBFS = -6;
 
   function clamp(value, min, max) {
     return global.FishtailTempoLattice?.clamp
@@ -89,6 +90,44 @@
     return typeof Blob === "function" ? new Blob([bytes], { type: "audio/wav" }) : null;
   }
 
+  function dbfsToGain(dbfs) {
+    return 10 ** (clamp(Number(dbfs) || 0, -96, 0) / 20);
+  }
+
+  function peakAbs(samples) {
+    let peak = 0;
+    for (let i = 0; i < (samples?.length || 0); i += 1) {
+      const sample = Number.isFinite(samples[i]) ? Math.abs(samples[i]) : 0;
+      if (sample > peak) peak = sample;
+    }
+    return peak;
+  }
+
+  function gainToDbfs(gain) {
+    return gain > 0 ? 20 * Math.log10(gain) : -Infinity;
+  }
+
+  function normalizePeak(samples, targetDbfs = TICKER_NORMALIZE_DBFS) {
+    const targetPeak = dbfsToGain(targetDbfs);
+    const beforePeak = peakAbs(samples);
+    const scale = beforePeak > 1e-9 ? targetPeak / beforePeak : 1;
+    if (beforePeak > 1e-9 && Number.isFinite(scale)) {
+      for (let i = 0; i < samples.length; i += 1) {
+        samples[i] = Number.isFinite(samples[i]) ? samples[i] * scale : 0;
+      }
+    }
+    const afterPeak = peakAbs(samples);
+    return {
+      targetDbfs,
+      targetPeak,
+      gain: scale,
+      beforePeak,
+      afterPeak,
+      beforeDbfs: gainToDbfs(beforePeak),
+      afterDbfs: gainToDbfs(afterPeak),
+    };
+  }
+
   function timelineForPiece(piece) {
     if (piece?.tempoTimeline) return piece.tempoTimeline;
     if (global.FishtailTempoLattice && piece?.sectionMeta) {
@@ -171,9 +210,10 @@
     tickGain.gain.setValueAtTime(EPSILON_GAIN, 0);
     source.connect(filter).connect(tickGain).connect(context.destination);
     const level = clamp(Number(settings.metronomeLevel) || 0.25, 0, 1);
+    const maxGain = global.FishtailAudioEngine?.METRONOME_MAX_GAIN || 3.4;
     const baseGain = global.FishtailAudioEngine?.levelToGain
-      ? global.FishtailAudioEngine.levelToGain(level, 0.32)
-      : level * 0.12;
+      ? global.FishtailAudioEngine.levelToGain(level, maxGain)
+      : level * maxGain;
     (timeline.tickerEvents || []).forEach((event) => {
       const time = Math.max(0, event.timeSeconds || 0);
       if (time >= renderSeconds) return;
@@ -186,7 +226,9 @@
     source.start(0);
     source.stop(renderSeconds);
     const buffer = await context.startRendering();
-    const bytes = encodePcm24Mono(buffer.getChannelData(0), plan.sampleRate);
+    const samples = buffer.getChannelData(0);
+    const normalization = normalizePeak(samples, TICKER_NORMALIZE_DBFS);
+    const bytes = encodePcm24Mono(samples, plan.sampleRate);
     const seed = String(settings.seed || "seed").slice(0, 8);
     const filename = `amy-cin-fishtail-ticker-${filenameNumber(settings.tempo || 60)}bpm-${seed}.wav`;
     return {
@@ -199,6 +241,7 @@
       durationSeconds: renderSeconds,
       pieceSeconds,
       fallbackSampleRate: plan.fallback,
+      normalization,
     };
   }
 
@@ -206,6 +249,10 @@
     BIT_DEPTH,
     CHANNELS,
     MAX_RENDER_BYTES,
+    TICKER_NORMALIZE_DBFS,
+    dbfsToGain,
+    peakAbs,
+    normalizePeak,
     encodePcm24Mono,
     estimateRenderBytes,
     chooseRenderPlan,

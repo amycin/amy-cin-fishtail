@@ -4660,6 +4660,8 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
         web_audio_q: Number(FishtailTempoLattice.TICKER_WEB_AUDIO_Q.toFixed(4)),
         duration_seconds: FishtailTempoLattice.TICKER_DECAY_SECONDS,
         filter_glide_seconds: FishtailTempoLattice.TICKER_FILTER_GLIDE_SECONDS,
+        live_max_gain: FishtailAudioEngine.METRONOME_MAX_GAIN,
+        wav_normalize_peak_dbfs: FishtailWavExport.TICKER_NORMALIZE_DBFS,
       },
     },
     audio_stems: {
@@ -5334,7 +5336,8 @@ async function prepareRequestedAudioExports(piece) {
       const audioExport = await renderer(piece);
       state.lastAudioExports[kind] = audioExport;
       recordAudioExport(piece, audioExport);
-      rendered.push(`${kind} ${audioExport.sampleRate / 1000} kHz`);
+      const peakLabel = audioExport.normalization ? `, peak ${audioExport.normalization.targetDbfs} dBFS` : "";
+      rendered.push(`${kind} ${audioExport.sampleRate / 1000} kHz${peakLabel}`);
       updateAudioExportButtons();
     } catch (error) {
       const message = `${kind} WAV skipped: ${error.message}`;
@@ -5356,10 +5359,14 @@ async function prepareRequestedAudioExports(piece) {
   els.statusLabel.textContent = rendered.length ? "WAV ready" : "MIDI saved";
 }
 
+function roundedFinite(value, places) {
+  return Number.isFinite(value) ? Number(value.toFixed(places)) : null;
+}
+
 function recordAudioExport(piece, audioExport) {
   const kind = audioExport.kind;
   piece.manifest.audio_stems.rendered[kind] = true;
-  piece.manifest.audio_stems[kind] = {
+  const stem = {
     filename: audioExport.filename,
     sample_rate_hz: audioExport.sampleRate,
     bit_depth: audioExport.bitDepth,
@@ -5368,6 +5375,16 @@ function recordAudioExport(piece, audioExport) {
     piece_seconds: Number(audioExport.pieceSeconds.toFixed(4)),
     fallback_sample_rate: Boolean(audioExport.fallbackSampleRate),
   };
+  if (audioExport.normalization) {
+    const normalized = audioExport.normalization;
+    stem.normalization = {
+      target_peak_dbfs: roundedFinite(normalized.targetDbfs, 2),
+      peak_dbfs: roundedFinite(normalized.afterDbfs, 4),
+      peak_before_dbfs: roundedFinite(normalized.beforeDbfs, 4),
+      gain: roundedFinite(normalized.gain, 6),
+    };
+  }
+  piece.manifest.audio_stems[kind] = stem;
 }
 
 function downloadAudioExport(kind) {
