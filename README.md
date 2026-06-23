@@ -39,9 +39,9 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Weighted random form generation with D4 and D20-style dice controls.
 - Section controls for bars, key, mode, time signature, and cadence.
 - Style switch for Imitation + Invention, Counterpoint, or Fishtail Fugue generation.
-- Reference-pitch menu and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A3 = 216 Hz with A4 anchored at 432 Hz and `n = 216`, giving 60.0000 BPM.
+- Reference-pitch menu, Probe pitch / Fine pitch ear-tuning sliders, and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A3 = 216 Hz with A4 anchored at 432 Hz and `n = 216`, giving 60.0000 BPM.
 - Switch-on Teardrop Probe for the current reference frequency, with one shared browser `AudioContext`, silent-at-load safety, smooth one-second pitch glide, and an 11-oscillator symmetric Teardrop voice table under the 12-node budget.
-- Live pink-noise metronome preview with existing meter accents, rational/irrational Fishtail swing controls, and a shared tempo-lattice timing model.
+- Louder live pink-noise metronome preview with existing meter accents, rational/irrational Fishtail swing controls, and a shared tempo-lattice timing model.
 - Optional pulse-level tempo lattice in the existing MIDI conductor track. When enabled, note ticks remain on the formal grid while Set Tempo events warp tick-to-time playback for DAWs that honor tempo maps.
 - Optional generated WAV stems for a full-length Teardrop reference drone and pink-noise ticker, rendered sequentially as mono 24-bit PCM with browser memory guards and explicit save buttons.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.

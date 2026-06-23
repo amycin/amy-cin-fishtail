@@ -5,7 +5,7 @@
   const SCHEDULER_MS = 25;
   const EPSILON_GAIN = 0.0001;
   const PROBE_MAX_GAIN = 0.42;
-  const METRONOME_MAX_GAIN = 0.32;
+  const METRONOME_MAX_GAIN = 1.05;
 
   function clamp(value, min, max) {
     return global.FishtailTempoLattice?.clamp

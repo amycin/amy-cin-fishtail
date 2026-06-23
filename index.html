@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=34">
+    <link rel="stylesheet" href="styles.css?v=35">
   </head>
   <body>
     <main class="shell">
@@ -175,7 +175,7 @@
                   <span class="switch-track" aria-hidden="true"></span>
                 </span>
               </label>
-              <label>
+              <label title="Follow section 1 uses the meter from the first Form row">
                 Preview meter
                 <select id="metronomeMeterInput"></select>
               </label>
@@ -186,6 +186,14 @@
               <label>
                 Irrational swing
                 <input id="irrationalSwingInput" type="range" min="0" max="100" value="0">
+              </label>
+              <label class="probe-pitch-field">
+                Probe pitch <span id="probePitchLabel">A3 = 216.00 Hz</span>
+                <input id="probePitchInput" type="range" min="0" max="59" step="1" value="21">
+              </label>
+              <label class="probe-pitch-field">
+                Fine pitch <span id="probeFineLabel">+0.0 ct</span>
+                <input id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0">
               </label>
               <button class="switch-label switch-button" id="probeInput" type="button" role="switch" aria-checked="false" title="Turn on the live Teardrop reference probe">
                 <span>Probe sound</span>
@@ -205,7 +213,7 @@
               </button>
               <label>
                 Metronome level
-                <input id="metronomeLevelInput" type="range" min="0" max="100" value="35">
+                <input id="metronomeLevelInput" type="range" min="0" max="100" value="72">
               </label>
               <label class="check-row">
                 <input id="prepareProbeWavInput" type="checkbox">
@@ -215,7 +223,7 @@
                 <input id="prepareTickerWavInput" type="checkbox">
                 Prepare ticker WAV
               </label>
-              <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | midpoint 0.560</output>
+              <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | meter 4/4 from form 1 | midpoint 0.560</output>
             </div>
           </section>
 
@@ -272,8 +280,8 @@
 
               <section>
                 <h3>Probe And Time</h3>
-                <p>The Probe + Time panel is the live sound and conductor-timing area. The page loads silent. Turning on <strong>Probe sound</strong> starts the Teardrop reference tone at the current Reference Hz; changing pitch glides the sound instead of rebuilding it abruptly.</p>
-                <p><strong>Metronome</strong> starts a pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
+                <p>The Probe + Time panel is the live sound and conductor-timing area. The page loads silent. Turning on <strong>Probe sound</strong> starts the Teardrop reference tone at the current Reference Hz. <strong>Probe pitch</strong> chooses the reference note, and <strong>Fine pitch</strong> trims cents by ear; both write into the same Reference Hz used by MIDI generation.</p>
+                <p><strong>Metronome</strong> starts a pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
                 <p>Prepare probe WAV and Prepare ticker WAV render optional mono 24-bit stems after MIDI generation. They are saved only when their explicit Save WAV buttons are pressed.</p>
               </section>
 
@@ -397,8 +405,8 @@
     </main>
 
     <script src="src/tempo-lattice.js?v=1"></script>
-    <script src="src/audio-engine.js?v=1"></script>
+    <script src="src/audio-engine.js?v=2"></script>
     <script src="src/wav-export.js?v=1"></script>
-    <script src="src/app.js?v=63"></script>
+    <script src="src/app.js?v=65"></script>
   </body>
 </html>

@@ -5,6 +5,8 @@ const DEFAULT_A4_HZ = 432;
 const DEFAULT_REFERENCE_NOTE = "A3";
 const DEFAULT_REFERENCE_HZ = 216;
 const DEFAULT_TEMPO_DIVISOR = 216;
+const REFERENCE_FINE_CENTS_MIN = -100;
+const REFERENCE_FINE_CENTS_MAX = 100;
 const GENERATE_FADE_MS = 900;
 const GENERATE_TAIL_MS = 1800;
 const GENERATE_MIN_MS = 4200;
@@ -544,6 +546,10 @@ function bindElements() {
     "tempoLatticeReadout",
     "rationalSwingInput",
     "irrationalSwingInput",
+    "probePitchInput",
+    "probePitchLabel",
+    "probeFineInput",
+    "probeFineLabel",
     "metronomeMeterInput",
     "probeInput",
     "probeLevelInput",
@@ -645,17 +651,22 @@ function bindEvents() {
   });
   els.referenceNoteInput.addEventListener("change", () => {
     updateReferenceFrequencyFromAnchor();
-    updateTempoControls();
-    if (isTuningRootVisible()) updateTuningRootReference(true);
-    updateSoundTimeControls();
-    updateLiveAudioFromControls();
+    applyReferencePitchChange();
   });
   els.referenceFreqInput.addEventListener("input", () => {
     updateReferenceAnchorFromFrequency();
-    updateTempoControls();
-    if (isTuningRootVisible()) updateTuningRootReference(true);
-    updateSoundTimeControls();
-    updateLiveAudioFromControls();
+    applyReferencePitchChange();
+  });
+  els.probePitchInput?.addEventListener("input", () => {
+    const index = clamp(parseInt(els.probePitchInput.value, 10) || 0, 0, REFERENCE_NOTE_NAMES.length - 1);
+    const fineCents = readProbeFineCents();
+    els.referenceNoteInput.value = REFERENCE_NOTE_NAMES[index] || DEFAULT_REFERENCE_NOTE;
+    updateReferenceFrequencyFromFineCents(fineCents);
+    applyReferencePitchChange();
+  });
+  els.probeFineInput?.addEventListener("input", () => {
+    updateReferenceFrequencyFromFineCents(readProbeFineCents());
+    applyReferencePitchChange();
   });
   els.tempoDivisorInput.addEventListener("input", () => {
     updateTempoControls();
@@ -708,6 +719,8 @@ function bindSoundTimeEvents() {
     els.tempoLatticeInput,
     els.rationalSwingInput,
     els.irrationalSwingInput,
+    els.probePitchInput,
+    els.probeFineInput,
     els.metronomeMeterInput,
     els.probeLevelInput,
     els.metronomeLevelInput,
@@ -812,7 +825,7 @@ function readLiveAudioSettings() {
     probeMuted: !probeEnabled,
     probeLevel: percentInput(els.probeLevelInput, 0.45),
     metronomeEnabled: switchControlIsOn(els.metronomeInput),
-    metronomeLevel: percentInput(els.metronomeLevelInput, 0.35),
+    metronomeLevel: percentInput(els.metronomeLevelInput, 0.72),
   };
 }
 
@@ -1210,6 +1223,7 @@ function updateTempoControls() {
   const bpm = fishtailTempo(referenceHz, divisor);
   els.tempoInput.value = bpm.toFixed(4);
   els.tempoDivisorLabel.textContent = `n = ${divisor}`;
+  syncProbePitchControls();
 }
 
 function currentSectionMetaForTimeline() {
@@ -1254,9 +1268,11 @@ function updateSoundTimeControls() {
   const minBpm = timeline.minInstantaneousBpm.toFixed(2);
   const maxBpm = timeline.maxInstantaneousBpm.toFixed(2);
   const duration = timeline.totalSeconds;
+  const meterChoice = els.metronomeMeterInput?.value || "section-1";
+  const previewMeter = meterChoice === "section-1" ? `${state.sections[0]?.meter || "4/4"} from form 1` : meterChoice;
   const label = els.tempoLatticeInput?.checked ? `${minBpm}-${maxBpm} BPM` : "Straight time";
   els.tempoLatticeStatusLabel.textContent = label;
-  els.tempoLatticeReadout.textContent = `${currentTempoBpm().toFixed(4)} BPM | midpoint ${midpoint.toFixed(3)} | ${duration.toFixed(2)} s`;
+  els.tempoLatticeReadout.textContent = `${currentTempoBpm().toFixed(4)} BPM | meter ${previewMeter} | midpoint ${midpoint.toFixed(3)} | ${duration.toFixed(2)} s`;
 }
 
 function updateReferenceFrequencyFromAnchor() {
@@ -1270,12 +1286,65 @@ function updateReferenceAnchorFromFrequency() {
   state.referenceAnchorA4Hz = currentReferenceHz() / ratio;
 }
 
+function updateReferenceFrequencyFromFineCents(fineCents) {
+  const baseHz = referenceBaseHzForMidi(selectedReferenceMidi());
+  const hz = clamp(baseHz * (2 ** (fineCents / 1200)), 20, 2000);
+  els.referenceFreqInput.value = hz.toFixed(2);
+  updateReferenceAnchorFromFrequency();
+}
+
+function applyReferencePitchChange() {
+  updateTempoControls();
+  if (isTuningRootVisible()) updateTuningRootReference(true);
+  updateSoundTimeControls();
+  updateLiveAudioFromControls();
+}
+
 function currentReferenceHz() {
   return clamp(parseFloat(els.referenceFreqInput.value) || DEFAULT_REFERENCE_HZ, 20, 2000);
 }
 
 function selectedReferenceMidi() {
   return noteNameToMidi(els.referenceNoteInput.value || DEFAULT_REFERENCE_NOTE);
+}
+
+function referenceBaseHzForMidi(midi) {
+  return clamp(DEFAULT_A4_HZ * ratioForMidiFromRoot(midi, 69), 20, 2000);
+}
+
+function currentReferenceFineCents() {
+  const baseHz = referenceBaseHzForMidi(selectedReferenceMidi()) || DEFAULT_REFERENCE_HZ;
+  const cents = 1200 * Math.log2(currentReferenceHz() / baseHz);
+  return clamp(Number.isFinite(cents) ? cents : 0, REFERENCE_FINE_CENTS_MIN, REFERENCE_FINE_CENTS_MAX);
+}
+
+function readProbeFineCents() {
+  if (!els.probeFineInput) return currentReferenceFineCents();
+  return clamp(parseFloat(els.probeFineInput.value) || 0, REFERENCE_FINE_CENTS_MIN, REFERENCE_FINE_CENTS_MAX);
+}
+
+function syncProbePitchControls() {
+  if (!els.probePitchInput && !els.probeFineInput) return;
+  const note = els.referenceNoteInput.value || DEFAULT_REFERENCE_NOTE;
+  const noteIndex = Math.max(0, REFERENCE_NOTE_NAMES.indexOf(note));
+  const fineCents = currentReferenceFineCents();
+  if (els.probePitchInput) {
+    els.probePitchInput.min = "0";
+    els.probePitchInput.max = String(REFERENCE_NOTE_NAMES.length - 1);
+    els.probePitchInput.value = String(noteIndex);
+  }
+  if (els.probeFineInput) {
+    els.probeFineInput.min = String(REFERENCE_FINE_CENTS_MIN);
+    els.probeFineInput.max = String(REFERENCE_FINE_CENTS_MAX);
+    els.probeFineInput.value = fineCents.toFixed(1);
+  }
+  if (els.probePitchLabel) {
+    els.probePitchLabel.textContent = `${note} = ${currentReferenceHz().toFixed(2)} Hz`;
+  }
+  if (els.probeFineLabel) {
+    const sign = fineCents >= 0 ? "+" : "";
+    els.probeFineLabel.textContent = `${sign}${fineCents.toFixed(1)} ct`;
+  }
 }
 
 function renderSections() {
@@ -1712,6 +1781,8 @@ function setGenerationControlsDisabled(disabled) {
     els.tempoLatticeInput,
     els.rationalSwingInput,
     els.irrationalSwingInput,
+    els.probePitchInput,
+    els.probeFineInput,
     els.metronomeMeterInput,
     els.probeInput,
     els.probeLevelInput,
@@ -1824,7 +1895,7 @@ function readSettings(seed) {
     probeMuted: !switchControlIsOn(els.probeInput),
     probeLevel: percentInput(els.probeLevelInput, 0.45),
     metronomeEnabled: switchControlIsOn(els.metronomeInput),
-    metronomeLevel: percentInput(els.metronomeLevelInput, 0.35),
+    metronomeLevel: percentInput(els.metronomeLevelInput, 0.72),
     prepareProbeWav: Boolean(els.prepareProbeWavInput?.checked),
     prepareTickerWav: Boolean(els.prepareTickerWavInput?.checked),
     velocityProfile: els.velocityModeInput?.checked ? "auto" : "flat",

@@ -202,7 +202,8 @@ body.dub-mode .topbar {
 
 body.dub-mode .eyebrow,
 body.dub-mode .row-index,
-body.dub-mode .tempo-slider-field span {
+body.dub-mode .tempo-slider-field span,
+body.dub-mode .probe-pitch-field span {
   color: #b7ff4d;
   text-shadow: 0 0 10px rgba(183, 255, 77, 0.28);
 }
@@ -639,14 +640,27 @@ input[type="range"] {
   display: none;
 }
 
-.tempo-slider-field {
+.tempo-slider-field,
+.probe-pitch-field {
   grid-column: 1 / -1;
 }
 
-.tempo-slider-field span {
+.tempo-slider-field span,
+.probe-pitch-field span {
   color: #b84a2a;
   font-weight: 720;
   text-transform: none;
+}
+
+.tempo-slider-field input[type="range"],
+.probe-pitch-field input[type="range"] {
+  width: 100%;
+  min-height: 44px;
+  touch-action: pan-y;
+}
+
+.probe-pitch-field {
+  padding: 4px 0 2px;
 }
 
 #tempoDivisorInput {

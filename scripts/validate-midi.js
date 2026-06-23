@@ -1224,6 +1224,12 @@ function runFugueTests() {
     && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
   const velocitySwitchOk = indexHtml.includes('id="velocityModeInput" type="checkbox" checked')
     && indexHtml.includes("Gravity velocity");
+  const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="59" step="1" value="21"')
+    && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
+    && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="72"')
+    && indexHtml.includes("meter 4/4 from form 1")
+    && stylesCss.includes(".probe-pitch-field")
+    && stylesCss.includes("grid-column: 1 / -1");
   const context = makeAppContext();
   const results = vm.runInContext(`
     (() => {
@@ -1256,6 +1262,50 @@ function runFugueTests() {
           && d4Role.treatment === "straight"
           && d20Role.role === "development"
           && d20Role.treatment === "dubby";
+      }
+
+      function probePitchControlsDriveReference() {
+        const offSwitch = { getAttribute: () => "false" };
+        els.referenceNoteInput = { value: "A3" };
+        els.referenceFreqInput = { value: "216.00" };
+        els.probePitchInput = { value: "21", min: "0", max: "59" };
+        els.probePitchLabel = { textContent: "" };
+        els.probeFineInput = { value: "25.0", min: "-100", max: "100" };
+        els.probeFineLabel = { textContent: "" };
+        els.tempoDivisorInput = { value: "216", min: "", max: "" };
+        els.tempoInput = { value: "" };
+        els.tempoDivisorLabel = { textContent: "" };
+        els.tempoLatticeInput = { checked: false };
+        els.tempoLatticeStatusLabel = { textContent: "" };
+        els.tempoLatticeReadout = { textContent: "" };
+        els.rationalSwingInput = { value: "50" };
+        els.irrationalSwingInput = { value: "0" };
+        els.metronomeMeterInput = { value: "section-1" };
+        els.outputModeInput = { value: "equal" };
+        els.probeInput = offSwitch;
+        els.metronomeInput = offSwitch;
+        els.probeLevelInput = { value: "45" };
+        els.metronomeLevelInput = { value: "72" };
+
+        els.probePitchInput.value = "22";
+        els.referenceNoteInput.value = REFERENCE_NOTE_NAMES[22];
+        updateReferenceFrequencyFromFineCents(readProbeFineCents());
+        applyReferencePitchChange();
+        const coarseHz = Number(els.referenceFreqInput.value);
+        const coarseOk = els.referenceNoteInput.value === REFERENCE_NOTE_NAMES[22]
+          && Math.abs(coarseHz - (referenceBaseHzForMidi(selectedReferenceMidi()) * (2 ** (25 / 1200)))) < 0.02
+          && els.probePitchLabel.textContent.includes(els.referenceNoteInput.value)
+          && els.probeFineLabel.textContent === "+25.0 ct";
+
+        els.probeFineInput.value = "10.0";
+        updateReferenceFrequencyFromFineCents(readProbeFineCents());
+        applyReferencePitchChange();
+        const fineHz = Number(els.referenceFreqInput.value);
+        return coarseOk
+          && Math.abs(fineHz - (referenceBaseHzForMidi(selectedReferenceMidi()) * (2 ** (10 / 1200)))) < 0.02
+          && fineHz !== coarseHz
+          && els.tempoLatticeReadout.textContent.includes("meter")
+          && els.tempoInput.value.length > 0;
       }
 
       function buildFuguePiece({ sections, dubMode = false, voices = 4, seed = "validation-fugue" }) {
@@ -1334,6 +1384,10 @@ function runFugueTests() {
           ok: dubDiceWeighting(),
         },
         {
+          name: "probe pitch controls drive reference Hz",
+          ok: probePitchControlsDriveReference(),
+        },
+        {
           name: "auto-repairs one section to three",
           ok: oneSection.manifest.fugue.repaired_form.final_sections === 3
             && oneSection.manifest.fugue.repaired_form.auto_repaired
@@ -1384,12 +1438,13 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && probePitchSliderOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
   console.log(`${notesClosedOk ? "ok" : "failed"} notes default closed`);
   console.log(`${velocitySwitchOk ? "ok" : "failed"} velocity switch default`);
+  console.log(`${probePitchSliderOk ? "ok" : "failed"} probe pitch sliders and metronome boost`);
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} fugue ${result.name}`);
