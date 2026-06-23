@@ -1181,7 +1181,7 @@ function analyseReferenceInputFrame(revision) {
 function updateReferenceInputReadouts(result) {
   const now = Date.now();
   const rmsDb = Number.isFinite(result.rmsDb) ? result.rmsDb : -Infinity;
-  const levelPercent = Number.isFinite(rmsDb) ? clamp((rmsDb + 60) * (100 / 60), 0, 100) : 0;
+  const levelPercent = Number.isFinite(rmsDb) ? clamp((rmsDb + 80) * (100 / 80), 0, 100) : 0;
   const confidencePercent = clamp((result.confidence || 0) * 100, 0, 100);
   setReferenceInputMeter(levelPercent, confidencePercent);
   if (els.referenceInputLevelLabel) els.referenceInputLevelLabel.textContent = Number.isFinite(rmsDb) ? `Level ${rmsDb.toFixed(0)} dB` : "Level -inf dB";
@@ -1214,8 +1214,11 @@ function updateReferenceInputReadouts(result) {
       }
     }
   } else {
-    const status = result.reason === "too-quiet" ? "Too quiet" : "No stable fundamental";
-    if (els.referenceStabilityLabel) els.referenceStabilityLabel.textContent = status;
+    const tooQuiet = result.reason === "too-quiet";
+    const status = tooQuiet ? "Low input" : "No stable fundamental";
+    if (els.referenceStabilityLabel) {
+      els.referenceStabilityLabel.textContent = tooQuiet ? "Input is very quiet; raise gain or move closer." : status;
+    }
     updateReferenceInputStatus(status);
   }
 }

@@ -849,8 +849,11 @@ function runPitchInputTests() {
     ok: harmonic.ok && centsError(harmonic.frequency, 216) < 18,
   });
 
-  const quiet = pitch.detectPitch(frameFor(216, { amp: 0.0005 }), sampleRate, { range: "general" }, scratch);
-  results.push({ name: "rejects low-level tone", ok: !quiet.ok && quiet.reason === "too-quiet" });
+  const quietLine = pitch.detectPitch(frameFor(216, { amp: 0.002 }), sampleRate, { range: "general" }, scratch);
+  results.push({ name: "detects quiet line-level tone", ok: quietLine.ok && centsError(quietLine.frequency, 216) < 18 });
+
+  const tooQuiet = pitch.detectPitch(frameFor(216, { amp: 0.00025 }), sampleRate, { range: "general" }, scratch);
+  results.push({ name: "rejects near-silence tone", ok: !tooQuiet.ok && tooQuiet.reason === "too-quiet" });
 
   const noise = pitch.detectPitch(noiseFrame(), sampleRate, { range: "general" }, scratch);
   results.push({ name: "rejects noise as stable pitch", ok: !noise.ok || noise.confidence < 0.8 });
@@ -1367,8 +1370,8 @@ function runFugueTests() {
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
     && indexHtml.includes('src/audio-engine.js?v=4')
     && indexHtml.includes('src/wav-export.js?v=2')
-    && indexHtml.includes('src/pitch-input.js?v=1')
-    && indexHtml.includes('src/app.js?v=70')
+    && indexHtml.includes('src/pitch-input.js?v=2')
+    && indexHtml.includes('src/app.js?v=71')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Audio is analysed on this device. It is not recorded or uploaded.")
     && indexHtml.includes("Living Reference Input, pink-noise ticker")

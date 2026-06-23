@@ -8,7 +8,7 @@
   const ANALYSIS_FPS = 10;
   const SLOW_ANALYSIS_FPS = 6;
   const YIN_THRESHOLD = 0.15;
-  const MIN_RMS_DBFS = -52;
+  const MIN_RMS_DBFS = -64;
   const MIN_CONFIDENCE = 0.8;
   const CAPTURE_HISTORY_MS = 800;
   const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
