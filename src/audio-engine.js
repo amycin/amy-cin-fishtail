@@ -6,6 +6,12 @@
   const EPSILON_GAIN = 0.0001;
   const PROBE_MAX_GAIN = 0.42;
   const METRONOME_MAX_GAIN = 3.4;
+  const LIVE_TEMPO_GLIDE_PULSES = 4;
+  const LIVE_SWING_GLIDE_PULSES = 6;
+  const LIVE_CONTROL_GLIDE_MIN_SECONDS = 1.1;
+  const LIVE_CONTROL_GLIDE_MAX_SECONDS = 5.2;
+  const LIVE_REFERENCE_GLIDE_SECONDS = 1;
+  const LIVE_CONTROL_SNAP_EPSILON = 0.0001;
 
   function clamp(value, min, max) {
     return global.FishtailTempoLattice?.clamp
@@ -29,6 +35,78 @@
       param.cancelScheduledValues(time);
       param.setValueAtTime(value, time);
     }
+  }
+
+  function controlNumber(value, fallback, min, max) {
+    const numeric = Number(value);
+    return clamp(Number.isFinite(numeric) ? numeric : fallback, min, max);
+  }
+
+  function liveControlSnapshot(settings = {}) {
+    return {
+      tempo: controlNumber(settings.tempo, 60, 1, 999),
+      rationalSwing: controlNumber(settings.rationalSwing, 0, 0, 1),
+      irrationalSwing: controlNumber(settings.irrationalSwing, 0, 0, 1),
+      referenceHz: controlNumber(settings.referenceHz, 216, 20, 2000),
+    };
+  }
+
+  function pulseGlideSeconds(tempo, pulses) {
+    const secondsPerPulse = 60 / Math.max(1, controlNumber(tempo, 60, 1, 999));
+    return clamp(secondsPerPulse * pulses, LIVE_CONTROL_GLIDE_MIN_SECONDS, LIVE_CONTROL_GLIDE_MAX_SECONDS);
+  }
+
+  function glideValue(current, target, elapsedSeconds, glideSeconds) {
+    if (!Number.isFinite(current)) return target;
+    if (!Number.isFinite(target)) return current;
+    if (elapsedSeconds <= 0 || glideSeconds <= 0) return current;
+    const alpha = 1 - Math.exp(-elapsedSeconds / glideSeconds);
+    const next = current + (target - current) * clamp(alpha, 0, 1);
+    return Math.abs(next - target) <= LIVE_CONTROL_SNAP_EPSILON ? target : next;
+  }
+
+  function makeLiveControlState(settings, now = 0) {
+    const snapshot = liveControlSnapshot(settings);
+    const time = Math.max(0, Number(now) || 0);
+    return {
+      current: { ...snapshot },
+      target: { ...snapshot },
+      updatedAt: time,
+    };
+  }
+
+  function advanceLiveControlState(control, now = 0) {
+    if (!control) return null;
+    const time = Math.max(0, Number(now) || 0);
+    const elapsed = Math.max(0, time - (Number(control.updatedAt) || 0));
+    const tempoGlide = pulseGlideSeconds(control.target.tempo, LIVE_TEMPO_GLIDE_PULSES);
+    const swingGlide = pulseGlideSeconds(control.target.tempo, LIVE_SWING_GLIDE_PULSES);
+    control.current.tempo = glideValue(control.current.tempo, control.target.tempo, elapsed, tempoGlide);
+    control.current.rationalSwing = glideValue(control.current.rationalSwing, control.target.rationalSwing, elapsed, swingGlide);
+    control.current.irrationalSwing = glideValue(control.current.irrationalSwing, control.target.irrationalSwing, elapsed, swingGlide);
+    control.current.referenceHz = glideValue(control.current.referenceHz, control.target.referenceHz, elapsed, LIVE_REFERENCE_GLIDE_SECONDS);
+    control.updatedAt = time;
+    return control.current;
+  }
+
+  function updateLiveControlTarget(control, settings, now = 0) {
+    const state = control || makeLiveControlState(settings, now);
+    advanceLiveControlState(state, now);
+    state.target = liveControlSnapshot(settings);
+    state.updatedAt = Math.max(0, Number(now) || 0);
+    return state;
+  }
+
+  function smoothedMetronomeSettings(settings, control, now = 0) {
+    const current = advanceLiveControlState(control, now);
+    if (!current) return { ...settings };
+    return {
+      ...settings,
+      tempo: current.tempo,
+      rationalSwing: current.rationalSwing,
+      irrationalSwing: current.irrationalSwing,
+      referenceHz: current.referenceHz,
+    };
   }
 
   function ensureAudioState(audio, context) {
@@ -196,6 +274,7 @@
       tempoLatticeEnabled: Boolean(settings.tempoLatticeEnabled),
       rationalSwing: settings.rationalSwing,
       irrationalSwing: settings.irrationalSwing,
+      irrationalFeelMode: settings.irrationalFeelMode,
     }, { ppq: settings.ppq || 480, meters: settings.meters }).segments;
   }
 
@@ -213,8 +292,8 @@
     const metronome = audio?.metronome;
     const context = audio?.context;
     if (!metronome || !context || audio.schedulerRevision !== revision) return;
-    const settings = metronome.settings;
-    const pattern = metronome.pattern?.length ? metronome.pattern : buildMetronomePattern(settings);
+    const settings = smoothedMetronomeSettings(metronome.settings, metronome.control, context.currentTime);
+    const pattern = buildMetronomePattern(settings);
     metronome.pattern = pattern;
     while (metronome.nextTickTime < context.currentTime + LOOKAHEAD_SECONDS) {
       const segment = pattern[metronome.patternIndex % pattern.length];
@@ -252,6 +331,7 @@
       filter,
       tickGain,
       settings: { ...settings },
+      control: makeLiveControlState(settings, now),
       pattern: buildMetronomePattern(settings),
       patternIndex: 0,
       nextTickTime: now + 0.05,
@@ -268,11 +348,13 @@
       stopMetronome(audio);
       return;
     }
-    metronome.settings = { ...settings };
-    metronome.pattern = buildMetronomePattern(settings);
     const now = context.currentTime;
+    metronome.control = updateLiveControlTarget(metronome.control, settings, now);
+    metronome.settings = { ...settings };
+    const smoothed = smoothedMetronomeSettings(metronome.settings, metronome.control, now);
+    metronome.pattern = buildMetronomePattern(smoothed);
     cancelAndHold(metronome.filter.frequency, now);
-    metronome.filter.frequency.exponentialRampToValueAtTime(global.FishtailTempoLattice.tickerCenterHz(settings.referenceHz), now + global.FishtailTempoLattice.TICKER_FILTER_GLIDE_SECONDS);
+    metronome.filter.frequency.exponentialRampToValueAtTime(global.FishtailTempoLattice.tickerCenterHz(smoothed.referenceHz), now + global.FishtailTempoLattice.TICKER_FILTER_GLIDE_SECONDS);
   }
 
   function stopMetronome(audio) {
@@ -300,9 +382,17 @@
   global.FishtailAudioEngine = {
     PROBE_MAX_GAIN,
     METRONOME_MAX_GAIN,
+    LIVE_TEMPO_GLIDE_PULSES,
+    LIVE_SWING_GLIDE_PULSES,
+    LIVE_CONTROL_GLIDE_MIN_SECONDS,
+    LIVE_CONTROL_GLIDE_MAX_SECONDS,
+    LIVE_REFERENCE_GLIDE_SECONDS,
     ensureAudioState,
     ensurePinkNoiseBuffer,
     makePinkNoiseBuffer,
+    makeLiveControlState,
+    updateLiveControlTarget,
+    smoothedMetronomeSettings,
     startProbe,
     updateProbe,
     stopProbe,

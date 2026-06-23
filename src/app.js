@@ -5,16 +5,17 @@ const DEFAULT_A4_HZ = 432;
 const DEFAULT_REFERENCE_NOTE = "A3";
 const DEFAULT_REFERENCE_HZ = 216;
 const DEFAULT_TEMPO_DIVISOR = 216;
+const DEFAULT_RHYTHM_MOTION = 0.18;
 const REFERENCE_FINE_CENTS_MIN = -100;
 const REFERENCE_FINE_CENTS_MAX = 100;
+const RHYTHM_MODEL_VERSION = "motif_rhythm_cells_v1";
+const RANDOM_MODEL_VERSION = globalThis.FishtailRandom?.NAMED_RANDOM_MODEL || "named_sfc32_v1";
+const LEGACY_RANDOM_MODEL_VERSION = globalThis.FishtailRandom?.LEGACY_RANDOM_MODEL || "legacy_single_stream_v0";
+const RANDOM_MASTER_SEED_BITS = globalThis.FishtailRandom?.MASTER_SEED_BITS || 128;
 const DUB_RATIONAL_SWING_DEFAULT = 28;
 const DUB_IRRATIONAL_SWING_DEFAULT = 6;
 const GENERATE_FADE_MS = 900;
 const GENERATE_TAIL_MS = 1800;
-const GENERATE_MIN_MS = 4200;
-const GENERATE_RITUAL_COMFORT_MS = 5600;
-const GENERATE_RITUAL_FAST_MS = 7200;
-const GENERATE_RITUAL_MAX_MS = 8600;
 const WORMHOLE_CYCLE_MS = 36000;
 const WORMHOLE_U_SEGMENTS = 24;
 const WORMHOLE_V_SEGMENTS = 7;
@@ -576,6 +577,7 @@ function bindElements() {
     "tempoLatticeReadout",
     "rationalSwingInput",
     "irrationalSwingInput",
+    "irrationalFeelInput",
     "probePitchInput",
     "probePitchLabel",
     "probeFineInput",
@@ -619,6 +621,7 @@ function bindElements() {
     "tempoDivisorLabel",
     "breathingInput",
     "densityInput",
+    "rhythmMotionInput",
     "resolutionInput",
     "outputModeInput",
     "rootNoteInput",
@@ -801,6 +804,7 @@ function bindSoundTimeEvents() {
     els.tempoLatticeInput,
     els.rationalSwingInput,
     els.irrationalSwingInput,
+    els.irrationalFeelInput,
     els.probePitchInput,
     els.probeFineInput,
     els.metronomeMeterInput,
@@ -912,6 +916,7 @@ function readLiveAudioSettings() {
     tempoLatticeEnabled: Boolean(els.tempoLatticeInput?.checked),
     rationalSwing: percentInput(els.rationalSwingInput, 0),
     irrationalSwing: percentInput(els.irrationalSwingInput, 0),
+    irrationalFeelMode: currentIrrationalFeelMode(),
     probeEnabled,
     probeMuted: !probeEnabled,
     probeLevel: percentInput(els.probeLevelInput, 0.45),
@@ -1716,7 +1721,19 @@ function currentTimingSettings(seed = "preview") {
     tempoLatticeEnabled: Boolean(els.tempoLatticeInput?.checked),
     rationalSwing: percentInput(els.rationalSwingInput, 0),
     irrationalSwing: percentInput(els.irrationalSwingInput, 0),
+    irrationalFeelMode: currentIrrationalFeelMode(),
   };
+}
+
+function currentIrrationalFeelMode() {
+  return FishtailTempoLattice.normalizeIrrationalFeelMode(els.irrationalFeelInput?.value);
+}
+
+function irrationalFeelModeLabel(mode) {
+  const normalized = FishtailTempoLattice.normalizeIrrationalFeelMode(mode);
+  if (normalized === FishtailTempoLattice.IRRATIONAL_FEEL_MODES.HYBRID_DRIFT) return "Hybrid Drift";
+  if (normalized === FishtailTempoLattice.IRRATIONAL_FEEL_MODES.LIVING_DRIFT) return "Living Drift";
+  return "Lattice Safe";
 }
 
 function previewTempoTimeline(seed = "preview") {
@@ -1741,7 +1758,7 @@ function updateSoundTimeControls() {
   const firstShare = firstGroup.length > 1 ? (1 + swing) / firstGroup.length : 1;
   const label = els.tempoLatticeInput?.checked ? `${minBpm}-${maxBpm} BPM` : "Straight time";
   els.tempoLatticeStatusLabel.textContent = label;
-  els.tempoLatticeReadout.textContent = `${currentTempoBpm().toFixed(4)} BPM | meter ${previewMeter} | first share ${firstShare.toFixed(3)} | ${duration.toFixed(2)} s`;
+  els.tempoLatticeReadout.textContent = `${currentTempoBpm().toFixed(4)} BPM | meter ${previewMeter} | feel ${irrationalFeelModeLabel(timeline.irrationalFeelMode)} | first share ${firstShare.toFixed(3)} | ${duration.toFixed(2)} s`;
 }
 
 function updateReferenceFrequencyFromAnchor() {
@@ -1977,7 +1994,8 @@ async function randomiseForm(kind) {
   setGenerationControlsDisabled(true);
   try {
     const seed = await makeSystemSeed();
-    const rng = makeRng(seed);
+    const random = makeRandomRouter(seed);
+    const rng = random.stream("form");
     const strange = Number(els.strangenessInput.value) / 100;
     const dubMode = Boolean(els.dubModeInput?.checked);
     const sectionCount = randomFormSectionCount(rng, kind, dubMode);
@@ -2142,7 +2160,8 @@ function chooseMeter(rng, kind, strange) {
   return weightedChoice(rng, weights);
 }
 
-function playGenerateFeedback() {
+function playGenerateFeedback(visualRng = makeRandomRouter("visual-feedback").stream("visual")) {
+  const rng = typeof visualRng === "function" ? visualRng : makeRandomRouter("visual-feedback").stream("visual");
   if (navigator.vibrate) navigator.vibrate([9, 24, 13]);
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return;
@@ -2177,14 +2196,14 @@ function playGenerateFeedback() {
     const noiseBuffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * whirrDuration), ctx.sampleRate);
     const noise = noiseBuffer.getChannelData(0);
     for (let i = 0; i < noise.length; i += 1) {
-      noise[i] = (Math.random() * 2 - 1) * (1 - i / noise.length);
+      noise[i] = (rng() * 2 - 1) * (1 - i / noise.length);
     }
     const source = ctx.createBufferSource();
     source.buffer = noiseBuffer;
     const bandpass = ctx.createBiquadFilter();
     bandpass.type = "bandpass";
-    bandpass.frequency.setValueAtTime(480 + Math.random() * 160, now + 0.05);
-    bandpass.frequency.linearRampToValueAtTime(980 + Math.random() * 420, now + whirrDuration);
+    bandpass.frequency.setValueAtTime(480 + rng() * 160, now + 0.05);
+    bandpass.frequency.linearRampToValueAtTime(980 + rng() * 420, now + whirrDuration);
     bandpass.Q.setValueAtTime(5.2, now);
     const whirrGain = ctx.createGain();
     whirrGain.gain.setValueAtTime(0.0001, now + 0.04);
@@ -2197,8 +2216,8 @@ function playGenerateFeedback() {
     const motor = ctx.createOscillator();
     const motorGain = ctx.createGain();
     motor.type = "triangle";
-    motor.frequency.setValueAtTime(72 + Math.random() * 20, now + 0.05);
-    motor.frequency.linearRampToValueAtTime(118 + Math.random() * 24, now + whirrDuration);
+    motor.frequency.setValueAtTime(72 + rng() * 20, now + 0.05);
+    motor.frequency.linearRampToValueAtTime(118 + rng() * 24, now + whirrDuration);
     motorGain.gain.setValueAtTime(0.0001, now + 0.05);
     motorGain.gain.exponentialRampToValueAtTime(0.09, now + 0.16);
     motorGain.gain.exponentialRampToValueAtTime(0.0001, now + whirrDuration);
@@ -2208,43 +2227,6 @@ function playGenerateFeedback() {
   } catch (error) {
     console.warn("Generate feedback sound unavailable.", error);
   }
-}
-
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function generationRitualMinimumMs(piece) {
-  const now = Date.now();
-  const stressed = state.reducedMotion
-    || visualEcoActive(now)
-    || state.visualStressScore > 2.8
-    || memoryPressureLevel() > 0.72;
-  if (stressed) return GENERATE_MIN_MS;
-
-  let minimum = state.visualHighRefreshCapable ? GENERATE_RITUAL_FAST_MS : GENERATE_RITUAL_COMFORT_MS;
-  const complexity = piece?.manifest?.complexity;
-  if (complexity?.level === "long") minimum += 350;
-  if (complexity?.level === "expansive") minimum += 650;
-  if (piece?.settings?.generationStyle === FUGUE_STYLE_ID) minimum += 450;
-  if (piece?.settings?.dubMode) minimum += 300;
-  return clamp(minimum, GENERATE_MIN_MS, GENERATE_RITUAL_MAX_MS);
-}
-
-function generationRitualStatus(piece) {
-  const seed = piece?.settings?.seed || "fishtail";
-  const options = piece?.settings?.dubMode ? [
-    "Letting the bass breathe",
-    "Weighing the echo",
-    "Settling Dub Gravity",
-    "Listening for the pocket",
-  ] : [
-    "Weighing cadences",
-    "Settling the voices",
-    "Letting the torus resolve",
-    "Polishing the counterpoint",
-  ];
-  return options[Math.floor(hashUnit(seed, "generation-ritual") * options.length) % options.length];
 }
 
 function setGenerationControlsDisabled(disabled) {
@@ -2260,6 +2242,7 @@ function setGenerationControlsDisabled(disabled) {
     els.tempoLatticeInput,
     els.rationalSwingInput,
     els.irrationalSwingInput,
+    els.irrationalFeelInput,
     els.probePitchInput,
     els.probeFineInput,
     els.metronomeMeterInput,
@@ -2285,6 +2268,7 @@ function setGenerationControlsDisabled(disabled) {
     els.tempoDivisorInput,
     els.breathingInput,
     els.densityInput,
+    els.rhythmMotionInput,
     els.strangenessInput,
     els.resolutionInput,
     els.outputModeInput,
@@ -2301,7 +2285,7 @@ function setGenerationControlsDisabled(disabled) {
 async function generatePiece() {
   if (state.generating) return;
   const seed = await makeSystemSeed();
-  const rng = makeRng(seed);
+  const random = makeRandomRouter(seed);
   const settings = readSettings(seed);
   const requestedAudioKinds = requestedAudioKindsForSettings(settings);
   if (requestedAudioKinds.length) {
@@ -2316,7 +2300,7 @@ async function generatePiece() {
   state.generating = true;
   if (state.inputReference.stream) stopLivingReferenceInput("Input ended", { restoreAudio: false });
   stopAllLiveAudio();
-  playGenerateFeedback();
+  playGenerateFeedback(random.stream("visual"));
   state.animationPhase = 0;
   state.animationStartedAt = Date.now();
   state.animationTailUntil = 0;
@@ -2331,14 +2315,10 @@ async function generatePiece() {
   updateAudioExportButtons();
   els.statusLabel.textContent = customEntropyEndpoint() ? "Tuning + entropy" : "Tuning";
   els.pieceLengthLabel.textContent = "Preparing";
-  const startedAt = Date.now();
   try {
-    await wait(650);
     els.statusLabel.textContent = "Generating";
-    await wait(450);
-    const piece = buildPiece(settings, rng);
+    const piece = buildPiece(settings, random);
     els.statusLabel.textContent = "Checking";
-    await wait(650);
     state.lastPiece = piece;
     document.body.dataset.fishtailMidiBytes = String(piece.midiBytes.length);
     document.body.dataset.fishtailManifestEvents = String(piece.manifest.events.length);
@@ -2350,11 +2330,6 @@ async function generatePiece() {
     els.pieceLengthLabel.textContent = `${piece.totalBars} bars | ${piece.events.length} notes | ${piece.audit.ok ? "checked" : fatalIssues ? "MIDI blocked" : "musical notes"}`;
     els.downloadMidiButton.disabled = fatalIssues;
     els.downloadJsonButton.disabled = false;
-    const ritualMinimumMs = generationRitualMinimumMs(piece);
-    const ritualWaitMs = Math.max(0, ritualMinimumMs - (Date.now() - startedAt));
-    document.body.dataset.fishtailRitualMs = String(Math.round(ritualMinimumMs));
-    if (ritualWaitMs > 500) els.statusLabel.textContent = generationRitualStatus(piece);
-    await wait(ritualWaitMs);
     if (!fatalIssues) {
       saveMidiPiece(piece);
       els.statusLabel.textContent = piece.audit.ok ? "MIDI checked + saved" : "Saved with notes";
@@ -2370,7 +2345,6 @@ async function generatePiece() {
     state.animationActive = false;
     state.animationTailUntil = Date.now() + GENERATE_TAIL_MS;
     requestCoreFrame(true);
-    await wait(650);
     els.generateButton.classList.remove("is-generating");
     setGenerationControlsDisabled(false);
     state.generating = false;
@@ -2390,6 +2364,7 @@ function readSettings(seed) {
     tempoLatticeEnabled: Boolean(els.tempoLatticeInput?.checked),
     rationalSwing: percentInput(els.rationalSwingInput, 0),
     irrationalSwing: percentInput(els.irrationalSwingInput, 0),
+    irrationalFeelMode: currentIrrationalFeelMode(),
     metronomeMeterMode: els.metronomeMeterInput?.value || "section-1",
     probeEnabled: switchControlIsOn(els.probeInput),
     probeMuted: !switchControlIsOn(els.probeInput),
@@ -2418,6 +2393,7 @@ function readSettings(seed) {
     tempoDivisor: clamp(parseInt(els.tempoDivisorInput.value, 10) || DEFAULT_TEMPO_DIVISOR, 1, 100000),
     breathing: Number(els.breathingInput.value) / 100,
     density: Number(els.densityInput.value) / 100,
+    rhythmMotion: percentInput(els.rhythmMotionInput, DEFAULT_RHYTHM_MOTION),
     strangeness: Number(els.strangenessInput.value) / 100,
     generationStyle: els.styleInput.value,
     resolution: els.resolutionInput.value,
@@ -2576,7 +2552,7 @@ function makeFallbackStats() {
   };
 }
 
-function makePhrasePlan(section, sectionIndex, sectionCount, activeVoices, meter, settings, rng, dubBassMemory) {
+function makePhrasePlan(section, sectionIndex, sectionCount, activeVoices, meter, settings, rng, dubBassMemory, dubRng = rng) {
   const profile = modePersonality(section.mode);
   const leadOffset = Math.floor(hashUnit(settings.seed, sectionIndex, section.key, section.mode) * activeVoices.length);
   const phraseSpan = section.bars >= 8 ? 2 : 1;
@@ -2599,7 +2575,7 @@ function makePhrasePlan(section, sectionIndex, sectionCount, activeVoices, meter
 
   const cadenceIntensity = cadenceIntensityForSection(section, sectionIndex, sectionCount, settings, profile);
   const dubBassCell = settings.dubMode
-    ? makeDubBassMemoryCell(section, sectionIndex, meter, profile, rng, dubBassMemory)
+    ? makeDubBassMemoryCell(section, sectionIndex, meter, profile, dubRng, dubBassMemory)
     : null;
   if (settings.dubMode) dubBassMemory.dropBars += bassDropBars.size;
 
@@ -2778,6 +2754,7 @@ function holdBarsForCandidate(context) {
 }
 
 function canKeepLongHold(candidate, context, stateForVoice) {
+  const rng = rngForContext(context, "suspension");
   const offset = mod(candidate.symbolicOffset, 12);
   if (isChordOffset(offset, context)) return true;
   if (isPedalVoice(context) && isPedalOffset(offset)) {
@@ -2788,7 +2765,7 @@ function canKeepLongHold(candidate, context, stateForVoice) {
   const suspensionBars = (context.step - suspendedSince + 1) / context.meter.numerator;
   const limit = suspensionLimitBars(context.voice);
   if (suspensionBars <= limit) return true;
-  if (context.rng() < 0.08) {
+  if (rng() < 0.08) {
     context.suspensionStats.exceptions += 1;
     return true;
   }
@@ -2973,7 +2950,7 @@ function fugueEntryGapSteps(meter, dubMode) {
   return Math.max(2, Math.floor(meter.numerator * (dubMode ? 0.75 : 1)));
 }
 
-function makeFugueMaterial(settings, activeVoices, subject) {
+function makeFugueMaterial(settings, activeVoices, subject, rhythmMaterial = null) {
   const firstMode = MODES[settings.sections[0]?.mode] || MODES.major;
   const answer = subject.map((offset) => tonalAnswerOffset(offset, firstMode));
   const countersubject = makeCounterSubject(subject, firstMode);
@@ -2984,7 +2961,160 @@ function makeFugueMaterial(settings, activeVoices, subject) {
     answer,
     countersubject,
     episode_fragments: makeEpisodeFragments(subject, countersubject),
+    rhythm: rhythmMaterial,
   };
+}
+
+function makeRhythmMaterial(settings, activeVoices, subject) {
+  const motion = clamp(Number(settings.rhythmMotion ?? DEFAULT_RHYTHM_MOTION), 0, 1);
+  const meter = METERS[settings.sections[0]?.meter] || METERS["4/4"];
+  const source = makeRhythmCell(settings.seed, subject.length, meter, motion);
+  return {
+    version: RHYTHM_MODEL_VERSION,
+    enabled: motion > 0,
+    motion,
+    source,
+    active_voices: activeVoices,
+    entryTransforms: [],
+    entryTransformKeys: new Set(),
+  };
+}
+
+function makeRhythmCell(seed, spanPulses, meter, motion) {
+  const safeSpan = Math.max(1, spanPulses || 1);
+  const subdivisionsPerPulse = chooseRhythmSubdivision(seed, meter, motion);
+  const durations = Array.from({ length: safeSpan }, () => subdivisionsPerPulse);
+  if (motion > 0 && subdivisionsPerPulse > 1 && safeSpan > 1) {
+    const rng = makeRng(`${seed}:rhythm-cell:${meter.numerator}/${meter.denominator}:${safeSpan}`);
+    const moves = Math.max(1, Math.round(safeSpan * lerp(0.22, 0.72, motion)));
+    for (let move = 0; move < moves; move += 1) {
+      const index = randomInt(rng, 0, safeSpan - 2);
+      const direction = rng() < 0.58 ? 1 : -1;
+      const from = direction > 0 ? index : index + 1;
+      const to = direction > 0 ? index + 1 : index;
+      const maxDuration = subdivisionsPerPulse + Math.max(1, Math.round(subdivisionsPerPulse * motion));
+      if (durations[from] > 1 && durations[to] < maxDuration) {
+        durations[from] -= 1;
+        durations[to] += 1;
+      }
+    }
+    if (!durationsProduceOffPulse(durations, subdivisionsPerPulse) && durations[0] > 1) {
+      durations[0] -= 1;
+      durations[1] += 1;
+    }
+  }
+  return normalizeRhythmCell({
+    durations,
+    subdivisionsPerPulse,
+    spanPulses: safeSpan,
+    transform: motion > 0 ? "original" : "legacy-grid",
+  });
+}
+
+function chooseRhythmSubdivision(seed, meter, motion) {
+  if (motion <= 0) return 1;
+  const pulseTicks = Math.max(1, meter.pulse || PPQ);
+  const options = motion < 0.36
+    ? [[2, 7], [3, 2], [4, 1]]
+    : motion < 0.68
+      ? [[2, 5], [3, 3], [4, 2]]
+      : [[2, 3], [3, 4], [4, 3]];
+  const available = options.filter(([subdivision]) => pulseTicks % subdivision === 0);
+  const rng = makeRng(`${seed}:rhythm-subdivision:${meter.numerator}/${meter.denominator}`);
+  return weightedChoice(rng, (available.length ? available : [[1, 1]]));
+}
+
+function normalizeRhythmCell(cell) {
+  const subdivisionsPerPulse = Math.max(1, cell.subdivisionsPerPulse || 1);
+  const durations = (cell.durations || []).map((duration) => Math.max(1, Math.round(duration)));
+  const totalUnits = durations.reduce((sum, duration) => sum + duration, 0);
+  const spanPulses = Math.max(1, cell.spanPulses || Math.round(totalUnits / subdivisionsPerPulse) || durations.length || 1);
+  const cumulativeUnits = [];
+  let cursor = 0;
+  durations.forEach((duration) => {
+    cumulativeUnits.push(cursor);
+    cursor += duration;
+  });
+  return {
+    durations,
+    subdivisionsPerPulse,
+    totalUnits,
+    spanPulses,
+    transform: cell.transform || "original",
+    displacementUnits: Math.max(0, Math.round(cell.displacementUnits || 0)),
+    cumulativeUnits,
+  };
+}
+
+function durationsProduceOffPulse(durations, subdivisionsPerPulse) {
+  let cursor = 0;
+  for (let index = 0; index < durations.length - 1; index += 1) {
+    cursor += durations[index];
+    if (cursor % subdivisionsPerPulse !== 0) return true;
+  }
+  return false;
+}
+
+function transformRhythmCell(source, transform = "exact", options = {}) {
+  let durations = [...(source?.durations || [])];
+  if (transform === "rotate" && durations.length > 1) durations = rotateArray(durations, options.rotateBy || 1);
+  if (transform === "retrograde") durations = durations.slice().reverse();
+  return normalizeRhythmCell({
+    durations,
+    subdivisionsPerPulse: source?.subdivisionsPerPulse || 1,
+    spanPulses: source?.spanPulses || durations.length || 1,
+    transform,
+    displacementUnits: options.displacementUnits || 0,
+  });
+}
+
+function rhythmTransformForEntry(settings, material, entry, sectionIndex, orderIndex = 0) {
+  if (!material?.enabled || !material.source) return null;
+  const source = material.source;
+  const unit = hashUnit(settings.seed, "rhythm-entry-transform", sectionIndex, entry.voice, entry.kind, entry.purpose, entry.start_step);
+  let transform = "exact";
+  let rotateBy = 0;
+  if (unit > 0.82 && settings.rhythmMotion > 0.34) {
+    transform = "retrograde";
+  } else if (unit > 0.54 && settings.rhythmMotion > 0.18 && source.durations.length > 2) {
+    transform = "rotate";
+    rotateBy = 1 + Math.floor(hashUnit(settings.seed, "rhythm-rotate", sectionIndex, entry.voice, orderIndex) * (source.durations.length - 1));
+  }
+  const displacementUnit = rhythmDisplacementUnits(settings, source, sectionIndex, entry, transform);
+  const cell = transformRhythmCell(source, transform, { rotateBy, displacementUnits: displacementUnit });
+  return {
+    transform,
+    rotate_by: rotateBy,
+    displacement_units: displacementUnit,
+    displacement_label: displacementUnit ? `${displacementUnit}/${source.subdivisionsPerPulse} pulse` : "none",
+    cell,
+  };
+}
+
+function rhythmDisplacementUnits(settings, source, sectionIndex, entry, transform) {
+  if (!source?.subdivisionsPerPulse || settings.rhythmMotion < 0.2) return 0;
+  if (entry.purpose === "final_closer" || transform === "retrograde") return 0;
+  const unit = hashUnit(settings.seed, "rhythm-displacement", sectionIndex, entry.voice, entry.kind, entry.start_step);
+  if (unit > 0.72) return source.subdivisionsPerPulse === 2 ? 1 : Math.max(1, Math.floor(source.subdivisionsPerPulse / 3));
+  return 0;
+}
+
+function recordRhythmEntryTransform(material, details) {
+  if (!material?.enabled || !details) return;
+  const key = `${details.section_index}:${details.voice}:${details.start_step}:${details.kind}:${details.transform}:${details.displacement_units}`;
+  if (material.entryTransformKeys.has(key)) return;
+  material.entryTransformKeys.add(key);
+  material.entryTransforms.push({
+    section_index: details.section_index,
+    voice: details.voice,
+    kind: details.kind,
+    purpose: details.purpose,
+    start_step: details.start_step,
+    transform: details.transform,
+    rotate_by: details.rotate_by || 0,
+    displacement_units: details.displacement_units || 0,
+    displacement_label: details.displacement_label || "none",
+  });
 }
 
 function tonalAnswerOffset(offset, mode) {
@@ -3078,12 +3208,25 @@ function planFugueSectionEntries({ sectionIndex, sectionCount, role, meter, acti
   const steps = settings.sections[sectionIndex].bars * meter.numerator;
   const cadenceReserve = role === "final_return" ? meter.numerator * 2 : 0;
   const maxStart = Math.max(0, steps - material.subject.length - cadenceReserve);
-  const makeEntry = (voice, orderIndex, startStep, kind, purpose) => ({
-    voice,
-    start_step: clamp(startStep, 0, maxStart),
-    kind,
-    purpose,
-  });
+  const makeEntry = (voice, orderIndex, startStep, kind, purpose) => {
+    const entry = {
+      voice,
+      start_step: clamp(startStep, 0, maxStart),
+      kind,
+      purpose,
+    };
+    const rhythm = rhythmTransformForEntry(settings, material.rhythm, entry, sectionIndex, orderIndex);
+    if (rhythm) {
+      entry.rhythm = {
+        transform: rhythm.transform,
+        rotate_by: rhythm.rotate_by,
+        displacement_units: rhythm.displacement_units,
+        displacement_label: rhythm.displacement_label,
+        cell: rhythm.cell,
+      };
+    }
+    return entry;
+  };
 
   if (role === "exposition") {
     return order.map((voice, index) => makeEntry(voice, index, index * entryGap, index % 2 === 0 ? "subject" : "answer", "exposition"));
@@ -3112,17 +3255,24 @@ function planFugueSectionEntries({ sectionIndex, sectionCount, role, meter, acti
   return [];
 }
 
-function buildPiece(settings, rng) {
+function buildPiece(settings, randomSource = null) {
+  const random = generationRandomForSettings(settings, randomSource);
+  const subjectRng = random.stream("subject");
+  const phraseRng = random.stream("phrase");
+  const refrainRng = random.stream("refrain");
+  const dubRng = random.stream("dub");
   settings.sections = settings.sections.map(normalizeSection);
+  settings.rhythmMotion = clamp(Number(settings.rhythmMotion ?? DEFAULT_RHYTHM_MOTION), 0, 1);
   settings.pedalVoices = normalizePedalVoices(settings.pedalVoices, settings.voices, settings.dubMode);
   const activeVoices = activeVoiceLayout(settings.voices);
-  const subject = makeSubject(settings, rng);
+  const subject = makeSubject(settings, subjectRng);
+  const rhythmMaterial = makeRhythmMaterial(settings, activeVoices, subject);
   let fugueSummary = null;
   let fugueMaterial = null;
   if (isFugueStyle(settings)) {
     const repaired = repairFugueSections(settings.sections, activeVoices, subject.length, settings);
     settings.sections = repaired.sections;
-    fugueMaterial = makeFugueMaterial(settings, activeVoices, subject);
+    fugueMaterial = makeFugueMaterial(settings, activeVoices, subject, rhythmMaterial);
     fugueSummary = planFugueForm(settings, activeVoices, fugueMaterial, repaired.summary);
   }
   const tracks = Object.fromEntries(activeVoices.map((voice, index) => [voice, { name: voice, channel: index, events: [] }]));
@@ -3146,15 +3296,15 @@ function buildPiece(settings, rng) {
     const barTicks = meter.numerator * meter.pulse;
     const steps = section.bars * meter.numerator;
     const sectionStartTick = currentTick;
-    const phrasePlan = makePhrasePlan(section, sectionIndex, settings.sections.length, activeVoices, meter, settings, rng, dubBassMemory);
+    const phrasePlan = makePhrasePlan(section, sectionIndex, settings.sections.length, activeVoices, meter, settings, phraseRng, dubBassMemory, dubRng);
     const refrainPlan = isFugueStyle(settings)
       ? { kind: "normal", treatment: section.treatment || "straight" }
-      : planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, rng);
+      : planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, refrainRng);
     const fugueSectionPlan = fugueSummary?.sections?.[sectionIndex] || null;
     sectionMeta.push({ ...section, startTick: currentTick, barTicks, numerator: meter.numerator, denominator: meter.denominator, refrainPlan: summarizeRefrainPlan(refrainPlan), fuguePlan: summarizeFugueSectionPlan(fugueSectionPlan), phrasePlan: summarizePhrasePlan(phrasePlan) });
     reports.push(`${sectionIndex + 1}. ${section.bars} bars in ${section.key} ${mode.label}, ${section.meter}, ${CADENCES[section.cadence].label}, ${SECTION_ROLES[section.role]}${section.role === "normal" ? "" : `/${sectionTreatmentLabel(section.role, section.treatment)}`}`);
 
-    const entries = planEntries(activeVoices, steps, meter, rng, settings);
+    const entries = planEntries(activeVoices, steps, meter, phraseRng, settings);
     const lastPitches = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
     const lastLeaps = Object.fromEntries(activeVoices.map((voice) => [voice, 0]));
     const lastOffsets = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
@@ -3173,6 +3323,7 @@ function buildPiece(settings, rng) {
       const previousPitches = { ...lastPitches };
 
       activeVoices.forEach((voice, voiceIndex) => {
+        const voiceRandom = voiceRandomStreams(random, sectionIndex, voice);
         const lowerVoice = voiceIndex > 0 ? activeVoices[voiceIndex - 1] : null;
         const upperVoice = voiceIndex < activeVoices.length - 1 ? activeVoices[voiceIndex + 1] : null;
         const context = {
@@ -3205,10 +3356,13 @@ function buildPiece(settings, rng) {
           fugueMaterial,
           fugueSectionPlan,
           phrasePlan,
+          rhythmMaterial,
           suspensionStats,
           fallbackStats,
           settings,
-          rng,
+          random,
+          ...voiceRandom,
+          rng: voiceRandom.pitchChoiceRng,
         };
         const result = chooseVoiceEvent(context);
         if (result.rest) {
@@ -3242,10 +3396,12 @@ function buildPiece(settings, rng) {
     totalBars += section.bars;
   });
 
+  const complexity = estimateComplexity(sectionMeta, settings.voices);
+  const tempoTimeline = buildPerformanceTempoTimeline(sectionMeta, settings);
+  applyPerformanceTiming(tracks, sectionMeta, settings, tempoTimeline, currentTick);
   const velocitySummary = applyGravityVelocity(tracks, sectionMeta, settings);
   const events = activeVoices.flatMap((voice) => tracks[voice].events.map((event) => ({ ...event, voice })));
-  const complexity = estimateComplexity(sectionMeta, settings.voices);
-  const tempoTimeline = FishtailTempoLattice.buildTempoTimeline(sectionMeta, settings, { ppq: PPQ, meters: METERS });
+  const rhythmSummary = summarizeRhythm(settings, sectionMeta, events, subject, rhythmMaterial, currentTick);
   const serializationIssues = validateMidiSerializationInput(tracks, settings);
   let midiBytes = new Uint8Array();
   if (!serializationIssues.length) {
@@ -3258,9 +3414,9 @@ function buildPiece(settings, rng) {
   const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick, serializationIssues);
   const refrainSummary = summarizeRefrainState(refrainState);
   const dubGrooveSummary = summarizeDubGroove(settings, events, dubBassMemory);
-  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline }, audit);
-  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, sweetness }, audit);
-  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, sweetness }, audit);
+  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, rhythmSummary }, audit);
+  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, rhythmSummary, sweetness }, audit);
+  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, rhythmSummary, sweetness }, audit);
 
   return {
     settings,
@@ -3316,14 +3472,17 @@ function getCadenceStage(step, steps, pulsesPerBar) {
 }
 
 function chooseVoiceEvent(context) {
-  const { settings, rng, strong, cadenceStage, voice, mode, section, step, entries, subject } = context;
+  const { settings, strong, cadenceStage, voice, mode, section, step, entries, subject } = context;
+  const restRng = rngForContext(context, "rest");
+  const pitchOrderRng = rngForContext(context, "pitchOrder");
+  const pitchChoiceRng = rngForContext(context, "pitchChoice");
   const debt = context.debts[voice];
   const canRest = !cadenceStage && !debt && step > 0 && !fugueNeedsVoice(context);
   if (canRest && shouldRestForRefrain(context)) return { rest: true };
   const profile = modePersonality(section.mode);
   const baseRestChance = canRest ? clamp(0.05 + settings.breathing * 0.22 - settings.density * 0.08 + (profile.restBias || 0), 0, 0.86) : 0;
   const restChance = phraseRestChance(context, fugueRestChance(context, dubRestChance(context, baseRestChance)));
-  if (rng() < restChance && shouldVoiceBreathe(context)) return { rest: true };
+  if (restRng() < restChance && shouldVoiceBreathe(context)) return { rest: true };
 
   const offsets = cadenceStage
     ? cadenceOffsets(context)
@@ -3331,7 +3490,7 @@ function chooseVoiceEvent(context) {
   const candidates = [];
   let parallelRejects = 0;
 
-  for (const offset of shuffledWeightedOffsets(offsets, mode, strong, settings, rng)) {
+  for (const offset of shuffledWeightedOffsets(offsets, mode, strong, settings, pitchOrderRng)) {
     const resolved = resolvePitch(offset, context);
     const validation = validateCandidate(resolved, context);
     parallelRejects += validation.parallelReject ? 1 : 0;
@@ -3345,7 +3504,7 @@ function chooseVoiceEvent(context) {
   }
 
   candidates.sort((a, b) => b.score - a.score);
-  const chosen = weightedChoice(rng, candidates.slice(0, 5).map((candidate, index) => [candidate, 6 - index]));
+  const chosen = weightedChoice(pitchChoiceRng, candidates.slice(0, 5).map((candidate, index) => [candidate, 6 - index]));
   return commitVoiceChoice({ ...chosen, parallelRejects }, context);
 }
 
@@ -3443,7 +3602,8 @@ function noteFallbackStat(context, field) {
 }
 
 function shouldVoiceBreathe(context) {
-  const { voice, step, meter, rng, settings } = context;
+  const { voice, step, meter, settings } = context;
+  const rng = rngForContext(context, "rest");
   if (fugueNeedsVoice(context)) return false;
   const phraseEdge = step % meter.numerator === meter.numerator - 1;
   if (settings.dubMode) {
@@ -3566,20 +3726,21 @@ function fugueNeedsVoice(context) {
 }
 
 function offsetsFromFugue(context) {
+  const rng = rngForContext(context, "pitchChoice");
   if (!isFugueStyle(context.settings) || context.cadenceStage) return [];
   const entry = currentFugueEntry(context);
   if (entry) return fugueEntryOffsets(context, entry);
 
   const activeEntry = activeFugueEntry(context);
-  if (activeEntry && fugueVoiceHasEntered(context, context.voice) && context.rng() > (context.settings.dubMode ? 0.35 : 0.12)) {
+  if (activeEntry && fugueVoiceHasEntered(context, context.voice) && rng() > (context.settings.dubMode ? 0.35 : 0.12)) {
     return fugueCountersubjectOffsets(context, activeEntry);
   }
 
   const plan = currentFugueSectionPlan(context);
   if (!plan) return [];
   if (plan.role === "episode") return fugueEpisodeOffsets(context, plan);
-  if (plan.role === "middle_entry" && context.rng() < (context.settings.dubMode ? 0.45 : 0.7)) return fugueEpisodeOffsets(context, plan);
-  if (plan.role === "final_return" && context.step < context.steps - context.meter.numerator * 2 && context.rng() < 0.55) {
+  if (plan.role === "middle_entry" && rng() < (context.settings.dubMode ? 0.45 : 0.7)) return fugueEpisodeOffsets(context, plan);
+  if (plan.role === "final_return" && context.step < context.steps - context.meter.numerator * 2 && rng() < 0.55) {
     return fugueEpisodeOffsets(context, plan);
   }
   return [];
@@ -3631,7 +3792,8 @@ function fugueTargetOffset(context) {
 }
 
 function motifOrFieldOffsets(context) {
-  const { subject, entries, voice, step, mode, strong, rng, settings, section } = context;
+  const { subject, entries, voice, step, mode, strong, settings, section } = context;
+  const rng = rngForContext(context, "pitchChoice");
   const fugueOffsets = offsetsFromFugue(context);
   if (fugueOffsets.length) return fugueOffsets;
   const refrainOffsets = offsetsFromRefrain(context);
@@ -3663,18 +3825,20 @@ function motifOrFieldOffsets(context) {
 }
 
 function shouldRestForRefrain(context) {
+  const rng = rngForContext(context, "rest");
   const plan = context.refrainPlan;
   if (!plan || plan.kind === "normal" || plan.kind === "capture" || plan.kind === "fallback") return false;
   const source = plan.source;
   if (!source) return false;
   const sourceNote = mappedRefrainNote(context, source);
   if (sourceNote) return false;
-  if (plan.treatment === "dubby") return context.voice !== "bass" && context.rng() < 0.74;
-  if (plan.kind === "development") return context.rng() < 0.48 + context.settings.breathing * 0.22;
-  return context.rng() < 0.82;
+  if (plan.treatment === "dubby") return context.voice !== "bass" && rng() < 0.74;
+  if (plan.kind === "development") return rng() < 0.48 + context.settings.breathing * 0.22;
+  return rng() < 0.82;
 }
 
 function offsetsFromRefrain(context) {
+  const rng = rngForContext(context, "pitchChoice");
   const plan = context.refrainPlan;
   if (!plan || plan.kind === "normal" || plan.kind === "capture" || plan.kind === "fallback" || context.cadenceStage) return [];
   const sourceNote = mappedRefrainNote(context, plan.source);
@@ -3690,7 +3854,7 @@ function offsetsFromRefrain(context) {
     if (isDubSkankVoice(context.voice) && isDubOffbeat(context)) {
       return [modeOffset, ...dubSkankOffsets(context), sourceOffset];
     }
-    if (context.voice === "soprano" && context.rng() < 0.45) {
+    if (context.voice === "soprano" && rng() < 0.45) {
       return [modeOffset, sourceOffset, ...context.mode.stable];
     }
     return [modeOffset, ...context.mode.stable, sourceOffset];
@@ -4056,10 +4220,91 @@ function commitVoiceChoice(choice, context) {
   if (!choice || choice.rest) return choice;
   if (choice.resolvedDebt) context.debts[context.voice] = null;
   applyTendencyDebt(choice, context);
+  const rhythm = rhythmMetaForContext(context);
+  if (rhythm) choice.rhythm = rhythm;
   return choice;
 }
 
+function rhythmMetaForContext(context) {
+  const material = context.rhythmMaterial;
+  if (!material?.enabled || !context.settings?.rhythmMotion) return null;
+  if (context.cadenceStage || context.step >= context.steps - context.meter.numerator * 2) return null;
+
+  const fugueEntry = currentFugueEntry(context);
+  if (fugueEntry?.rhythm?.cell) {
+    const localIndex = context.step - fugueEntry.start_step;
+    if (localIndex >= 0 && localIndex < fugueEntry.rhythm.cell.durations.length) {
+      recordRhythmEntryTransform(material, {
+        section_index: context.sectionIndex + 1,
+        voice: context.voice,
+        kind: fugueEntry.kind,
+        purpose: fugueEntry.purpose,
+        start_step: fugueEntry.start_step,
+        transform: fugueEntry.rhythm.transform,
+        rotate_by: fugueEntry.rhythm.rotate_by,
+        displacement_units: fugueEntry.rhythm.displacement_units,
+        displacement_label: fugueEntry.rhythm.displacement_label,
+      });
+      return {
+        enabled: true,
+        role: fugueEntry.kind,
+        purpose: fugueEntry.purpose,
+        entryStartStep: fugueEntry.start_step,
+        localIndex,
+        transform: fugueEntry.rhythm.transform,
+        displacementUnits: fugueEntry.rhythm.displacement_units,
+        cell: fugueEntry.rhythm.cell,
+      };
+    }
+  }
+
+  if (!isFugueStyle(context.settings)) {
+    const entryStart = context.entries?.[context.voice];
+    const localIndex = context.step - entryStart;
+    if (localIndex >= 0 && localIndex < context.subject.length && context.voice !== "bass") {
+      const pseudoEntry = {
+        voice: context.voice,
+        start_step: entryStart,
+        kind: context.voiceIndex % 2 === 1 ? "answer" : "subject",
+        purpose: "invention",
+      };
+      const rhythm = rhythmTransformForEntry(context.settings, material, pseudoEntry, context.sectionIndex, context.voiceIndex);
+      if (!rhythm?.cell) return null;
+      recordRhythmEntryTransform(material, {
+        section_index: context.sectionIndex + 1,
+        voice: context.voice,
+        kind: pseudoEntry.kind,
+        purpose: pseudoEntry.purpose,
+        start_step: pseudoEntry.start_step,
+        transform: rhythm.transform,
+        rotate_by: rhythm.rotate_by,
+        displacement_units: rhythm.displacement_units,
+        displacement_label: rhythm.displacement_label,
+      });
+      return {
+        enabled: true,
+        role: pseudoEntry.kind,
+        purpose: pseudoEntry.purpose,
+        entryStartStep: entryStart,
+        localIndex,
+        transform: rhythm.transform,
+        displacementUnits: rhythm.displacement_units,
+        cell: rhythm.cell,
+      };
+    }
+  }
+
+  return null;
+}
+
 function gridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan) {
+  const events = structuralRhythmEnabled(settings)
+    ? rhythmGridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section)
+    : legacyGridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section);
+  return annotateDubGrooveIntent(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan);
+}
+
+function legacyGridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section) {
   const events = [];
   let active = null;
   let startStep = 0;
@@ -4073,7 +4318,96 @@ function gridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, secti
     active = current;
     startStep = i;
   }
-  return applyDubGroove(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan);
+  return events;
+}
+
+function structuralRhythmEnabled(settings) {
+  return Number(settings?.rhythmMotion || 0) > 0;
+}
+
+function rhythmGridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section) {
+  const events = [];
+  let active = null;
+  let startStep = 0;
+  const flushLegacy = (endStep) => {
+    if (!active) return;
+    events.push(makeNoteEvent(active, voice, sectionStartTick + startStep * pulseTicks, (endStep - startStep) * pulseTicks, settings, { startStep, endStep }));
+    active = null;
+  };
+
+  for (let i = 0; i <= grid.length; i += 1) {
+    const current = grid[i] || null;
+    if (current?.rhythm?.enabled) {
+      flushLegacy(i);
+      const timing = rhythmTimingForNote(current, sectionStartTick, pulseTicks, section);
+      if (timing) {
+        events.push(makeNoteEvent(current, voice, timing.tick, timing.duration, settings, {
+          startStep: i,
+          endStep: i + Math.max(1, timing.duration / pulseTicks),
+          minDurationTicks: timing.unitTicks,
+          structuralRhythm: true,
+          rhythmRole: current.rhythm.role,
+          rhythmPurpose: current.rhythm.purpose,
+          rhythmTransform: current.rhythm.transform,
+          rhythmSubdivisions: current.rhythm.cell.subdivisionsPerPulse,
+          rhythmDurationUnits: current.rhythm.cell.durations[current.rhythm.localIndex],
+          rhythmLocalIndex: current.rhythm.localIndex,
+        }));
+      } else {
+        events.push(makeNoteEvent(current, voice, sectionStartTick + i * pulseTicks, pulseTicks, settings, { startStep: i, endStep: i + 1 }));
+      }
+      startStep = i + 1;
+      continue;
+    }
+
+    const same = sameGridNote(active, current, voice, i, section, settings);
+    if (same) continue;
+    flushLegacy(i);
+    active = current;
+    startStep = i;
+  }
+
+  return trimVoiceEventsToSection(events, sectionStartTick, sectionStartTick + grid.length * pulseTicks);
+}
+
+function rhythmTimingForNote(note, sectionStartTick, pulseTicks, section) {
+  const rhythm = note.rhythm;
+  const cell = rhythm?.cell;
+  if (!cell?.durations?.length || !cell.subdivisionsPerPulse) return null;
+  const unitTicks = pulseTicks / cell.subdivisionsPerPulse;
+  if (!Number.isInteger(unitTicks) || unitTicks <= 0) return null;
+  const localIndex = rhythm.localIndex;
+  const durationUnits = cell.durations[localIndex];
+  const cumulativeUnits = cell.cumulativeUnits?.[localIndex];
+  if (!Number.isInteger(durationUnits) || !Number.isInteger(cumulativeUnits)) return null;
+  const baseTick = sectionStartTick + rhythm.entryStartStep * pulseTicks;
+  const displacementUnits = Math.max(0, rhythm.displacementUnits || cell.displacementUnits || 0);
+  const tick = baseTick + (cumulativeUnits + displacementUnits) * unitTicks;
+  const declaredEndTick = baseTick + cell.spanPulses * pulseTicks;
+  const sectionEndTick = section ? sectionStartTick + section.bars * (METERS[section.meter] || METERS["4/4"]).numerator * pulseTicks : sectionStartTick + Number.MAX_SAFE_INTEGER;
+  const hardEnd = Math.min(declaredEndTick, sectionEndTick);
+  const duration = Math.min(durationUnits * unitTicks, hardEnd - tick);
+  if (!Number.isInteger(tick) || !Number.isInteger(duration) || tick < sectionStartTick || duration <= 0) return null;
+  return { tick, duration, unitTicks };
+}
+
+function trimVoiceEventsToSection(events, sectionStartTick, sectionEndTick) {
+  const shaped = events
+    .filter((event) => event && Number.isInteger(event.tick) && Number.isInteger(event.duration) && event.duration > 0)
+    .sort((a, b) => a.tick - b.tick || a.gridTick - b.gridTick);
+  for (let i = 0; i < shaped.length; i += 1) {
+    const next = shaped[i + 1];
+    const maxEnd = next ? next.tick : sectionEndTick;
+    if (shaped[i].tick < sectionStartTick) {
+      const trim = sectionStartTick - shaped[i].tick;
+      shaped[i].tick = sectionStartTick;
+      shaped[i].duration = Math.max(0, shaped[i].duration - trim);
+    }
+    if (shaped[i].tick + shaped[i].duration > maxEnd) {
+      shaped[i].duration = Math.max(0, maxEnd - shaped[i].tick);
+    }
+  }
+  return shaped.filter((event) => event.duration > 0 && event.tick < sectionEndTick);
 }
 
 function sameGridNote(active, current, voice, step, section, settings) {
@@ -4110,15 +4444,26 @@ function makeNoteEvent(note, voice, tick, duration, settings, meta = {}) {
     }
   }
   const velocity = velocityForPitch(midi);
+  const minDuration = meta.minDurationTicks || PPQ / 4;
   return {
     tick,
-    duration: Math.max(PPQ / 4, duration),
+    duration: Math.max(minDuration, duration),
     gridTick: tick,
     gridDuration: duration,
     startStep: meta.startStep ?? null,
     endStep: meta.endStep ?? null,
+    structuralRhythm: Boolean(meta.structuralRhythm),
+    rhythmRole: meta.rhythmRole || null,
+    rhythmPurpose: meta.rhythmPurpose || null,
+    rhythmTransform: meta.rhythmTransform || null,
+    rhythmSubdivisions: meta.rhythmSubdivisions || null,
+    rhythmDurationUnits: meta.rhythmDurationUnits || null,
+    rhythmLocalIndex: meta.rhythmLocalIndex ?? null,
     grooveOffsetTicks: 0,
+    grooveOffsetMsRequested: 0,
+    grooveOffsetMsRealized: 0,
     grooveRole: null,
+    phraseRole: null,
     midi,
     carrierMidi: note.midi,
     symbolicOffset: mod(note.symbolicOffset, 12),
@@ -4133,54 +4478,44 @@ function makeNoteEvent(note, voice, tick, duration, settings, meta = {}) {
   };
 }
 
-function applyDubGroove(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan) {
+function annotateDubGrooveIntent(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan) {
   if (!events.length || !section) return events;
   if (!settings.dubMode) return annotatePhraseRoles(events, voice, section, phrasePlan);
   const meter = METERS[section.meter] || METERS["4/4"];
-  const sectionEndTick = sectionStartTick + section.bars * meter.numerator * pulseTicks;
-  const shaped = events.map((event) => {
+  return events.map((event) => {
     const startStep = event.startStep ?? Math.round((event.tick - sectionStartTick) / pulseTicks);
     const pulseInBar = mod(startStep, meter.numerator);
     const strong = pulseInBar === 0 || meter.accents.includes(pulseInBar);
     const offbeat = !strong && pulseInBar > 0;
     const unit = hashUnit(settings.seed, voice, section.key, section.mode, event.gridTick, event.midi);
-    let offsetTicks = 0;
+    let offsetMs = 0;
     let duration = event.duration;
     let grooveRole = null;
 
     if (isDubSkankVoice(voice) && offbeat) {
-      offsetTicks = -msToTicks(lerp(DUB_SKANK_EARLY_MS[0], DUB_SKANK_EARLY_MS[1], unit), settings);
+      offsetMs = -lerp(DUB_SKANK_EARLY_MS[0], DUB_SKANK_EARLY_MS[1], unit);
       duration = Math.min(duration, Math.round(pulseTicks * lerp(0.14, 0.31, unit)));
       grooveRole = "skank-touch";
     } else if (voice === "bass") {
-      if (!strong) offsetTicks = msToTicks(lerp(DUB_BASS_LATE_MS[0], DUB_BASS_LATE_MS[1], unit), settings);
+      if (!strong) offsetMs = lerp(DUB_BASS_LATE_MS[0], DUB_BASS_LATE_MS[1], unit);
       duration = Math.min(duration, Math.round(pulseTicks * lerp(strong ? 0.68 : 0.48, strong ? 0.94 : 0.76, unit)));
       grooveRole = "bass-pulse";
     } else if (offbeat) {
-      offsetTicks = msToTicks(lerp(DUB_SWING_LATE_MS[0], DUB_SWING_LATE_MS[1], unit), settings);
+      offsetMs = lerp(DUB_SWING_LATE_MS[0], DUB_SWING_LATE_MS[1], unit);
       duration = Math.min(duration, Math.round(duration * lerp(0.78, 0.94, unit)));
       grooveRole = "dub-stroll";
     }
 
-    const tick = clamp(event.tick + offsetTicks, sectionStartTick, Math.max(sectionStartTick, sectionEndTick - 1));
     return {
       ...event,
-      tick,
       duration: Math.max(DUB_MIN_NOTE_TICKS, duration),
-      grooveOffsetTicks: tick - event.gridTick,
+      grooveOffsetTicks: 0,
+      grooveOffsetMsRequested: offsetMs,
+      grooveOffsetMsRealized: 0,
       grooveRole,
       phraseRole: phraseRoleForStep(voice, startStep, meter, phrasePlan),
     };
-  }).sort((a, b) => a.tick - b.tick || a.gridTick - b.gridTick);
-
-  for (let i = 0; i < shaped.length; i += 1) {
-    const next = shaped[i + 1];
-    const maxEnd = next ? next.tick : sectionEndTick;
-    if (shaped[i].tick + shaped[i].duration > maxEnd) {
-      shaped[i].duration = Math.max(1, maxEnd - shaped[i].tick);
-    }
-  }
-  return shaped.filter((event) => event.duration > 0);
+  });
 }
 
 function annotatePhraseRoles(events, voice, section, phrasePlan) {
@@ -4198,6 +4533,105 @@ function phraseRoleForStep(voice, startStep, meter, phrasePlan) {
   if (phrasePlan.leadByBar?.[bar] === voice) return "lead";
   if (phrasePlan.answerByBar?.[bar] === voice) return "answer";
   return "field";
+}
+
+function buildPerformanceTempoTimeline(sectionMeta, settings) {
+  const suspendLattice = Boolean(settings.tempoLatticeEnabled) && settings.includeTempoMap === false;
+  const clockSettings = suspendLattice ? { ...settings, tempoLatticeEnabled: false } : settings;
+  const timeline = FishtailTempoLattice.buildTempoTimeline(sectionMeta, clockSettings, { ppq: PPQ, meters: METERS });
+  return {
+    ...timeline,
+    requestedTempoLatticeEnabled: Boolean(settings.tempoLatticeEnabled),
+    activeTempoLatticeEnabled: Boolean(timeline.enabled),
+    latticeSuspendedForMidiPhaseLock: suspendLattice,
+    crossFormatPhaseLocked: true,
+    timingModelVersion: "phase_locked_seconds_v1",
+  };
+}
+
+function applyPerformanceTiming(tracks, sectionMeta, settings, tempoTimeline, totalTicks) {
+  const indexed = FishtailTempoLattice.indexTempoTimeline(tempoTimeline);
+  Object.values(tracks).forEach((track) => {
+    const performed = track.events.map((event) => performEventTiming(event, sectionMeta, settings, indexed, totalTicks));
+    track.events = trimPerformanceEventsBySection(performed, sectionMeta, totalTicks);
+  });
+}
+
+function performEventTiming(event, sectionMeta, settings, indexedTimeline, totalTicks) {
+  const gridTick = Math.max(0, Math.round(event.gridTick ?? event.tick ?? 0));
+  const section = sectionForGridTick(sectionMeta, gridTick);
+  const sectionStartTick = section ? section.startTick : 0;
+  const sectionEndTick = section ? section.startTick + section.bars * section.barTicks : totalTicks;
+  const requestedMs = Number(event.grooveOffsetMsRequested) || 0;
+  let tick = gridTick;
+  let realizedMs = 0;
+
+  if (settings.dubMode && event.grooveRole && requestedMs !== 0) {
+    const gridSeconds = FishtailTempoLattice.tickToSeconds(gridTick, indexedTimeline);
+    const targetSeconds = gridSeconds + requestedMs / 1000;
+    const rawTick = Math.round(FishtailTempoLattice.secondsToTick(targetSeconds, indexedTimeline));
+    tick = clamp(rawTick, sectionStartTick, Math.max(sectionStartTick, sectionEndTick - 1));
+    realizedMs = 1000 * (FishtailTempoLattice.tickToSeconds(tick, indexedTimeline) - gridSeconds);
+  }
+
+  return {
+    ...event,
+    tick,
+    gridTick,
+    grooveOffsetTicks: tick - gridTick,
+    grooveOffsetMsRequested: requestedMs,
+    grooveOffsetMsRealized: realizedMs,
+  };
+}
+
+function trimPerformanceEventsBySection(events, sectionMeta, totalTicks) {
+  const output = [];
+  const consumed = new Set();
+  sectionMeta.forEach((section) => {
+    const sectionStartTick = section.startTick;
+    const sectionEndTick = section.startTick + section.bars * section.barTicks;
+    const sectionEvents = events
+      .map((event, index) => ({ event, index }))
+      .filter(({ event }) => {
+        const gridTick = event.gridTick ?? event.tick;
+        return gridTick >= sectionStartTick && gridTick < sectionEndTick;
+      })
+      .sort((a, b) => a.event.tick - b.event.tick || a.event.gridTick - b.event.gridTick);
+
+    for (let i = 0; i < sectionEvents.length; i += 1) {
+      const current = { ...sectionEvents[i].event };
+      consumed.add(sectionEvents[i].index);
+      if (current.tick < sectionStartTick) {
+        const trim = sectionStartTick - current.tick;
+        current.tick = sectionStartTick;
+        current.duration = Math.max(0, current.duration - trim);
+      }
+      const next = sectionEvents[i + 1]?.event;
+      const maxEnd = next ? next.tick : sectionEndTick;
+      if (current.tick + current.duration > maxEnd) {
+        current.duration = maxEnd > current.tick ? Math.max(1, maxEnd - current.tick) : 0;
+      }
+      if (current.tick + current.duration > totalTicks) {
+        current.duration = Math.max(0, totalTicks - current.tick);
+      }
+      if (current.duration > 0 && current.tick < sectionEndTick) output.push(current);
+    }
+  });
+
+  events.forEach((event, index) => {
+    if (!consumed.has(index) && event.duration > 0) output.push(event);
+  });
+  return output.sort((a, b) => a.tick - b.tick || a.gridTick - b.gridTick);
+}
+
+function sectionForGridTick(sectionMeta, tick) {
+  if (!sectionMeta.length) return null;
+  const safeTick = Math.max(0, Number(tick) || 0);
+  return sectionMeta.find((section, index) => {
+    const sectionEnd = section.startTick + section.bars * section.barTicks;
+    const isLast = index === sectionMeta.length - 1;
+    return safeTick >= section.startTick && (safeTick < sectionEnd || (isLast && safeTick <= sectionEnd));
+  }) || null;
 }
 
 function velocityForPitch(midi) {
@@ -4489,7 +4923,7 @@ function makeVoiceTrack(track, settings) {
 
 function makeConductorTrack(sectionMeta, settings, totalTicks, tempoTimeline = null) {
   const events = [];
-  if (settings.tempoLatticeEnabled && tempoTimeline?.tempoEvents?.length) {
+  if (tempoTimeline?.enabled && tempoTimeline?.tempoEvents?.length) {
     tempoTimeline.tempoEvents.forEach((event) => {
       events.push({ tick: event.tick, bytes: tempoMetaBytesFromMicroseconds(event.microsecondsPerQuarter) });
     });
@@ -4612,17 +5046,90 @@ function summarizeDubGroove(settings, events, memory) {
   const skankTouches = grooveEvents.filter((event) => event.grooveRole === "skank-touch").length;
   const bassPulses = grooveEvents.filter((event) => event.grooveRole === "bass-pulse").length;
   const maxOffset = grooveEvents.reduce((max, event) => Math.max(max, Math.abs(event.grooveOffsetTicks || 0)), 0);
+  const maxRequestedMs = grooveEvents.reduce((max, event) => Math.max(max, Math.abs(Number(event.grooveOffsetMsRequested) || 0)), 0);
+  const maxRealizedMs = grooveEvents.reduce((max, event) => Math.max(max, Math.abs(Number(event.grooveOffsetMsRealized) || 0)), 0);
+  const maxQuantizationErrorMs = grooveEvents.reduce((max, event) => {
+    const requested = Number(event.grooveOffsetMsRequested) || 0;
+    const realized = Number(event.grooveOffsetMsRealized) || 0;
+    return Math.max(max, Math.abs(realized - requested));
+  }, 0);
   return {
     enabled: Boolean(settings.dubMode),
     feel: settings.dubMode ? "gentle swaggering stroll" : "grid",
+    timing_model: "phase_locked_seconds_v1",
     groove_events: grooveEvents.length,
     skank_touches: skankTouches,
     bass_pulses: bassPulses,
     max_offset_ticks: maxOffset,
+    max_offset_ms_requested: Number(maxRequestedMs.toFixed(4)),
+    max_offset_ms_realized: Number(maxRealizedMs.toFixed(4)),
+    max_quantization_error_ms: Number(maxQuantizationErrorMs.toFixed(4)),
     bass_memory_reused: memory.reused,
     bass_memory_new: memory.newCells,
     bass_drop_bars: memory.dropBars,
   };
+}
+
+function summarizeRhythm(settings, sectionMeta, events, subject, material, totalTicks) {
+  const source = material?.source || makeRhythmCell(settings.seed || "fishtail", subject.length, METERS[settings.sections?.[0]?.meter] || METERS["4/4"], 0);
+  const rhythmEvents = events.filter((event) => event.structuralRhythm);
+  const offPulseAttacks = rhythmEvents.filter((event) => {
+    const location = locateTick(event.gridTick ?? event.tick, sectionMeta);
+    if (!location.section) return false;
+    const pulseTicks = location.section.barTicks / location.section.numerator;
+    return (event.gridTick - location.section.startTick) % pulseTicks !== 0;
+  }).length;
+  const tiedMetricAccents = events.filter((event) => eventCrossesMetricAccent(event, sectionMeta)).length;
+  const startCounts = new Map();
+  events.forEach((event) => {
+    const tick = event.gridTick ?? event.tick;
+    startCounts.set(tick, (startCounts.get(tick) || 0) + 1);
+  });
+  const simultaneousStarts = [...startCounts.values()].reduce((sum, count) => sum + (count > 1 ? count : 0), 0);
+  const expectedTotalTicks = sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0);
+  return {
+    version: RHYTHM_MODEL_VERSION,
+    enabled: Boolean(material?.enabled),
+    motion: Number((settings.rhythmMotion || 0).toFixed(4)),
+    rng_isolated: true,
+    source_cell: publicRhythmCell(source),
+    transforms: (material?.entryTransforms || []).map((entry) => ({ ...entry })),
+    structural_events: rhythmEvents.length,
+    off_pulse_attacks: offPulseAttacks,
+    ties_crossing_metric_accents: tiedMetricAccents,
+    simultaneous_attack_ratio: events.length ? Number((simultaneousStarts / events.length).toFixed(4)) : 0,
+    bar_section_endpoints_preserved: expectedTotalTicks === totalTicks,
+    pitch_solver_grid: "pulse_grid_validated_before_structural_rhythm",
+    dub_microtiming_layer: settings.dubMode ? "applied_after_structural_rhythm" : "off",
+  };
+}
+
+function publicRhythmCell(cell) {
+  return {
+    durations: [...(cell?.durations || [])],
+    subdivisionsPerPulse: cell?.subdivisionsPerPulse || 1,
+    totalUnits: cell?.totalUnits || 0,
+    spanPulses: cell?.spanPulses || 0,
+    transform: cell?.transform || "legacy-grid",
+    displacementUnits: cell?.displacementUnits || 0,
+  };
+}
+
+function eventCrossesMetricAccent(event, sectionMeta) {
+  const location = locateTick(event.gridTick ?? event.tick, sectionMeta);
+  const section = location.section;
+  if (!section) return false;
+  const meter = METERS[section.meter] || METERS["4/4"];
+  const pulseTicks = section.barTicks / section.numerator;
+  const start = event.gridTick ?? event.tick;
+  const end = start + (event.gridDuration || event.duration);
+  for (let bar = 0; bar < section.bars; bar += 1) {
+    for (const accent of [0, ...(meter.accents || [])]) {
+      const accentTick = section.startTick + bar * section.barTicks + accent * pulseTicks;
+      if (accentTick > start && accentTick < end) return true;
+    }
+  }
+  return false;
 }
 
 function checkSweetness(settings, sectionMeta, events, stats, audit) {
@@ -4703,6 +5210,16 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
   return {
     title: "amy_cin fishtail generator v0",
     seed: settings.seed,
+    randomness: randomnessManifest(),
+    timing_model: {
+      version: "phase_locked_seconds_v1",
+      canonical_clock: "tempo_lattice",
+      score_identity: "grid_ticks",
+      performance_identity: "timeline_seconds",
+      midi_tick_quantization: "nearest",
+      dub_offsets: "real_milliseconds_relative_to_swung_grid",
+      cross_format_phase_locked: stats.tempoTimeline?.crossFormatPhaseLocked !== false,
+    },
     generated_at: new Date().toISOString(),
     original_code: true,
     ownership: {
@@ -4734,6 +5251,7 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
     },
     refrain: stats.refrainSummary,
     fugue: stats.fugueSummary || null,
+    rhythm: stats.rhythmSummary,
     fallback_safety: {
       mode: "validated_fallbacks_no_unchecked_parallel_perfects",
       ...stats.fallbackStats,
@@ -4770,17 +5288,32 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       audio_uploaded: false,
     },
     tempo_lattice: {
-      enabled: Boolean(settings.tempoLatticeEnabled),
+      requested: Boolean(stats.tempoTimeline?.requestedTempoLatticeEnabled ?? settings.tempoLatticeEnabled),
+      enabled: Boolean(stats.tempoTimeline?.activeTempoLatticeEnabled ?? stats.tempoTimeline?.enabled),
+      suspended_for_midi_phase_lock: Boolean(stats.tempoTimeline?.latticeSuspendedForMidiPhaseLock),
+      suspension_reason: stats.tempoTimeline?.latticeSuspendedForMidiPhaseLock ? "tempo_data_off_uses_flat_midi_clock" : null,
       law: stats.tempoTimeline?.law || FishtailTempoLattice.DEFAULT_LAW,
       rational_amount: Number((settings.rationalSwing || 0).toFixed(4)),
       rational_swing: Number(FishtailTempoLattice.rationalSwingAmount(settings.rationalSwing || 0).toFixed(4)),
       irrational_amount: Number((settings.irrationalSwing || 0).toFixed(4)),
+      irrationalFeelMode: stats.tempoTimeline?.irrationalFeelMode || FishtailTempoLattice.DEFAULT_IRRATIONAL_FEEL_MODE,
+      maxLocalDrift: Number((stats.tempoTimeline?.maxLocalDrift || 0).toFixed(4)),
+      endpointCorrectionAmount: Number((stats.tempoTimeline?.endpointCorrectionAmount || 0).toFixed(4)),
+      endpointsPreserved: stats.tempoTimeline?.endpointsPreserved !== false,
+      minInstantaneousBpm: Number((stats.tempoTimeline?.minInstantaneousBpm || settings.tempo).toFixed(4)),
+      maxInstantaneousBpm: Number((stats.tempoTimeline?.maxInstantaneousBpm || settings.tempo).toFixed(4)),
+      bar_peak_offsets: (stats.tempoTimeline?.barPeakOffsets || []).map((entry) => ({
+        section_index: entry.sectionIndex + 1,
+        bar_index: entry.barIndex + 1,
+        peak_offset_pulses: Number((entry.peakOffset || 0).toFixed(4)),
+      })),
       tempo_event_count: stats.tempoTimeline?.tempoEvents?.length || 0,
       minimum_instantaneous_bpm: Number((stats.tempoTimeline?.minInstantaneousBpm || settings.tempo).toFixed(4)),
       maximum_instantaneous_bpm: Number((stats.tempoTimeline?.maxInstantaneousBpm || settings.tempo).toFixed(4)),
       duration_seconds: Number((stats.tempoTimeline?.totalSeconds || 0).toFixed(4)),
+      endpoints_preserved: stats.tempoTimeline?.endpointsPreserved !== false,
       bar_endpoints_preserved: stats.tempoTimeline?.barEndpointsPreserved !== false,
-      note_groove_layer: settings.dubMode ? "dub_note_offsets_can_compound_with_conductor_lattice" : "grid_notes_only",
+      note_groove_layer: settings.dubMode ? "phase_locked_seconds_v1" : "grid_notes_only",
     },
     audio_reference: {
       probe: {
@@ -4866,8 +5399,18 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       conceptual_ratio_hz: Number(event.conceptualRatioFrequency.toFixed(4)),
       exported_midi_hz: Number(event.exportedMidiFrequency.toFixed(4)),
       velocity: event.velocity,
+      structural_tick: event.gridTick,
+      structural_duration: event.gridDuration,
+      structural_rhythm: Boolean(event.structuralRhythm),
+      rhythm_role: event.rhythmRole,
+      rhythm_purpose: event.rhythmPurpose,
+      rhythm_transform: event.rhythmTransform,
+      rhythm_subdivisions: event.rhythmSubdivisions,
+      rhythm_duration_units: event.rhythmDurationUnits,
       groove_role: event.grooveRole,
       groove_offset_ticks: event.grooveOffsetTicks,
+      groove_offset_ms_requested: Number((Number(event.grooveOffsetMsRequested) || 0).toFixed(4)),
+      groove_offset_ms_realized: Number((Number(event.grooveOffsetMsRealized) || 0).toFixed(4)),
       phrase_role: event.phraseRole,
     })),
   };
@@ -4883,7 +5426,12 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`Tempo: ${settings.tempo.toFixed(4)} BPM`);
   lines.push(`MIDI tempo map: ${settings.includeTempoMap ? "on" : "off"}`);
   if (stats.tempoTimeline) {
-    lines.push(`Tempo lattice: ${settings.tempoLatticeEnabled ? "on" : "off"} | rational ${(settings.rationalSwing || 0).toFixed(2)} | irrational ${(settings.irrationalSwing || 0).toFixed(2)} | events ${stats.tempoTimeline.tempoEvents.length} | range ${stats.tempoTimeline.minInstantaneousBpm.toFixed(2)}-${stats.tempoTimeline.maxInstantaneousBpm.toFixed(2)} BPM | duration ${stats.tempoTimeline.totalSeconds.toFixed(2)} s`);
+    const latticeStatus = stats.tempoTimeline.latticeSuspendedForMidiPhaseLock
+      ? "suspended for flat MIDI clock"
+      : (stats.tempoTimeline.enabled ? "on" : "off");
+    lines.push(`Tempo lattice: ${latticeStatus} | rational ${(settings.rationalSwing || 0).toFixed(2)} | irrational ${(settings.irrationalSwing || 0).toFixed(2)} | feel ${irrationalFeelModeLabel(stats.tempoTimeline.irrationalFeelMode)} | events ${stats.tempoTimeline.tempoEvents.length} | range ${stats.tempoTimeline.minInstantaneousBpm.toFixed(2)}-${stats.tempoTimeline.maxInstantaneousBpm.toFixed(2)} BPM | duration ${stats.tempoTimeline.totalSeconds.toFixed(2)} s`);
+    const peakOffset = (stats.tempoTimeline.barPeakOffsets || []).reduce((max, entry) => Math.max(max, entry.peakOffset || 0), 0);
+    lines.push(`Irrational feel: ${irrationalFeelModeLabel(stats.tempoTimeline.irrationalFeelMode)} | law ${stats.tempoTimeline.law || FishtailTempoLattice.DEFAULT_LAW} | max bar peak ${peakOffset.toFixed(4)} pulses | max local drift ${Number(stats.tempoTimeline.maxLocalDrift || 0).toFixed(4)} pulses | endpoint correction ${Number(stats.tempoTimeline.endpointCorrectionAmount || 0).toFixed(4)} pulses | endpoints ${stats.tempoTimeline.endpointsPreserved !== false ? "preserved" : "shifted"} | bars ${stats.tempoTimeline.barEndpointsPreserved !== false ? "preserved" : "locally drifting"}`);
   }
   lines.push(`Reference pitch: ${settings.referenceNote} = ${settings.referenceHz.toFixed(4)} Hz`);
   if (settings.referenceSource?.mode === "live_input") {
@@ -4920,6 +5468,16 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   });
   lines.push("");
   lines.push(`Subject offsets: ${subject.join(" ")}`);
+  if (stats.rhythmSummary) {
+    const rhythm = stats.rhythmSummary;
+    const cell = rhythm.source_cell;
+    lines.push(`Rhythm motion: ${rhythm.enabled ? `${Math.round(rhythm.motion * 100)}%` : "legacy pulse grid"} | cell [${cell.durations.join(" ")}] / ${cell.subdivisionsPerPulse} subdivisions per pulse | span ${cell.spanPulses} pulses.`);
+    lines.push(`Rhythm audit: ${rhythm.off_pulse_attacks} off-pulse attacks, ${rhythm.ties_crossing_metric_accents} ties crossing metric accents, simultaneous attack ratio ${rhythm.simultaneous_attack_ratio}.`);
+    if (rhythm.transforms?.length) {
+      const sampleTransforms = rhythm.transforms.slice(0, 8).map((entry) => `${entry.voice}:${entry.kind}:${entry.transform}${entry.displacement_units ? `+${entry.displacement_label}` : ""}@${entry.start_step}`).join(", ");
+      lines.push(`Rhythm transforms: ${sampleTransforms}${rhythm.transforms.length > 8 ? ", ..." : ""}`);
+    }
+  }
   if (settings.generationStyle === "invention") {
     lines.push("Imitation/invention mode: source cells are reused as fragments, answers, octave shifts, and rhythmic handoffs.");
   }
@@ -5005,7 +5563,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`  Feel: ${stats.sweetness.label} (${stats.sweetness.score}/100)`);
   stats.sweetness.notes.forEach((note) => lines.push(`  ${note}`));
   if (settings.dubMode) {
-    lines.push(`  Hidden DUB stroll: ${stats.dubGrooveSummary.groove_events} shaped notes, ${stats.dubGrooveSummary.bass_memory_reused} remembered bass cells, ${stats.dubGrooveSummary.bass_drop_bars} bass air windows.`);
+    lines.push(`  Hidden DUB stroll: ${stats.dubGrooveSummary.groove_events} shaped notes, max requested ${stats.dubGrooveSummary.max_offset_ms_requested} ms / realized ${stats.dubGrooveSummary.max_offset_ms_realized} ms, ${stats.dubGrooveSummary.bass_memory_reused} remembered bass cells, ${stats.dubGrooveSummary.bass_drop_bars} bass air windows.`);
   }
   lines.push("");
   lines.push("Harmonic minor behavior");
@@ -5069,9 +5627,12 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     dubGrooveEvents: 0,
     dubSkankTouches: 0,
     dubBassPulses: 0,
+    rhythmStructuralEvents: 0,
+    rhythmOffPulseAttacks: 0,
   };
   const activeVoices = activeVoiceLayout(settings.voices);
   const byVoice = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
+  const byVoiceGrid = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
   const pushIssue = (message) => pushLimited(issues, message);
   const pushWarning = (message) => pushLimited(warnings, message);
   preflightIssues.forEach(pushIssue);
@@ -5109,15 +5670,31 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
       return;
     }
     byVoice[event.voice].push(event);
+    byVoiceGrid[event.voice].push(scoreTimeEvent(event));
     if (!Number.isInteger(event.tick) || event.tick < 0) pushIssue(`${event.voice} has invalid tick ${event.tick}.`);
     if (!Number.isInteger(event.duration) || event.duration <= 0) pushIssue(`${event.voice} has invalid duration ${event.duration}.`);
+    if (!Number.isInteger(event.gridTick) || event.gridTick < 0) pushIssue(`${event.voice} has invalid structural tick ${event.gridTick}.`);
+    if (!Number.isInteger(event.gridDuration) || event.gridDuration <= 0) pushIssue(`${event.voice} has invalid structural duration ${event.gridDuration}.`);
     if (event.tick + event.duration > totalTicks) pushIssue(`${event.voice} note starting at ${describeTickLocation(event.tick, sectionMeta, settings)} extends past the piece end.`);
+    if (event.structuralRhythm) summary.rhythmStructuralEvents += 1;
+    const structuralTick = event.gridTick ?? event.tick;
+    const structuralDuration = event.gridDuration ?? event.duration;
+    const intentionalRhythmGrid = event.structuralRhythm
+      && Number.isInteger(structuralTick)
+      && Number.isInteger(structuralDuration)
+      && structuralTick >= 0
+      && structuralDuration > 0;
     const offAuditGrid = event.tick % (PPQ / 4) !== 0 || event.duration % (PPQ / 4) !== 0;
-    if (offAuditGrid && settings.dubMode && event.grooveRole) {
+    if (intentionalRhythmGrid) {
+      const location = locateTick(structuralTick, sectionMeta);
+      const pulseTicks = location.section ? location.section.barTicks / location.section.numerator : PPQ;
+      if ((structuralTick - (location.section?.startTick || 0)) % pulseTicks !== 0) summary.rhythmOffPulseAttacks += 1;
+    }
+    if (settings.dubMode && event.grooveRole) {
       summary.dubGrooveEvents += 1;
       if (event.grooveRole === "skank-touch") summary.dubSkankTouches += 1;
       if (event.grooveRole === "bass-pulse") summary.dubBassPulses += 1;
-    } else if (offAuditGrid) {
+    } else if (offAuditGrid && !intentionalRhythmGrid) {
       pushWarning(`${event.voice} note at ${describeTickLocation(event.tick, sectionMeta, settings)} is off the 16th-note audit grid.`);
     }
     if (event.midi < 0 || event.midi > 127) pushIssue(`${event.voice} outputs invalid MIDI note ${event.midi}.`);
@@ -5135,6 +5712,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
 
   activeVoices.forEach((voice) => {
     const voiceEvents = byVoice[voice].sort((a, b) => a.tick - b.tick || b.duration - a.duration);
+    byVoiceGrid[voice].sort((a, b) => a.tick - b.tick || b.duration - a.duration);
     for (let i = 1; i < voiceEvents.length; i += 1) {
       if (voiceEvents[i].tick < voiceEvents[i - 1].tick + voiceEvents[i - 1].duration) {
         pushIssue(`${voice} has overlapping notes around ${describeTickLocation(voiceEvents[i].tick, sectionMeta, settings)}.`);
@@ -5142,7 +5720,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     }
   });
 
-  auditSuspensionTimeline(settings, sectionMeta, byVoice, activeVoices, summary, pushWarning);
+  auditSuspensionTimeline(settings, sectionMeta, byVoiceGrid, activeVoices, summary, pushWarning);
 
   sectionMeta.forEach((section) => {
     const mode = MODES[section.mode];
@@ -5151,8 +5729,14 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     const steps = section.bars * section.numerator;
     const pulse = section.barTicks / section.numerator;
     for (let step = 0; step < steps; step += 1) sampleTicks.push(section.startTick + step * pulse);
+    events.forEach((event) => {
+      const structuralTick = event.gridTick ?? event.tick;
+      if (structuralTick > section.startTick && structuralTick < sectionEnd) sampleTicks.push(structuralTick);
+    });
+    sampleTicks.sort((a, b) => a - b);
+    const uniqueSampleTicks = [...new Set(sampleTicks)];
 
-    const finalSnapshot = snapshotAtTick(byVoice, activeVoices, Math.max(section.startTick, sectionEnd - 1));
+    const finalSnapshot = snapshotAtTick(byVoiceGrid, activeVoices, Math.max(section.startTick, sectionEnd - 1));
     const tonicPc = noteToPc(section.key);
     const finalOffsets = finalSnapshot.map((note) => note ? mod((note.carrierMidi ?? note.midi) - tonicPc, 12) : null).filter((offset) => offset != null);
     const finalStable = mode.stable.map((offset) => mod(offset, 12));
@@ -5163,11 +5747,13 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
 
     let previousSnapshot = null;
     let previousTick = null;
-    sampleTicks.forEach((tick, step) => {
-      const snapshot = snapshotAtTick(byVoice, activeVoices, tick);
+    uniqueSampleTicks.forEach((tick) => {
+      const snapshot = snapshotAtTick(byVoiceGrid, activeVoices, tick);
       summary.gridChecks += 1;
-      const pulseInBar = step % section.numerator;
-      const strong = pulseInBar === 0 || (METERS[section.meter]?.accents || []).includes(pulseInBar);
+      const localPulse = (tick - section.startTick) / pulse;
+      const onPulse = Number.isInteger(localPulse);
+      const pulseInBar = onPulse ? mod(localPulse, section.numerator) : -1;
+      const strong = onPulse && (pulseInBar === 0 || (METERS[section.meter]?.accents || []).includes(pulseInBar));
       const location = describeTickLocation(tick, sectionMeta, settings);
       if (strong) {
         summary.strongBeatChecks += 1;
@@ -5181,7 +5767,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     });
 
     activeVoices.forEach((voice) => {
-      const voiceEvents = byVoice[voice].filter((event) => event.tick >= section.startTick && event.tick < sectionEnd);
+      const voiceEvents = byVoiceGrid[voice].filter((event) => event.tick >= section.startTick && event.tick < sectionEnd);
       voiceEvents.forEach((event, index) => {
         const tendency = mode.tendencies?.[event.symbolicOffset];
         if (!tendency) return;
@@ -5205,6 +5791,18 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     issues,
     warnings,
     summary,
+  };
+}
+
+function scoreTimeEvent(event) {
+  const tick = event.gridTick ?? event.tick;
+  const duration = event.gridDuration ?? event.duration;
+  return {
+    ...event,
+    tick,
+    duration,
+    performedTick: event.tick,
+    performedDuration: event.duration,
   };
 }
 
@@ -6694,6 +7292,77 @@ function randomInt(rng, min, max) {
   return Math.floor(rng() * (max - min + 1)) + min;
 }
 
+function makeRandomRouter(seed) {
+  if (globalThis.FishtailRandom?.createRouter) return globalThis.FishtailRandom.createRouter(seed);
+  const streams = new Map();
+  return {
+    model: RANDOM_MODEL_VERSION,
+    masterSeed: String(seed ?? ""),
+    stream(...path) {
+      const key = path.map((part) => `${typeof part}:${String(part)}`).join("|");
+      if (!streams.has(key)) streams.set(key, makeRng(`${seed}:stream:${key}`));
+      return streams.get(key);
+    },
+    unit(...path) {
+      const key = path.map((part) => `${typeof part}:${String(part)}`).join("|");
+      return makeRng(`${seed}:unit:${key}`)();
+    },
+  };
+}
+
+function generationRandomForSettings(settings, randomSource) {
+  if (randomSource?.stream && randomSource?.unit) return randomSource;
+  if (typeof randomSource === "function" && randomModelFromManifest(settings) === LEGACY_RANDOM_MODEL_VERSION) {
+    return legacySingleStreamRouter(randomSource);
+  }
+  return makeRandomRouter(settings?.seed || "fishtail");
+}
+
+function legacySingleStreamRouter(rng) {
+  return {
+    model: LEGACY_RANDOM_MODEL_VERSION,
+    stream() {
+      return rng;
+    },
+    unit() {
+      return rng();
+    },
+  };
+}
+
+function voiceRandomStreams(random, sectionIndex, voice) {
+  return {
+    restRng: random.stream("section", sectionIndex, "voice", voice, "rest"),
+    pitchOrderRng: random.stream("section", sectionIndex, "voice", voice, "pitch-order"),
+    pitchChoiceRng: random.stream("section", sectionIndex, "voice", voice, "pitch-choice"),
+    fallbackRng: random.stream("section", sectionIndex, "voice", voice, "fallback"),
+    suspensionRng: random.stream("section", sectionIndex, "voice", voice, "suspension"),
+  };
+}
+
+function rngForContext(context, kind) {
+  if (kind === "rest" && context.restRng) return context.restRng;
+  if (kind === "pitchOrder" && context.pitchOrderRng) return context.pitchOrderRng;
+  if (kind === "pitchChoice" && context.pitchChoiceRng) return context.pitchChoiceRng;
+  if (kind === "fallback" && context.fallbackRng) return context.fallbackRng;
+  if (kind === "suspension" && context.suspensionRng) return context.suspensionRng;
+  if (typeof context.rng === "function") return context.rng;
+  return makeRng(context.settings?.seed || "fishtail");
+}
+
+function randomnessManifest() {
+  if (globalThis.FishtailRandom?.randomnessManifest) return globalThis.FishtailRandom.randomnessManifest();
+  return {
+    model: RANDOM_MODEL_VERSION,
+    master_seed_bits: RANDOM_MASTER_SEED_BITS,
+  };
+}
+
+function randomModelFromManifest(manifest) {
+  if (globalThis.FishtailRandom?.modelFromManifest) return globalThis.FishtailRandom.modelFromManifest(manifest);
+  return manifest?.randomness?.model || LEGACY_RANDOM_MODEL_VERSION;
+}
+
 async function makeSystemSeed() {
   const browserBytes = new Uint8Array(32);
   crypto.getRandomValues(browserBytes);
@@ -6825,6 +7494,7 @@ function hexToBytes(hex) {
 }
 
 function makeRng(seed) {
+  if (globalThis.FishtailRandom?.legacyRng) return globalThis.FishtailRandom.legacyRng(seed);
   const data = cyrb128(seed);
   return sfc32(data[0], data[1], data[2], data[3]);
 }

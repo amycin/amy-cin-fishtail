@@ -20,6 +20,7 @@
             <span id="seedLabel">Seed: system</span>
             <span id="statusLabel">Ready</span>
             <a class="feedback-link" href="mailto:amy_cin@icloud.com?subject=amy_cin%20fishtail%20generator%20feedback">Feedback</a>
+            <a class="feedback-link help-link" href="docs/FISHTAIL_USER_GUIDE.html" target="_blank" rel="noopener">Guide</a>
             <button class="feedback-link help-link" id="helpButton" type="button">HELP!</button>
             <button class="feedback-link help-link" id="creditsButton" type="button">Credits</button>
           </div>
@@ -116,6 +117,10 @@
                 Density
                 <input id="densityInput" type="range" min="0" max="100" value="26">
               </label>
+              <label>
+                Rhythm motion
+                <input id="rhythmMotionInput" type="range" min="0" max="100" value="18">
+              </label>
             </div>
           </section>
 
@@ -143,6 +148,14 @@
               <label title="Stumble: adds deterministic unevenness around the groove while preserving the bar endpoint.">
                 Irrational swing
                 <input id="irrationalSwingInput" type="range" min="0" max="100" value="0">
+              </label>
+              <label title="Choose how irrational swing timing is corrected for MIDI-safe endpoints.">
+                Irrational feel
+                <select id="irrationalFeelInput">
+                  <option value="lattice_safe" selected>Lattice Safe</option>
+                  <option value="hybrid_drift">Hybrid Drift</option>
+                  <option value="living_drift">Living Drift</option>
+                </select>
               </label>
               <label class="probe-pitch-field">
                 Pulse pitch <span id="probePitchLabel">A3 = 216.00 Hz</span>
@@ -281,7 +294,7 @@
                   <input id="cvRetriggerMsInput" type="number" min="0" max="5" step="0.1" value="2.0">
                 </label>
               </div>
-              <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | meter 4/4 from form 1 | first share 0.500</output>
+              <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | meter 4/4 from form 1 | feel Lattice Safe | first share 0.500</output>
             </div>
           </section>
 
@@ -364,6 +377,15 @@
               <button class="icon-button" id="closeHelpButton" type="button" title="Close help" aria-label="Close help">x</button>
             </div>
             <div class="help-body">
+              <section class="help-guide-callout">
+                <h3>User Guide</h3>
+                <p>Open the full Fishtail manual for quick-start notes, signal-flow pages, timing and DUB explanations, output guidance, and technical overview links.</p>
+                <p class="help-actions">
+                  <a class="help-action-link" href="docs/FISHTAIL_USER_GUIDE.html" target="_blank" rel="noopener">Open User Guide</a>
+                  <a class="help-action-link" href="docs/FISHTAIL_HOW_IT_WORKS.md" target="_blank" rel="noopener">Technical Overview</a>
+                </p>
+              </section>
+
               <section>
                 <h3>What It Does</h3>
                 <p>This is a browser-based imitation, invention, counterpoint, and Fishtail Fugue MIDI generator. It creates a structured piece from sections of bars, keys, modes, metres, cadences, voice-leading rules, breath/rest choices, and weighted randomness.</p>
@@ -384,7 +406,7 @@
                 <h3>Pulse And Time</h3>
                 <p>The Pulse + Time panel is the live sound and conductor-timing area. The page loads silent. Turning on <strong>Pulse sound</strong> starts the Teardrop reference tone at the current Reference Hz. <strong>Pulse pitch</strong> chooses the reference note, and <strong>Fine pitch</strong> trims cents by ear; both write into the same Reference Hz used by MIDI generation.</p>
                 <p><strong>Living Reference</strong> listens only after you press Listen for pitch. Play or sing one sustained monophonic note, then press Use stable pitch to freeze the recent pitch centre as Fishtail's exact reference. Capture anyway is there when the source is intentionally moving. The input is analysed locally through a silent graph; it is not monitored, recorded, uploaded, or saved with device identity.</p>
-                <p><strong>Metronome</strong> starts a louder pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. Rational swing moves from stroll to swagger; irrational swing adds stumble. Swing starts straight by default; DUB mode sets a gentle strolling swing. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
+                <p><strong>Metronome</strong> starts a louder pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. Rational swing moves from stroll to swagger; irrational swing adds stumble, with Lattice Safe, Hybrid Drift, and Living Drift feel modes. Swing starts straight by default; DUB mode sets a gentle strolling swing. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
                 <p>Plain Equal Temperament MIDI exports ordinary note numbers, so exact captured acoustic tuning depends on the receiving synth. Amy Dub Intonation, Bend MIDI, project JSON, Pulse WAV, and Fishtail's tempo/reference metadata preserve the captured relationship more directly.</p>
                 <p>Prepare pulse WAV and Prepare ticker WAV render optional mono 48 kHz / 24-bit stems after MIDI generation. Pulse WAV is a short first-two-bars reference tone; ticker WAV stays whole-piece and peak-normalized to -6 dBFS for DAW-friendly alignment. Prepare analogue CV ZIP renders the selected voice set as clock, 1V/oct pitch, gate, and calibration WAV files. Fishtail shows estimated file size and temporary render memory before audio export. The CV controls set voice package, first-60s / whole-short-piece duration, musical pulse / bar / 24 PPQN clock, full-scale volts, zero offset, gate polarity, and retrigger gap. Browser CV export defaults to one voice and the first 60 seconds for iPad memory safety. Pitch CV needs a DC-coupled interface or DAW CV utility; ordinary phone and headphone outputs usually will not preserve DC pitch voltage.</p>
               </section>
@@ -508,10 +530,11 @@
       </section>
     </main>
 
-    <script src="src/tempo-lattice.js?v=2"></script>
-    <script src="src/audio-engine.js?v=5"></script>
+    <script src="src/tempo-lattice.js?v=3"></script>
+    <script src="src/audio-engine.js?v=7"></script>
     <script src="src/wav-export.js?v=7"></script>
     <script src="src/pitch-input.js?v=3"></script>
-    <script src="src/app.js?v=79"></script>
+    <script src="src/random-router.js?v=1"></script>
+    <script src="src/app.js?v=81"></script>
   </body>
 </html>

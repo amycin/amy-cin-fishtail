@@ -261,6 +261,12 @@ body.dub-mode pre {
   color: #dfffe8;
 }
 
+body.dub-mode .help-action-link {
+  color: #b7ff4d;
+  border-color: rgba(57, 255, 136, 0.36);
+  background: rgba(57, 255, 136, 0.08);
+}
+
 body.dub-mode button,
 body.dub-mode .icon-button {
   color: var(--ink);
@@ -1224,6 +1230,33 @@ button.primary-button.is-generating {
   border: 1px solid rgba(192, 83, 42, 0.16);
   border-radius: 8px;
   background: rgba(255, 252, 239, 0.52);
+}
+
+.help-guide-callout {
+  border-color: rgba(41, 169, 199, 0.34);
+  background:
+    linear-gradient(90deg, rgba(41, 169, 199, 0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 252, 239, 0.76), rgba(255, 241, 197, 0.58));
+  background-size: 18px 18px, auto;
+}
+
+.help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.help-action-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid rgba(41, 169, 199, 0.44);
+  border-radius: 6px;
+  background: rgba(41, 169, 199, 0.12);
+  color: #245b65;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .help-body h3 {

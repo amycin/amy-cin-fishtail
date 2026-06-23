@@ -6,17 +6,24 @@ The current build is a static web app. It generates ordinary `.mid` files plus a
 
 ## Run
 
-Open `index.html` directly in a browser, or serve the folder locally:
+For the smoothest Mac and iPad workflow, run the local Fishtail server:
 
 ```bash
-python3 -m http.server 8787
+node scripts/serve-fishtail.js
 ```
 
-Then open `http://localhost:8787`.
+It prints a Mac URL and any available iPad/local-network URLs. Open the Mac URL on this computer. On iPad, use the printed local-network URL such as `http://192.168.x.x:8899/index.html`; `localhost` and `127.0.0.1` on the iPad point to the iPad, not the Mac.
+
+You can also open `index.html` directly in a browser for Mac-only use.
 
 Live demo target after publishing: `https://amycin.github.io/amy-cin-fishtail/`.
 
 For web hosting, ownership notes, and optional custom entropy-server wiring, see `PUBLISHING.md`.
+
+## Documentation
+
+- [User guide](docs/FISHTAIL_USER_GUIDE.html): a browser-readable manual with quick-start notes, technical manual pages, timing notes, output explanations, and links back to the app.
+- [How Fishtail works](docs/FISHTAIL_HOW_IT_WORKS.md): a system overview covering the musical model, generation flow, timing layers, tuning modes, exports, and validation.
 
 ## Validation
 
@@ -42,17 +49,18 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Reference-pitch menu, Pulse pitch / Fine pitch ear-tuning sliders, and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A3 = 216 Hz with A4 anchored at 432 Hz and `n = 216`, giving 60.0000 BPM.
 - Living Reference Input for capture-and-freeze monophonic pitch: press Listen, sing or play one sustained note through a mic/line-in/USB input exposed by the browser, then press Use this pitch to set the exact Fishtail reference locally. Audio is analysed on-device only and is not recorded, uploaded, or saved with device identity.
 - Switch-on Teardrop Pulse for the current reference frequency, with one shared browser `AudioContext`, silent-at-load safety, smooth one-second pitch glide, and an 11-oscillator symmetric Teardrop voice table under the 12-node budget.
-- Louder live pink-noise metronome preview with existing meter accents, rational/irrational Fishtail swing controls, and a shared tempo-lattice timing model.
-- Optional pulse-level tempo lattice in the existing MIDI conductor track. When enabled, note ticks remain on the formal grid while Set Tempo events warp tick-to-time playback for DAWs that honor tempo maps.
+- Louder live pink-noise metronome preview with existing meter accents, rational/irrational Fishtail swing controls, Lattice Safe / Hybrid Drift / Living Drift feel modes, live-only tempo/swing control glide, and a shared tempo-lattice timing model.
+- Optional pulse-level tempo lattice in the existing MIDI conductor track. When enabled, note ticks remain on the formal grid while Set Tempo events warp tick-to-time playback for DAWs that honor tempo maps; Lattice Safe preserves the existing normalized behaviour, while the drift modes add seeded organic timing with endpoint correction.
 - Optional generated WAV stems for a short Teardrop Pulse reference and pink-noise ticker, rendered sequentially as mono 48 kHz / 24-bit PCM with browser memory guards and explicit save buttons. Ticker WAV export is peak-normalized to -6 dBFS for DAW-friendly headroom.
 - Optional analogue CV ZIP export for modular and old-school analogue workflows: a clean clock WAV plus 1V/oct pitch and gate WAV pairs for each generated voice. Pitch CV is a DC-coupled-interface feature; ordinary phone, tablet, and headphone outputs are usually AC-coupled and will not preserve pitch voltage.
 - Major, harmonic minor, standard modal scales, and a gravity melodic minor field.
 - Original counterpoint search with voice ranges, tendency-tone debts, basic consonance checks, and parallel perfect rejection.
 - Fishtail Fugue mode with automatic three-section minimum form shaping, subject/answer/countersubject planning, exposition entries, episodes, middle entries, and final return. DUB off uses Formal Gravity; DUB on keeps the fugue map but gives the bass and offbeat answers more room.
+- Rhythm motion control for motif-level rhythm cells: 0 restores legacy pulse-grid timing, while restrained higher values give subjects, answers, and invention fragments deterministic sub-pulse attacks, ties, rotations, reversals, and gentle displacement before DUB microtiming is applied.
 - Optional Dub Gravity switch for steadier root/fifth bass, offbeat middle-voice skank gestures, more breathing room, black/green terminal visuals, and rare deliberate rule bends that are still reported by the checker.
 - Whole-section refrain roles with clear/dubby returns and gentle/dubby developments.
 - Suspension gravity with per-voice pedal controls, stepwise resolution pressure, and checker reporting for overlong held notes.
-- Slower staged generation pass with a final output checker for timing, range, cadence, tendency-tone, overlap, and parallel-perfect warnings.
+- Immediate generation pass with a final output checker for timing, rhythm cells, range, cadence, tendency-tone, overlap, and parallel-perfect warnings.
 - Clean Equal Temperament and Amy Dub Intonation MIDI exports: one track per generated voice, no program changes, no controller setup, and no track-name clutter. When Tempo map is on, a separate conductor track writes BPM and time signatures for DAWs that read them. The selected BPM is also included in the downloaded filename, JSON manifest, and generation notes.
 - Multiple single-voice Bend MIDI output for pitch-bend experiments.
 - Deterministic pitch-based velocity feel: 127 at the generator bass floor down to 90 at the soprano ceiling, shaped with a gentle 3 dB/octave tilt.

@@ -11,6 +11,7 @@ const APP_SCRIPT_PATHS = [
   path.join(ROOT, "src", "audio-engine.js"),
   path.join(ROOT, "src", "wav-export.js"),
   path.join(ROOT, "src", "pitch-input.js"),
+  path.join(ROOT, "src", "random-router.js"),
   path.join(ROOT, "src", "app.js"),
 ];
 const TEMPO_30_BYTES = [0x1e, 0x84, 0x80];
@@ -25,6 +26,9 @@ function main() {
   if (smoke) {
     failed = !runSmokeTests();
     failed = !runStabilityTests() || failed;
+    failed = !runRandomStreamTests() || failed;
+    failed = !runPhaseLockedTimingTests() || failed;
+    failed = !runRhythmTests() || failed;
     failed = !runVelocityTests() || failed;
     failed = !runPitchInputTests() || failed;
     failed = !runParallelRuleTests() || failed;
@@ -358,27 +362,12 @@ function runStabilityTests() {
         return { activeDelay, idleDelay };
       })();
 
-      const generationRitual = (() => {
-        const piece = {
-          settings: baseSettings({ generationStyle: "counterpoint", dubMode: false }),
-          manifest: { complexity: { level: "comfortable" } },
-        };
-        state.reducedMotion = false;
-        state.visualEcoUntil = 0;
-        state.visualStressScore = 0;
-        state.visualHighRefreshCapable = false;
-        const comfort = generationRitualMinimumMs(piece);
-        state.visualHighRefreshCapable = true;
-        const fast = generationRitualMinimumMs(piece);
-        state.visualEcoUntil = Date.now() + 10000;
-        const eco = generationRitualMinimumMs(piece);
-        state.visualEcoUntil = 0;
-        state.visualStressScore = 4;
-        const stressed = generationRitualMinimumMs(piece);
-        state.visualStressScore = 0;
-        state.visualHighRefreshCapable = false;
-        return { comfort, fast, eco, stressed };
-      })();
+      const generationDelayRemoved = typeof generationRitualMinimumMs === "undefined"
+        && typeof generationRitualStatus === "undefined"
+        && typeof GENERATE_MIN_MS === "undefined"
+        && typeof GENERATE_RITUAL_COMFORT_MS === "undefined"
+        && typeof GENERATE_RITUAL_FAST_MS === "undefined"
+        && typeof GENERATE_RITUAL_MAX_MS === "undefined";
 
       function countTempoMeta(bytes) {
         let count = 0;
@@ -399,6 +388,31 @@ function runStabilityTests() {
       }
 
       const timelineAudit = (() => {
+        function timelineSignature(timeline) {
+          return JSON.stringify(timeline.segments.map((segment) => Number(segment.durationWeight.toFixed(9))));
+        }
+        function tempoSignature(timeline) {
+          return JSON.stringify(timeline.segments.map((segment) => segment.microsecondsPerQuarter));
+        }
+        function validMidiTempos(timeline) {
+          return timeline.tempoEvents.length > 0
+            && timeline.tempoEvents.every((event, index) => (
+              Number.isInteger(event.tick)
+              && event.tick >= 0
+              && Number.isInteger(event.microsecondsPerQuarter)
+              && event.microsecondsPerQuarter >= 1
+              && event.microsecondsPerQuarter <= 0xffffff
+              && (index === 0 || event.tick > timeline.tempoEvents[index - 1].tick)
+            ));
+        }
+        function barSums(timeline) {
+          const sums = new Map();
+          timeline.segments.forEach((segment) => {
+            const key = \`\${segment.sectionIndex}:\${segment.barIndex}\`;
+            sums.set(key, (sums.get(key) || 0) + segment.durationWeight);
+          });
+          return [...sums.values()];
+        }
         const settings = baseSettings({
           tempoLatticeEnabled: true,
           rationalSwing: 1,
@@ -420,7 +434,7 @@ function runStabilityTests() {
             && timeline.segments.every((segment) => segment.durationSeconds > 0 && segment.tickLength > 0 && segment.microsecondsPerQuarter >= 1 && segment.microsecondsPerQuarter <= 0xffffff)
             && ticks.every((tick, index) => index === 0 || tick > ticks[index - 1])
             && timeline.tickerEvents.length === timeline.segments.length
-            && timeline.tempoEvents.every((event, index) => index === 0 || event.tick > timeline.tempoEvents[index - 1].tick);
+            && validMidiTempos(timeline);
         });
         const section = [{ bars: 2, meter: "7/8", startTick: 0, barTicks: METERS["7/8"].numerator * METERS["7/8"].pulse, numerator: 7, denominator: 8 }];
         const one = FishtailTempoLattice.buildTempoTimeline(section, settings, { ppq: PPQ, meters: METERS });
@@ -435,12 +449,85 @@ function runStabilityTests() {
         }, { ppq: PPQ, meters: METERS });
         const stumbleWeights = stumble.segments.map((segment) => segment.durationWeight);
         const stumbleSpread = Math.max(...stumbleWeights) - Math.min(...stumbleWeights);
+        const fingerprintSections = [
+          { bars: 1, meter: "4/4", startTick: 0, barTicks: METERS["4/4"].numerator * METERS["4/4"].pulse, numerator: 4, denominator: 4 },
+          { bars: 1, meter: "7/8", startTick: METERS["4/4"].numerator * METERS["4/4"].pulse, barTicks: METERS["7/8"].numerator * METERS["7/8"].pulse, numerator: 7, denominator: 8 },
+        ];
+        const safeFingerprint = FishtailTempoLattice.buildTempoTimeline(fingerprintSections, {
+          tempo: 72,
+          tempoLatticeEnabled: true,
+          rationalSwing: 0.5,
+          irrationalSwing: 0.6,
+          tempoLatticeLaw: FishtailTempoLattice.DEFAULT_LAW,
+          seed: "safe-fingerprint",
+        }, { ppq: PPQ, meters: METERS });
+        const expectedSafeWeights = [1.037808007, 0.962191993, 1.224455468, 0.775544532, 1.19715982, 0.80284018, 1.057496119, 0.942503881, 1.256424819, 0.849362831, 0.89421235];
+        const expectedSafeTempos = [864840, 801826, 1020379, 646287, 997633, 669033, 881246, 785420, 1047020, 707802, 745177];
+        const twoPulseSection = [{ bars: 5, meter: "2/2", startTick: 0, barTicks: METERS["2/2"].numerator * METERS["2/2"].pulse, numerator: 2, denominator: 2 }];
+        const twoPulseNatural = FishtailTempoLattice.buildTempoTimeline(twoPulseSection, {
+          tempo: 72,
+          tempoLatticeEnabled: true,
+          rationalSwing: 0,
+          irrationalSwing: 1,
+          tempoLatticeLaw: FishtailTempoLattice.NATURAL_SPREAD_LAW,
+          seed: "two-pulse-natural",
+        }, { ppq: PPQ, meters: METERS });
+        const twoPulseLegacy = FishtailTempoLattice.buildTempoTimeline(twoPulseSection, {
+          tempo: 72,
+          tempoLatticeEnabled: true,
+          rationalSwing: 0,
+          irrationalSwing: 1,
+          tempoLatticeLaw: FishtailTempoLattice.DEFAULT_LAW,
+          seed: "two-pulse-natural",
+        }, { ppq: PPQ, meters: METERS });
+        const naturalPeaks = twoPulseNatural.barPeakOffsets.map((entry) => entry.peakOffset);
+        const legacyPeaks = twoPulseLegacy.barPeakOffsets.map((entry) => entry.peakOffset);
+        const driftSection = [{ bars: 4, meter: "4/4", startTick: 0, barTicks: METERS["4/4"].numerator * METERS["4/4"].pulse, numerator: 4, denominator: 4 }];
+        const driftBase = {
+          tempo: 72,
+          tempoLatticeEnabled: true,
+          rationalSwing: 0.5,
+          irrationalSwing: 0.8,
+          seed: "drift-deterministic",
+        };
+        const latticeSafe = FishtailTempoLattice.buildTempoTimeline(driftSection, { ...driftBase, irrationalFeelMode: "lattice_safe" }, { ppq: PPQ, meters: METERS });
+        const hybrid = FishtailTempoLattice.buildTempoTimeline(driftSection, { ...driftBase, irrationalFeelMode: "hybrid_drift" }, { ppq: PPQ, meters: METERS });
+        const living = FishtailTempoLattice.buildTempoTimeline(driftSection, { ...driftBase, irrationalFeelMode: "living_drift" }, { ppq: PPQ, meters: METERS });
+        const livingSame = FishtailTempoLattice.buildTempoTimeline(driftSection, { ...driftBase, irrationalFeelMode: "living_drift" }, { ppq: PPQ, meters: METERS });
+        const livingOther = FishtailTempoLattice.buildTempoTimeline(driftSection, { ...driftBase, seed: "drift-other", irrationalFeelMode: "living_drift" }, { ppq: PPQ, meters: METERS });
+        const livingBarSums = barSums(living);
+        const allModeTimelines = [latticeSafe, hybrid, living, safeFingerprint];
         return {
           perMeter,
-          deterministic: JSON.stringify(one.segments.map((segment) => segment.durationWeight)) === JSON.stringify(same.segments.map((segment) => segment.durationWeight)),
-          seedChanges: JSON.stringify(one.segments.map((segment) => segment.durationWeight)) !== JSON.stringify(other.segments.map((segment) => segment.durationWeight)),
+          deterministic: timelineSignature(one) === timelineSignature(same),
+          seedChanges: timelineSignature(one) !== timelineSignature(other),
           straight: straight.tempoEvents.length === 1 && straight.segments.every((segment) => segment.microsecondsPerQuarter === straight.baseMicrosecondsPerQuarter),
-          irrationalMoves: stumbleSpread > 0.1 && stumble.barEndpointsPreserved,
+          irrationalMoves: stumbleSpread > 0 && stumbleSpread < 0.1 && stumble.barEndpointsPreserved,
+          existingModeOutputUnchanged: safeFingerprint.irrationalFeelMode === "lattice_safe"
+            && safeFingerprint.law === FishtailTempoLattice.DEFAULT_LAW
+            && JSON.stringify(safeFingerprint.segments.map((segment) => Number(segment.durationWeight.toFixed(9)))) === JSON.stringify(expectedSafeWeights)
+            && tempoSignature(safeFingerprint) === JSON.stringify(expectedSafeTempos),
+          naturalSpreadDefault: latticeSafe.law === FishtailTempoLattice.NATURAL_SPREAD_LAW
+            && twoPulseNatural.law === FishtailTempoLattice.NATURAL_SPREAD_LAW
+            && twoPulseNatural.barEndpointsPreserved
+            && naturalPeaks.every((peak) => peak <= 0.160001)
+            && legacyPeaks.some((peak, index) => peak > (naturalPeaks[index] || 0) * 1.8),
+          sameSeedSameDrift: timelineSignature(living) === timelineSignature(livingSame)
+            && tempoSignature(living) === tempoSignature(livingSame)
+            && timelineSignature(living) !== timelineSignature(livingOther),
+          positivePulseDurations: allModeTimelines.every((timeline) => timeline.segments.every((segment) => segment.durationSeconds > 0 && segment.durationWeight > 0)),
+          hybridAndSafeEndpoints: latticeSafe.endpointsPreserved
+            && latticeSafe.barEndpointsPreserved
+            && hybrid.endpointsPreserved
+            && hybrid.barEndpointsPreserved,
+          livingEndpointsWithWanderingBars: living.endpointsPreserved
+            && !living.barEndpointsPreserved
+            && livingBarSums.some((sum) => Math.abs(sum - 4) > 0.0001),
+          tempoEventsValid: allModeTimelines.every(validMidiTempos),
+          driftMetricsPresent: living.maxLocalDrift > 0
+            && living.endpointCorrectionAmount > 0
+            && living.minInstantaneousBpm > 0
+            && living.maxInstantaneousBpm >= living.minInstantaneousBpm,
         };
       })();
 
@@ -453,6 +540,7 @@ function runStabilityTests() {
           metronomeMeter: "7/8",
           rationalSwing: 1,
           irrationalSwing: 0.9,
+          irrationalFeelMode: "living_drift",
         };
         const straight = FishtailAudioEngine.buildMetronomePattern({ ...base, tempoLatticeEnabled: false });
         const lattice = FishtailAudioEngine.buildMetronomePattern({ ...base, tempoLatticeEnabled: true });
@@ -462,6 +550,63 @@ function runStabilityTests() {
           switchOffStraight: straight.every((segment) => segment.microsecondsPerQuarter === straight[0].microsecondsPerQuarter),
           switchOnMoves: new Set(lattice.map((segment) => segment.microsecondsPerQuarter)).size > 1,
           endpointsMatch: Math.abs(straightSum - latticeSum) < 1e-9,
+        };
+      })();
+
+      const liveControlGlideAudit = (() => {
+        const start = {
+          seed: "live-glide",
+          tempo: 60,
+          referenceHz: 216,
+          tempoLatticeEnabled: true,
+          rationalSwing: 0,
+          irrationalSwing: 0,
+          irrationalFeelMode: "lattice_safe",
+          ppq: PPQ,
+          meters: METERS,
+          metronomeMeter: "4/4",
+          metronomeLevel: 0.8,
+        };
+        const target = {
+          ...start,
+          tempo: 132,
+          referenceHz: 432,
+          rationalSwing: 1,
+          irrationalSwing: 0.8,
+          irrationalFeelMode: "living_drift",
+        };
+        const control = FishtailAudioEngine.makeLiveControlState(start, 0);
+        FishtailAudioEngine.updateLiveControlTarget(control, target, 0);
+        const immediate = FishtailAudioEngine.smoothedMetronomeSettings(target, control, 0);
+        const mid = FishtailAudioEngine.smoothedMetronomeSettings(target, control, 1.2);
+        const later = FishtailAudioEngine.smoothedMetronomeSettings(target, control, 30);
+        const immediatePattern = FishtailAudioEngine.buildMetronomePattern(immediate);
+        const targetPattern = FishtailAudioEngine.buildMetronomePattern(target);
+        const midPattern = FishtailAudioEngine.buildMetronomePattern(mid);
+        return {
+          constants: FishtailAudioEngine.LIVE_TEMPO_GLIDE_PULSES === 4
+            && FishtailAudioEngine.LIVE_SWING_GLIDE_PULSES === 6
+            && FishtailAudioEngine.LIVE_REFERENCE_GLIDE_SECONDS === 1,
+          immediateHolds: immediate.tempo === start.tempo
+            && immediate.rationalSwing === start.rationalSwing
+            && immediate.irrationalSwing === start.irrationalSwing
+            && immediate.referenceHz === start.referenceHz
+            && immediate.irrationalFeelMode === target.irrationalFeelMode,
+          gradualMove: mid.tempo > start.tempo
+            && mid.tempo < target.tempo
+            && mid.rationalSwing > start.rationalSwing
+            && mid.rationalSwing < target.rationalSwing
+            && mid.irrationalSwing > start.irrationalSwing
+            && mid.irrationalSwing < target.irrationalSwing
+            && mid.referenceHz > start.referenceHz
+            && mid.referenceHz < target.referenceHz,
+          eventualTarget: Math.abs(later.tempo - target.tempo) < 0.01
+            && Math.abs(later.rationalSwing - target.rationalSwing) < 0.01
+            && Math.abs(later.irrationalSwing - target.irrationalSwing) < 0.01
+            && Math.abs(later.referenceHz - target.referenceHz) < 0.01,
+          patternGlides: immediatePattern[0].durationSeconds > targetPattern[0].durationSeconds
+            && midPattern[0].durationSeconds < immediatePattern[0].durationSeconds
+            && midPattern[0].durationSeconds > targetPattern[0].durationSeconds,
         };
       })();
 
@@ -477,16 +622,24 @@ function runStabilityTests() {
           tempoLatticeEnabled: true,
           rationalSwing: 0.8,
           irrationalSwing: 0.25,
+          irrationalFeelMode: "hybrid_drift",
         };
-        const straightPiece = buildPiece({ ...base, sections: structuredClone(DEFAULT_SECTIONS) }, makeRng(base.seed));
-        const latticePiece = buildPiece({ ...lattice, sections: structuredClone(DEFAULT_SECTIONS) }, makeRng(lattice.seed));
+        const straightPiece = buildPiece({ ...base, sections: structuredClone(DEFAULT_SECTIONS) }, FishtailRandom.createRouter(base.seed));
+        const latticePiece = buildPiece({ ...lattice, sections: structuredClone(DEFAULT_SECTIONS) }, FishtailRandom.createRouter(lattice.seed));
         return {
           noteStable: noteSignature(straightPiece) === noteSignature(latticePiece),
           straightTempos: countTempoMeta(straightPiece.midiBytes),
           latticeTempos: countTempoMeta(latticePiece.midiBytes),
           manifestOk: latticePiece.manifest.tempo_lattice.enabled
             && latticePiece.manifest.tempo_lattice.tempo_event_count === latticePiece.tempoTimeline.tempoEvents.length
-            && latticePiece.report.includes("Tempo lattice: on"),
+            && latticePiece.manifest.tempo_lattice.irrationalFeelMode === "hybrid_drift"
+            && latticePiece.manifest.tempo_lattice.endpointsPreserved === true
+            && latticePiece.manifest.tempo_lattice.maxLocalDrift > 0
+            && latticePiece.manifest.tempo_lattice.endpointCorrectionAmount > 0
+            && latticePiece.manifest.tempo_lattice.minInstantaneousBpm > 0
+            && latticePiece.manifest.tempo_lattice.maxInstantaneousBpm >= latticePiece.manifest.tempo_lattice.minInstantaneousBpm
+            && latticePiece.report.includes("Tempo lattice: on")
+            && latticePiece.report.includes("Irrational feel: Hybrid Drift"),
         };
       })();
 
@@ -543,6 +696,7 @@ function runStabilityTests() {
         const indexedTimeline = FishtailWavExport.indexTempoTimeline(cvTimeline);
         const cvBarClock = FishtailWavExport.clockEventsForTimeline(indexedTimeline, { cvClockMode: "bar" }, 480);
         const cvPpqnClock = FishtailWavExport.clockEventsForTimeline(indexedTimeline, { cvClockMode: "ppqn24" }, 480);
+        const tickerSchedule = FishtailWavExport.tickerRenderSchedule(cvTimeline, 48000);
         const cvCalibration = FishtailWavExport.renderCvCalibrationStaircase({ sampleRate: 10 }, { cvFullScaleVolts: 5 });
         const probeSeconds = FishtailWavExport.probeExportPieceSeconds(cvTimeline);
         const standardPlan = FishtailWavExport.chooseRenderPlan(2);
@@ -564,6 +718,14 @@ function runStabilityTests() {
           tickerNormalizes: Math.abs(normalizedPeak - targetPeak) < 1e-6
             && normalization.targetDbfs === -6
             && Math.abs(normalization.afterDbfs + 6) < 0.0001,
+          tickerPreRoll: FishtailWavExport.TICKER_EXPORT_PREROLL_SECONDS === 0.05
+            && tickerSchedule.preRollFrames === 2400
+            && tickerSchedule.events[0].scheduledFrame === 2400
+            && tickerSchedule.events[0].croppedFrame === 0
+            && tickerSchedule.events[0].croppedPeakFrame === Math.round(FishtailTempoLattice.TICKER_ATTACK_SECONDS * 48000)
+            && tickerSchedule.events[1].croppedFrame - tickerSchedule.events[0].croppedFrame === 48000
+            && tickerSchedule.events[1].croppedPeakFrame - tickerSchedule.events[0].croppedPeakFrame === 48000
+            && tickerSchedule.internalFrames - tickerSchedule.preRollFrames === tickerSchedule.finalFrames,
           cvZip: cvZip[0] === 0x50 && cvZip[1] === 0x4b && cvZip[2] === 0x03 && cvZip[3] === 0x04,
           cvMath: Math.abs(FishtailWavExport.eventCvVolts({ midi: 72 }, { outputMode: "equal" }) - 1) < 1e-9
             && Math.abs(FishtailWavExport.eventCvVolts({ tunedFrequency: 864 }, { outputMode: "bend", rootMidi: 69, rootFreq: 432 }) - 1.75) < 1e-9
@@ -663,16 +825,24 @@ function runStabilityTests() {
             && highRefreshVisual.idleDelay === CORE_HIGH_REFRESH_IDLE_FRAME_MS,
         },
         {
-          name: "generation ritual rewards fast machines and spares stressed ones",
-          ok: generationRitual.comfort >= GENERATE_RITUAL_COMFORT_MS
-            && generationRitual.fast >= GENERATE_RITUAL_FAST_MS
-            && generationRitual.fast > generationRitual.comfort
-            && generationRitual.eco === GENERATE_MIN_MS
-            && generationRitual.stressed === GENERATE_MIN_MS,
+          name: "generation flow has no artificial ritual delay",
+          ok: generationDelayRemoved,
         },
         {
           name: "tempo lattice is meter-safe deterministic and straight-safe",
-          ok: timelineAudit.perMeter && timelineAudit.deterministic && timelineAudit.seedChanges && timelineAudit.straight && timelineAudit.irrationalMoves,
+          ok: timelineAudit.perMeter
+            && timelineAudit.deterministic
+            && timelineAudit.seedChanges
+            && timelineAudit.straight
+            && timelineAudit.irrationalMoves
+            && timelineAudit.existingModeOutputUnchanged
+            && timelineAudit.naturalSpreadDefault
+            && timelineAudit.sameSeedSameDrift
+            && timelineAudit.positivePulseDurations
+            && timelineAudit.hybridAndSafeEndpoints
+            && timelineAudit.livingEndpointsWithWanderingBars
+            && timelineAudit.tempoEventsValid
+            && timelineAudit.driftMetricsPresent,
         },
         {
           name: "tempo lattice conductor does not move note events",
@@ -686,6 +856,14 @@ function runStabilityTests() {
           ok: liveMetronomeAudit.switchOffStraight
             && liveMetronomeAudit.switchOnMoves
             && liveMetronomeAudit.endpointsMatch,
+        },
+        {
+          name: "live tempo and swing controls glide toward targets",
+          ok: liveControlGlideAudit.constants
+            && liveControlGlideAudit.immediateHolds
+            && liveControlGlideAudit.gradualMove
+            && liveControlGlideAudit.eventualTarget
+            && liveControlGlideAudit.patternGlides,
         },
         {
           name: "teardrop voice table preserves centre and symmetry",
@@ -704,6 +882,7 @@ function runStabilityTests() {
         {
           name: "ticker wav normalizer targets -6 dBFS",
           ok: wavAudit.tickerNormalizes
+            && wavAudit.tickerPreRoll
             && FishtailWavExport.TICKER_NORMALIZE_DBFS === -6
             && FishtailAudioEngine.METRONOME_MAX_GAIN >= 3.4,
         },
@@ -735,6 +914,622 @@ function runStabilityTests() {
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} stability ${result.name}`);
+    if (!result.ok) ok = false;
+  }
+  return ok;
+}
+
+function runRandomStreamTests() {
+  const context = makeAppContext();
+  const results = vm.runInContext(`
+    (() => {
+      function randomSettings(overrides = {}) {
+        return {
+          seed: "random-streams",
+          sections: structuredClone(DEFAULT_SECTIONS),
+          voices: 4,
+          tempo: 60,
+          includeTempoMap: true,
+          tempoLatticeEnabled: false,
+          rationalSwing: 0,
+          irrationalSwing: 0,
+          irrationalFeelMode: FishtailTempoLattice.DEFAULT_IRRATIONAL_FEEL_MODE,
+          referenceNote: "A4",
+          referenceMidi: 69,
+          referenceHz: 432,
+          referenceAnchorA4Hz: 432,
+          tempoDivisor: 432,
+          breathing: 0.52,
+          density: 0.48,
+          rhythmMotion: DEFAULT_RHYTHM_MOTION,
+          strangeness: 0.16,
+          generationStyle: "counterpoint",
+          resolution: "literal",
+          outputMode: "equal",
+          velocityProfile: "auto",
+          dubMode: false,
+          pedalVoices: { bass: false, tenor: false, alto: false, soprano: false },
+          rootPc: 9,
+          rootNote: "A4",
+          rootMidi: 69,
+          rootFreq: 432,
+          ...overrides,
+        };
+      }
+
+      function build(overrides = {}, beforeBuild = null) {
+        const settings = randomSettings(overrides);
+        const random = FishtailRandom.createRouter(settings.seed);
+        if (beforeBuild) beforeBuild(random);
+        return buildPiece(settings, random);
+      }
+
+      function noteSignature(piece) {
+        return JSON.stringify(piece.events.map((event) => [
+          event.voice,
+          event.tick,
+          event.duration,
+          event.gridTick,
+          event.gridDuration,
+          event.midi,
+          event.carrierMidi,
+          event.symbolicOffset,
+          event.bend,
+          event.grooveOffsetTicks,
+          event.grooveRole,
+          event.phraseRole,
+          event.structuralRhythm,
+          event.rhythmTransform,
+          event.rhythmLocalIndex,
+          event.velocity,
+        ]));
+      }
+
+      function pitchFormSignature(piece) {
+        return JSON.stringify({
+          sections: piece.manifest.sections.map((section) => ({
+            bars: section.bars,
+            key: section.key,
+            mode: section.mode,
+            meter: section.meter,
+            cadence: section.cadence,
+            role: section.role,
+            treatment: section.treatment,
+            phrasePlan: section.phrasePlan,
+          })),
+          subject: piece.manifest.subject,
+          events: piece.events.map((event) => [
+            event.voice,
+            event.tick,
+            event.duration,
+            event.gridTick,
+            event.gridDuration,
+            event.midi,
+            event.carrierMidi,
+            event.symbolicOffset,
+            event.bend,
+            event.grooveOffsetTicks,
+            event.grooveRole,
+            event.phraseRole,
+            event.structuralRhythm,
+            event.rhythmTransform,
+            event.rhythmLocalIndex,
+          ]),
+        });
+      }
+
+      const replayA = build();
+      const replayB = build();
+      const visualDraw = build({}, (random) => {
+        random.stream("visual")();
+        random.unit("visual", "fixed-flourish", 0);
+      });
+      const reportDraw = build({}, (random) => {
+        random.stream("report")();
+        random.unit("report", "sentence", 0);
+      });
+      const velocityAuto = build({ seed: "random-velocity", velocityProfile: "auto" });
+      const velocityFlat = build({ seed: "random-velocity", velocityProfile: "flat" });
+      const restProbeA = FishtailRandom.createRouter("random-streams");
+      const restProbeB = FishtailRandom.createRouter("random-streams");
+      restProbeB.stream("section", 0, "voice", "bass", "pitch-choice")();
+      const sopranoRestA = Array.from({ length: 24 }, () => restProbeA.stream("section", 0, "voice", "soprano", "rest")());
+      const sopranoRestB = Array.from({ length: 24 }, () => restProbeB.stream("section", 0, "voice", "soprano", "rest")());
+
+      const typed = FishtailRandom.createRouter("typed-paths");
+      const typedString = typed.stream("1")();
+      const typedNumber = typed.stream(1)();
+      const boundaryA = FishtailRandom.createRouter("typed-boundary").stream("ab", "c")();
+      const boundaryB = FishtailRandom.createRouter("typed-boundary").stream("a", "bc")();
+      const unitBefore = typed.unit("section", 0, "voice", "bass", "pitch-choice", 3);
+      typed.stream("visual")();
+      typed.stream("section", 0, "voice", "bass", "pitch-choice")();
+      const unitAfter = typed.unit("section", 0, "voice", "bass", "pitch-choice", 3);
+
+      return [
+        {
+          name: "same seed settings and model replay identical midi",
+          ok: noteSignature(replayA) === noteSignature(replayB)
+            && JSON.stringify(Array.from(replayA.midiBytes)) === JSON.stringify(Array.from(replayB.midiBytes)),
+        },
+        {
+          name: "manifest records named random model",
+          ok: replayA.manifest.randomness?.model === "named_sfc32_v1"
+            && replayA.manifest.randomness?.master_seed_bits === 128
+            && randomModelFromManifest({}) === "legacy_single_stream_v0"
+            && randomModelFromManifest(replayA.manifest) === "named_sfc32_v1",
+        },
+        {
+          name: "visual stream draw changes no music",
+          ok: noteSignature(replayA) === noteSignature(visualDraw),
+        },
+        {
+          name: "report stream draw changes no music",
+          ok: noteSignature(replayA) === noteSignature(reportDraw),
+        },
+        {
+          name: "bass pitch draw does not alter soprano rest stream",
+          ok: JSON.stringify(sopranoRestA) === JSON.stringify(sopranoRestB),
+        },
+        {
+          name: "velocity changes do not alter form or pitch",
+          ok: pitchFormSignature(velocityAuto) === pitchFormSignature(velocityFlat)
+            && JSON.stringify(velocityAuto.events.map((event) => event.velocity)) !== JSON.stringify(velocityFlat.events.map((event) => event.velocity)),
+        },
+        {
+          name: "typed stream paths are collision safe and unit stable",
+          ok: typedString !== typedNumber
+            && boundaryA !== boundaryB
+            && unitBefore === unitAfter,
+        },
+      ];
+    })()
+  `, context);
+
+  const sourcePaths = [
+    path.join(ROOT, "src", "app.js"),
+    path.join(ROOT, "src", "random-router.js"),
+    path.join(ROOT, "src", "tempo-lattice.js"),
+    path.join(ROOT, "src", "audio-engine.js"),
+    path.join(ROOT, "src", "wav-export.js"),
+    path.join(ROOT, "src", "pitch-input.js"),
+  ];
+  const ambientRandomToken = ["Math", "random"].join(".");
+  results.push({
+    name: "source avoids ambient random API",
+    ok: sourcePaths.every((sourcePath) => !fs.readFileSync(sourcePath, "utf8").includes(ambientRandomToken)),
+  });
+
+  let ok = true;
+  for (const result of results) {
+    const status = result.ok ? "ok" : "failed";
+    console.log(`${status} random ${result.name}`);
+    if (!result.ok) ok = false;
+  }
+  return ok;
+}
+
+function runPhaseLockedTimingTests() {
+  const context = makeAppContext();
+  const results = vm.runInContext(`
+    (() => {
+      function timingSettings(overrides = {}) {
+        return {
+          seed: "phase-lock",
+          sections: [
+            { bars: 4, key: "G", mode: "mixolydian", meter: "4/4", cadence: "dub_suspension", role: "refrain", treatment: "dubby" },
+            { bars: 3, key: "C", mode: "dorian", meter: "4/4", cadence: "plagal", role: "development", treatment: "dubby" },
+          ],
+          voices: 4,
+          tempo: 60,
+          includeTempoMap: true,
+          tempoLatticeEnabled: true,
+          rationalSwing: 1,
+          irrationalSwing: 0,
+          irrationalFeelMode: FishtailTempoLattice.DEFAULT_IRRATIONAL_FEEL_MODE,
+          referenceNote: "A3",
+          referenceMidi: 57,
+          referenceHz: 216,
+          referenceAnchorA4Hz: 432,
+          tempoDivisor: 216,
+          breathing: 0.48,
+          density: 0.5,
+          rhythmMotion: 0.35,
+          strangeness: 0.16,
+          generationStyle: "fishtail_fugue",
+          resolution: "nearest-ratio",
+          outputMode: "retuner",
+          velocityProfile: "auto",
+          dubMode: true,
+          pedalVoices: { bass: true, tenor: false, alto: false, soprano: false },
+          rootPc: 7,
+          rootNote: "G3",
+          rootMidi: 55,
+          rootFreq: 192.4314,
+          ...overrides,
+        };
+      }
+
+      function build(overrides = {}) {
+        const settings = timingSettings(overrides);
+        return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
+      }
+
+      function timingSignature(piece) {
+        return JSON.stringify(piece.events.map((event) => [
+          event.voice,
+          event.gridTick,
+          event.gridDuration,
+          event.tick,
+          event.duration,
+          event.grooveRole,
+          Number((event.grooveOffsetMsRequested || 0).toFixed(4)),
+          Number((event.grooveOffsetMsRealized || 0).toFixed(4)),
+          event.grooveOffsetTicks,
+          event.velocity,
+        ]));
+      }
+
+      function totalTicks(piece) {
+        return piece.sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0);
+      }
+
+      function noOverlap(piece) {
+        return activeVoiceLayout(piece.settings.voices).every((voice) => {
+          const events = piece.events.filter((event) => event.voice === voice).sort((a, b) => a.tick - b.tick || b.duration - a.duration);
+          for (let index = 1; index < events.length; index += 1) {
+            if (events[index].tick < events[index - 1].tick + events[index - 1].duration) return false;
+          }
+          return true;
+        });
+      }
+
+      function eventsInside(piece) {
+        return piece.events.every((event) => {
+          const section = piece.sectionMeta.find((candidate) => {
+            const end = candidate.startTick + candidate.bars * candidate.barTicks;
+            return event.gridTick >= candidate.startTick && event.gridTick < end;
+          });
+          return section
+            && event.tick >= section.startTick
+            && event.tick + event.duration <= section.startTick + section.bars * section.barTicks
+            && event.tick >= 0
+            && event.duration > 0;
+        });
+      }
+
+      function structuralAuditSignature(audit) {
+        const summary = audit.summary;
+        return JSON.stringify({
+          gridChecks: summary.gridChecks,
+          strongBeatChecks: summary.strongBeatChecks,
+          parallelPerfects: summary.parallelPerfects,
+          cadenceChecks: summary.cadenceChecks,
+          tendencyChecks: summary.tendencyChecks,
+          suspensionChecks: summary.suspensionChecks,
+          suspensionsDetected: summary.suspensionsDetected,
+          suspensionsResolved: summary.suspensionsResolved,
+          overlongSuspensions: summary.overlongSuspensions,
+          pedalHolds: summary.pedalHolds,
+        });
+      }
+
+      function localHalfTickMs(tick, timeline) {
+        const indexed = FishtailTempoLattice.indexTempoTimeline(timeline);
+        const here = FishtailTempoLattice.tickToSeconds(tick, indexed);
+        const next = FishtailTempoLattice.tickToSeconds(tick + 1, indexed);
+        const prev = FishtailTempoLattice.tickToSeconds(Math.max(0, tick - 1), indexed);
+        const tickSeconds = Math.max(Math.abs(next - here), Math.abs(here - prev), 1e-9);
+        return tickSeconds * 500;
+      }
+
+      function phaseShiftMs(gridTick, requestedMs, timeline) {
+        const indexed = FishtailTempoLattice.indexTempoTimeline(timeline);
+        const gridSeconds = FishtailTempoLattice.tickToSeconds(gridTick, indexed);
+        const performedTick = Math.round(FishtailTempoLattice.secondsToTick(gridSeconds + requestedMs / 1000, indexed));
+        const realizedMs = 1000 * (FishtailTempoLattice.tickToSeconds(performedTick, indexed) - gridSeconds);
+        return { performedTick, realizedMs };
+      }
+
+      const sectionMeta = [{ bars: 1, key: "C", mode: "major", meter: "4/4", startTick: 0, barTicks: 1920, numerator: 4, denominator: 4 }];
+      const latticeTimeline = FishtailTempoLattice.buildTempoTimeline(sectionMeta, timingSettings({ sections: [{ bars: 1, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" }] }), { ppq: PPQ, meters: METERS });
+      const indexed = FishtailTempoLattice.indexTempoTimeline(latticeTimeline);
+      const sampleTicks = [0, 120, 480, 719, 960, 1440, 1920];
+      const tickRoundTrip = sampleTicks.every((tick) => Math.abs(FishtailTempoLattice.secondsToTick(FishtailTempoLattice.tickToSeconds(tick, indexed), indexed) - tick) < 1e-7);
+      const secondSamples = [0, 0.02, 0.5, 1.38, 1.4, 1.42, 2.0, Math.max(0, latticeTimeline.totalSeconds - 0.001)];
+      const secondsRoundTrip = secondSamples.every((seconds) => {
+        const tick = Math.round(FishtailTempoLattice.secondsToTick(seconds, indexed));
+        const realized = FishtailTempoLattice.tickToSeconds(tick, indexed);
+        return Math.abs(realized - seconds) * 1000 <= localHalfTickMs(tick, indexed) + 0.0001;
+      });
+      const stretched = phaseShiftMs(120, 20, indexed);
+      const compressed = phaseShiftMs(600, 20, indexed);
+      const crossing = phaseShiftMs(480, -20, indexed);
+
+      const replayA = build({ seed: "phase-lock-replay" });
+      const replayB = build({ seed: "phase-lock-replay" });
+      const directTimeline = FishtailTempoLattice.buildTempoTimeline(replayA.sectionMeta, replayA.settings, { ppq: PPQ, meters: METERS });
+      const scoreEvents = replayA.events.map((event) => ({
+        ...event,
+        tick: event.gridTick,
+        duration: event.gridDuration,
+        grooveOffsetTicks: 0,
+        grooveOffsetMsRealized: 0,
+      }));
+      const scoreAudit = checkGeneratedPiece(replayA.settings, replayA.sectionMeta, scoreEvents, replayA.midiBytes, totalTicks(replayA), []);
+      const flatPiece = build({ seed: "phase-lock-flat", tempoLatticeEnabled: false, rationalSwing: 0, irrationalSwing: 0 });
+      const suspendedPiece = build({ seed: "phase-lock-suspended", includeTempoMap: false, tempoLatticeEnabled: true, rationalSwing: 1, irrationalSwing: 0.2 });
+
+      const generatedQuantized = replayA.events
+        .filter((event) => event.grooveRole && Math.abs(event.grooveOffsetMsRequested || 0) > 0)
+        .every((event) => Math.abs(event.grooveOffsetMsRealized - event.grooveOffsetMsRequested) <= localHalfTickMs(event.tick, replayA.tempoTimeline) + 0.0001);
+
+      const flatCompatible = flatPiece.events
+        .filter((event) => event.grooveRole)
+        .every((event) => {
+          const requested = Number(event.grooveOffsetMsRequested) || 0;
+          const expected = requested === 0 ? 0 : Math.sign(requested) * msToTicks(Math.abs(requested), flatPiece.settings);
+          return Math.abs(event.grooveOffsetTicks - expected) <= 1;
+        });
+
+      const cvMidiClockShared = replayA.events
+        .filter((event) => event.grooveRole)
+        .slice(0, 20)
+        .every((event) => Math.abs(
+          FishtailTempoLattice.tickToSeconds(event.tick, replayA.tempoTimeline)
+          - FishtailWavExport.tickToSeconds(event.tick, replayA.tempoTimeline)
+        ) < 1e-12);
+
+      return [
+        {
+          name: "tempo clock conversions are invertible within quantization",
+          ok: tickRoundTrip && secondsRoundTrip,
+        },
+        {
+          name: "requested milliseconds survive stretched and compressed segments",
+          ok: Math.abs(stretched.realizedMs - 20) <= localHalfTickMs(stretched.performedTick, indexed) + 0.0001
+            && Math.abs(compressed.realizedMs - 20) <= localHalfTickMs(compressed.performedTick, indexed) + 0.0001,
+        },
+        {
+          name: "early offsets can cross into preceding segment",
+          ok: crossing.performedTick < 480
+            && Math.abs(crossing.realizedMs + 20) <= localHalfTickMs(crossing.performedTick, indexed) + 0.0001,
+        },
+        {
+          name: "same seed and settings replay phase-locked timing",
+          ok: timingSignature(replayA) === timingSignature(replayB)
+            && JSON.stringify(Array.from(replayA.midiBytes)) === JSON.stringify(Array.from(replayB.midiBytes))
+            && replayA.manifest.timing_model?.version === "phase_locked_seconds_v1",
+        },
+        {
+          name: "generated DUB offsets are nearest-tick real milliseconds",
+          ok: generatedQuantized
+            && replayA.events.some((event) => event.grooveRole && event.grooveOffsetMsRequested !== 0 && event.gridTick !== event.tick)
+            && replayA.manifest.dub_groove.max_offset_ms_requested > 0
+            && replayA.manifest.dub_groove.max_quantization_error_ms >= 0,
+        },
+        {
+          name: "bar endpoints and conductor events are unchanged",
+          ok: JSON.stringify(replayA.tempoTimeline.tempoEvents) === JSON.stringify(directTimeline.tempoEvents)
+            && replayA.tempoTimeline.barEndpointsPreserved === directTimeline.barEndpointsPreserved
+            && replayA.tempoTimeline.endpointsPreserved === directTimeline.endpointsPreserved,
+        },
+        {
+          name: "performance timing keeps output events valid",
+          ok: eventsInside(replayA)
+            && noOverlap(replayA)
+            && replayA.audit.issues.length === 0,
+        },
+        {
+          name: "MIDI and CV use the same onset clock",
+          ok: cvMidiClockShared,
+        },
+        {
+          name: "structural audit is stable under performance timing",
+          ok: structuralAuditSignature(replayA.audit) === structuralAuditSignature(scoreAudit),
+        },
+        {
+          name: "lattice disabled matches legacy flat millisecond conversion",
+          ok: flatCompatible,
+        },
+        {
+          name: "tempo map off suspends lattice for phase lock",
+          ok: suspendedPiece.tempoTimeline.enabled === false
+            && suspendedPiece.manifest.tempo_lattice.requested === true
+            && suspendedPiece.manifest.tempo_lattice.enabled === false
+            && suspendedPiece.manifest.tempo_lattice.suspended_for_midi_phase_lock === true
+            && suspendedPiece.manifest.timing_model.cross_format_phase_locked === true
+            && suspendedPiece.report.includes("suspended for flat MIDI clock"),
+        },
+      ];
+    })()
+  `, context);
+
+  let ok = true;
+  for (const result of results) {
+    const status = result.ok ? "ok" : "failed";
+    console.log(`${status} phase-lock ${result.name}`);
+    if (!result.ok) ok = false;
+  }
+  return ok;
+}
+
+function runRhythmTests() {
+  const context = makeAppContext();
+  const results = vm.runInContext(`
+    (() => {
+      function rhythmSettings(overrides = {}) {
+        return {
+          seed: "rhythm-fixture",
+          voices: 4,
+          tempo: 60,
+          includeTempoMap: true,
+          tempoLatticeEnabled: true,
+          rationalSwing: 0,
+          irrationalSwing: 0,
+          referenceNote: "A3",
+          referenceMidi: 57,
+          referenceHz: 216,
+          referenceAnchorA4Hz: 432,
+          tempoDivisor: 216,
+          breathing: 0.48,
+          density: 0.42,
+          rhythmMotion: 0.42,
+          strangeness: 0.16,
+          generationStyle: "invention",
+          resolution: "literal",
+          outputMode: "equal",
+          dubMode: false,
+          pedalVoices: { bass: false, tenor: false, alto: false, soprano: false },
+          rootPc: 0,
+          rootNote: "C4",
+          rootMidi: 60,
+          rootFreq: 261.6256,
+          sections: [
+            { bars: 4, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" },
+            { bars: 4, key: "G", mode: "mixolydian", meter: "4/4", cadence: "plagal", role: "normal", treatment: "straight" },
+          ],
+          ...overrides,
+        };
+      }
+
+      function build(overrides = {}) {
+        const settings = rhythmSettings(overrides);
+        return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
+      }
+
+      function eventSignature(piece) {
+        return JSON.stringify(piece.events.map((event) => ({
+          voice: event.voice,
+          tick: event.tick,
+          gridTick: event.gridTick,
+          duration: event.duration,
+          gridDuration: event.gridDuration,
+          midi: event.midi,
+          rhythm: event.structuralRhythm,
+          transform: event.rhythmTransform,
+        })));
+      }
+
+      function sectionForEvent(piece, event) {
+        return piece.sectionMeta.find((section) => event.tick >= section.startTick && event.tick < section.startTick + section.bars * section.barTicks);
+      }
+
+      function noOverlap(piece) {
+        return activeVoiceLayout(piece.settings.voices).every((voice) => {
+          const events = piece.events.filter((event) => event.voice === voice).sort((a, b) => a.tick - b.tick || b.duration - a.duration);
+          for (let index = 1; index < events.length; index += 1) {
+            if (events[index].tick < events[index - 1].tick + events[index - 1].duration) return false;
+          }
+          return true;
+        });
+      }
+
+      function endpointsExact(piece) {
+        const total = piece.sectionMeta.reduce((sum, section) => sum + section.bars * section.barTicks, 0);
+        return total === piece.sectionMeta[piece.sectionMeta.length - 1].startTick + piece.sectionMeta[piece.sectionMeta.length - 1].bars * piece.sectionMeta[piece.sectionMeta.length - 1].barTicks
+          && piece.manifest.rhythm.bar_section_endpoints_preserved === true;
+      }
+
+      function allEventsInsideSections(piece) {
+        return piece.events.every((event) => {
+          const section = sectionForEvent(piece, event);
+          return section && event.tick + event.duration <= section.startTick + section.bars * section.barTicks;
+        });
+      }
+
+      function allIntegerDurations(piece) {
+        return piece.events.every((event) => Number.isInteger(event.tick) && event.tick >= 0 && Number.isInteger(event.duration) && event.duration > 0);
+      }
+
+      function legacyAligned(piece) {
+        return piece.events.every((event) => {
+          const section = sectionForEvent(piece, event);
+          if (!section) return false;
+          const pulse = section.barTicks / section.numerator;
+          return event.gridTick % pulse === 0 && event.gridDuration % pulse === 0 && event.structuralRhythm === false;
+        });
+      }
+
+      const sameA = build({ seed: "rhythm-same", rhythmMotion: 0.44 });
+      const sameB = build({ seed: "rhythm-same", rhythmMotion: 0.44 });
+      const legacy = build({ seed: "rhythm-legacy", rhythmMotion: 0 });
+      const moderatePieces = ["rhythm-flow-a", "rhythm-flow-b", "rhythm-flow-c", "rhythm-flow-d"].map((seed) => build({ seed, rhythmMotion: 0.46 }));
+      const dubPiece = build({
+        seed: "rhythm-dub-after",
+        rhythmMotion: 0.46,
+        generationStyle: "fishtail_fugue",
+        dubMode: true,
+        outputMode: "retuner",
+        resolution: "nearest-ratio",
+        pedalVoices: { bass: true, tenor: false, alto: false, soprano: false },
+      });
+      const meters = ["2/2", "3/4", "4/4", "6/8", "7/8", "9/8"].map((meter) => build({
+        seed: \`rhythm-meter-\${meter}\`,
+        rhythmMotion: 0.38,
+        sections: [
+          { bars: meter === "2/2" ? 5 : 4, key: "C", mode: "major", meter, cadence: "authentic", role: "normal", treatment: "straight" },
+          { bars: 3, key: "F", mode: "dorian", meter, cadence: "plagal", role: "normal", treatment: "straight" },
+        ],
+      }));
+      const source = sameA.manifest.rhythm.source_cell;
+
+      return [
+        {
+          name: "same seed gives identical rhythm events",
+          ok: JSON.stringify(sameA.manifest.rhythm.source_cell) === JSON.stringify(sameB.manifest.rhythm.source_cell)
+            && eventSignature(sameA) === eventSignature(sameB),
+        },
+        {
+          name: "source cell sums to declared span",
+          ok: source.durations.reduce((sum, duration) => sum + duration, 0) === source.totalUnits
+            && source.totalUnits === source.spanPulses * source.subdivisionsPerPulse,
+        },
+        {
+          name: "ticks and durations are positive integers",
+          ok: allIntegerDurations(sameA) && allIntegerDurations(dubPiece) && meters.every(allIntegerDurations),
+        },
+        {
+          name: "events stay inside section boundaries",
+          ok: allEventsInsideSections(sameA) && allEventsInsideSections(dubPiece) && meters.every(allEventsInsideSections),
+        },
+        {
+          name: "same voice events do not overlap",
+          ok: noOverlap(sameA) && noOverlap(dubPiece) && meters.every(noOverlap),
+        },
+        {
+          name: "bar and section endpoints remain exact",
+          ok: endpointsExact(sameA) && endpointsExact(dubPiece) && meters.every(endpointsExact),
+        },
+        {
+          name: "rhythm motion zero keeps legacy grid",
+          ok: legacy.manifest.rhythm.enabled === false
+            && legacy.manifest.rhythm.off_pulse_attacks === 0
+            && legacyAligned(legacy),
+        },
+        {
+          name: "moderate rhythm motion produces off-pulse attacks",
+          ok: moderatePieces.some((piece) => piece.manifest.rhythm.off_pulse_attacks > 0)
+            && moderatePieces.some((piece) => piece.events.some((event) => event.structuralRhythm && event.gridTick % PPQ !== 0)),
+        },
+        {
+          name: "dub groove is after structural rhythm",
+          ok: dubPiece.manifest.rhythm.dub_microtiming_layer === "applied_after_structural_rhythm"
+            && dubPiece.events.some((event) => event.structuralRhythm)
+            && dubPiece.events.some((event) => event.grooveRole && event.gridTick !== event.tick),
+        },
+        {
+          name: "representative meters validate without fatal rhythm issues",
+          ok: meters.every((piece) => piece.audit.issues.length === 0 && piece.manifest.rhythm.bar_section_endpoints_preserved),
+        },
+      ];
+    })()
+  `, context);
+
+  let ok = true;
+  for (const result of results) {
+    const status = result.ok ? "ok" : "failed";
+    console.log(`${status} rhythm ${result.name}`);
     if (!result.ok) ok = false;
   }
   return ok;
@@ -774,7 +1569,7 @@ function runVelocityTests() {
 
       function build(profile = "auto", seed = "velocity-test") {
         const settings = velocitySettings(profile, seed);
-        return buildPiece(settings, makeRng(settings.seed));
+        return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
       }
 
       function nonVelocitySignature(piece) {
@@ -1399,7 +2194,7 @@ function runRefrainAndSuspensionTests() {
             { bars: 2, key: "F", mode: "mixolydian", meter: "3/4", cadence: "plagal", role: "development", treatment: "dubby" },
           ],
         };
-        return buildPiece(settings, makeRng(settings.seed));
+        return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
       }
 
       function suspensionSummary({ voice = "soprano", midi = 72, durationSteps = 16, pedal = false, split = null }) {
@@ -1528,18 +2323,22 @@ function runFugueTests() {
     && stylesCss.includes(".sound-time-panel {\n  grid-column: 2;\n  grid-row: 2;");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
     && indexHtml.includes('href="styles.css?v=40"')
-    && indexHtml.includes('src/tempo-lattice.js?v=2')
+    && indexHtml.includes('src/tempo-lattice.js?v=3')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="irrationalSwingInput" type="range" min="0" max="100" value="0"')
+    && indexHtml.includes('id="irrationalFeelInput"')
+    && indexHtml.includes('<option value="lattice_safe" selected>Lattice Safe</option>')
+    && indexHtml.includes('<option value="hybrid_drift">Hybrid Drift</option>')
+    && indexHtml.includes('<option value="living_drift">Living Drift</option>')
     && indexHtml.includes("Stroll to swagger")
     && indexHtml.includes("Stumble")
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
-    && indexHtml.includes('src/audio-engine.js?v=5')
+    && indexHtml.includes('src/audio-engine.js?v=7')
     && indexHtml.includes('src/wav-export.js?v=7')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=79')
+    && indexHtml.includes('src/app.js?v=81')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -1557,6 +2356,7 @@ function runFugueTests() {
     && indexHtml.includes("Large audio exports show a size estimate before rendering")
     && indexHtml.includes("Browser CV export defaults to one voice and the first 60 seconds")
     && indexHtml.includes("meter 4/4 from form 1")
+    && indexHtml.includes("feel Lattice Safe")
     && indexHtml.includes("first share 0.500")
     && stylesCss.includes(".probe-pitch-field")
     && stylesCss.includes(".living-reference")
@@ -1596,6 +2396,9 @@ function runFugueTests() {
   const audioHardeningOk = audioEngineJs.includes("audio.probe?.released")
     && audioEngineJs.includes("if (audio.probe === probe) audio.probe = null;")
     && audioEngineJs.includes("tempoLatticeEnabled: Boolean(settings.tempoLatticeEnabled)")
+    && audioEngineJs.includes("LIVE_TEMPO_GLIDE_PULSES")
+    && audioEngineJs.includes("smoothedMetronomeSettings")
+    && audioEngineJs.includes("metronome.control")
     && audioEngineJs.includes("metronome.nextTickTime += duration;")
     && !audioEngineJs.includes("Math.max(0.025");
   const wavHardeningOk = wavExportJs.includes("levelSetting(settings.probeLevel")
@@ -1774,7 +2577,7 @@ function runFugueTests() {
           rootFreq: 432,
           sections,
         };
-        return buildPiece(settings, makeRng(settings.seed));
+        return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
       }
 
       const oneSection = buildFuguePiece({
@@ -1967,7 +2770,7 @@ function buildSmokePiece(context, test) {
         ...globalThis.__fishtailSmoke,
         sections: structuredClone(DEFAULT_SECTIONS),
       };
-      return buildPiece(settings, makeRng(settings.seed));
+      return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
     })()
   `, context);
 }
@@ -2002,7 +2805,7 @@ function buildBatchPiece(context, profile, index) {
         ...globalThis.__fishtailBatch,
         sections: structuredClone(DEFAULT_SECTIONS),
       };
-      return buildPiece(settings, makeRng(settings.seed));
+      return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
     })()
   `, context);
 }

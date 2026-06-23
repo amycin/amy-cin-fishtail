@@ -11,6 +11,7 @@
   const OFFLINE_RENDER_BUFFER_MULTIPLIER = 3;
   const EPSILON_GAIN = 0.0001;
   const TICKER_NORMALIZE_DBFS = -6;
+  const TICKER_EXPORT_PREROLL_SECONDS = 0.05;
   const CV_SAMPLE_RATE = 48000;
   const CV_FULL_SCALE_VOLTS = 5;
   const CV_REFERENCE_MIDI = 60;
@@ -120,6 +121,43 @@
       throw new Error("Audio stem too long for safe browser rendering");
     }
     return { sampleRate, estimate, fallback: false };
+  }
+
+  function tickerRenderSchedule(timeline, sampleRate = STANDARD_WAV_SAMPLE_RATE, options = {}) {
+    const preRollSeconds = Number(options.preRollSeconds ?? TICKER_EXPORT_PREROLL_SECONDS) || 0;
+    const tailSeconds = Number(options.tailSeconds ?? 0.12) || 0;
+    const attackSeconds = Number(options.attackSeconds ?? global.FishtailTempoLattice?.TICKER_ATTACK_SECONDS) || 0;
+    const pieceSeconds = Number(timeline?.totalSeconds) || 0;
+    const renderSeconds = pieceSeconds + tailSeconds;
+    const internalRenderSeconds = renderSeconds + preRollSeconds;
+    const preRollFrames = Math.round(Math.max(0, preRollSeconds) * sampleRate);
+    const events = (timeline?.tickerEvents || []).map((event) => {
+      const musicalSeconds = Math.max(0, Number(event.timeSeconds) || 0);
+      const scheduledSeconds = musicalSeconds + preRollSeconds;
+      const scheduledFrame = Math.round(scheduledSeconds * sampleRate);
+      const scheduledPeakFrame = Math.round((scheduledSeconds + attackSeconds) * sampleRate);
+      return {
+        ...event,
+        musicalSeconds,
+        scheduledSeconds,
+        scheduledFrame,
+        scheduledPeakFrame,
+        croppedFrame: scheduledFrame - preRollFrames,
+        croppedPeakFrame: scheduledPeakFrame - preRollFrames,
+      };
+    });
+    return {
+      preRollSeconds,
+      tailSeconds,
+      attackSeconds,
+      pieceSeconds,
+      renderSeconds,
+      internalRenderSeconds,
+      preRollFrames,
+      finalFrames: Math.ceil(Math.max(0, renderSeconds) * sampleRate),
+      internalFrames: Math.ceil(Math.max(0, internalRenderSeconds) * sampleRate),
+      events,
+    };
   }
 
   function offlineContext(frameCount, sampleRate) {
@@ -342,59 +380,19 @@
   }
 
   function indexTempoTimeline(timeline) {
-    const rawSegments = [...(timeline?.segments || [])].sort((a, b) => (Number(a.tick) || 0) - (Number(b.tick) || 0));
-    const segments = [];
-    let elapsed = 0;
-    rawSegments.forEach((segment) => {
-      const startTick = Math.max(0, Number(segment.tick) || 0);
-      const tickLength = Math.max(1, Number(segment.tickLength) || 1);
-      const durationSeconds = Math.max(0, Number(segment.durationSeconds) || 0);
-      segments.push({
-        ...segment,
-        tick: startTick,
-        startTick,
-        tickLength,
-        endTick: startTick + tickLength,
-        durationSeconds,
-        startSeconds: elapsed,
-        endSeconds: elapsed + durationSeconds,
-      });
-      elapsed += durationSeconds;
-    });
-    return {
-      indexed: true,
-      source: timeline,
-      segments,
-      tickerEvents: timeline?.tickerEvents || [],
-      totalSeconds: Number.isFinite(Number(timeline?.totalSeconds)) ? Number(timeline.totalSeconds) : elapsed,
-      endTick: segments.length ? segments[segments.length - 1].endTick : 0,
-    };
+    return global.FishtailTempoLattice.indexTempoTimeline(timeline);
   }
 
   function tickToSeconds(tick, timeline) {
-    const safeTick = Math.max(0, Number(tick) || 0);
-    const indexed = timeline?.indexed ? timeline : indexTempoTimeline(timeline);
-    const segments = indexed.segments || [];
-    if (!segments.length) return 0;
-    if (safeTick < segments[0].startTick) return 0;
-    let lo = 0;
-    let hi = segments.length - 1;
-    let index = 0;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (segments[mid].startTick <= safeTick) {
-        index = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    const segment = segments[index];
-    if (safeTick <= segment.endTick) {
-      const local = clamp((safeTick - segment.startTick) / segment.tickLength, 0, 1);
-      return segment.startSeconds + segment.durationSeconds * local;
-    }
-    return Math.min(indexed.totalSeconds, segment.endSeconds);
+    return global.FishtailTempoLattice.tickToSeconds(tick, timeline);
+  }
+
+  function secondsToTick(seconds, timeline) {
+    return global.FishtailTempoLattice.secondsToTick(seconds, timeline);
+  }
+
+  function shiftTickBySeconds(tick, deltaSeconds, timeline) {
+    return global.FishtailTempoLattice.shiftTickBySeconds(tick, deltaSeconds, timeline);
   }
 
   function estimateCvRenderBytes(durationSeconds, stemCount, options = {}) {
@@ -583,7 +581,11 @@
   function timelineForPiece(piece) {
     if (piece?.tempoTimeline) return piece.tempoTimeline;
     if (global.FishtailTempoLattice && piece?.sectionMeta) {
-      return global.FishtailTempoLattice.buildTempoTimeline(piece.sectionMeta, piece.settings, {
+      const settings = piece.settings || {};
+      const clockSettings = settings.includeTempoMap === false && settings.tempoLatticeEnabled
+        ? { ...settings, tempoLatticeEnabled: false }
+        : settings;
+      return global.FishtailTempoLattice.buildTempoTimeline(piece.sectionMeta, clockSettings, {
         ppq: piece.ppq || 480,
         meters: piece.meters || {},
       });
@@ -669,9 +671,10 @@
   async function renderTickerWav(piece) {
     const timeline = timelineForPiece(piece);
     const settings = piece.settings || {};
-    const pieceSeconds = timeline.totalSeconds || 0;
-    const renderSeconds = pieceSeconds + 0.12;
-    const plan = chooseRenderPlan(renderSeconds, { allowLarge: Boolean(settings.audioExportConfirmed) });
+    const initialSchedule = tickerRenderSchedule(timeline);
+    const plan = chooseRenderPlan(initialSchedule.internalRenderSeconds, { allowLarge: Boolean(settings.audioExportConfirmed) });
+    const schedule = tickerRenderSchedule(timeline, plan.sampleRate);
+    const { pieceSeconds, renderSeconds, internalRenderSeconds, preRollFrames } = schedule;
     const context = offlineContext(plan.estimate.frames, plan.sampleRate);
     const source = context.createBufferSource();
     source.buffer = global.FishtailAudioEngine.makePinkNoiseBuffer(context);
@@ -690,9 +693,9 @@
       ? global.FishtailAudioEngine.levelToGain(level, maxGain)
       : level * maxGain;
     if (level > 0) {
-      (timeline.tickerEvents || []).forEach((event) => {
-        const time = Math.max(0, event.timeSeconds || 0);
-        if (time >= renderSeconds) return;
+      tickerRenderSchedule(timeline, plan.sampleRate).events.forEach((event) => {
+        const time = event.scheduledSeconds;
+        if (time >= internalRenderSeconds) return;
         const gain = Math.max(EPSILON_GAIN, baseGain * clamp(event.accentLevel || 0.25, 0.05, 1.2));
         filter.frequency.setValueAtTime(global.FishtailTempoLattice.tickerCenterHz(settings.referenceHz || 216), time);
         tickGain.gain.setValueAtTime(EPSILON_GAIN, time);
@@ -701,9 +704,10 @@
       });
     }
     source.start(0);
-    source.stop(renderSeconds);
+    source.stop(internalRenderSeconds);
     const buffer = await context.startRendering();
-    const samples = buffer.getChannelData(0);
+    const renderedSamples = buffer.getChannelData(0);
+    const samples = new Float32Array(renderedSamples.subarray(preRollFrames, preRollFrames + schedule.finalFrames));
     const normalization = normalizePeak(samples, TICKER_NORMALIZE_DBFS);
     const bytes = encodePcm24Mono(samples, plan.sampleRate);
     const seed = String(settings.seed || "seed").slice(0, 8);
@@ -717,6 +721,7 @@
       bitDepth: STANDARD_WAV_BIT_DEPTH,
       durationSeconds: renderSeconds,
       pieceSeconds,
+      internalPreRollSeconds: schedule.preRollSeconds,
       fallbackSampleRate: plan.fallback,
       normalization,
     };
@@ -910,6 +915,7 @@
     MAX_CONFIRMED_RENDER_BYTES,
     OFFLINE_RENDER_BUFFER_MULTIPLIER,
     TICKER_NORMALIZE_DBFS,
+    TICKER_EXPORT_PREROLL_SECONDS,
     CV_SAMPLE_RATE,
     CV_FULL_SCALE_VOLTS,
     CV_REFERENCE_MIDI,
@@ -930,6 +936,8 @@
     cvSampleForVolts,
     indexTempoTimeline,
     tickToSeconds,
+    secondsToTick,
+    shiftTickBySeconds,
     probeExportPieceSeconds,
     estimateCvRenderBytes,
     eventCvVolts,
@@ -943,6 +951,7 @@
     renderCvGateTest,
     estimateRenderBytes,
     chooseRenderPlan,
+    tickerRenderSchedule,
     renderProbeWav,
     renderTickerWav,
     renderCvZip,
