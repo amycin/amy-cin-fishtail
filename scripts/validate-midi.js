@@ -1514,7 +1514,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=5')
     && indexHtml.includes('src/wav-export.js?v=5')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=74')
+    && indexHtml.includes('src/app.js?v=75')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -1522,6 +1522,7 @@ function runFugueTests() {
     && indexHtml.includes("Living Reference Input, pink-noise ticker")
     && indexHtml.includes("optional MediaDevices audio input")
     && indexHtml.includes("Ticker WAV export is peak-normalized to -6 dBFS")
+    && indexHtml.includes("rendered from their save buttons once a piece exists")
     && indexHtml.includes("meter 4/4 from form 1")
     && indexHtml.includes("first share 0.500")
     && stylesCss.includes(".probe-pitch-field")
@@ -1569,6 +1570,14 @@ function runFugueTests() {
     && wavExportJs.includes("estimateCvRenderBytes")
     && wavExportJs.includes("indexTempoTimeline")
     && wavExportJs.includes("calibration/cv-calibration-one-octave.wav");
+  const audioSaveOk = appJs.includes("Render + Save Probe WAV")
+    && appJs.includes("Render + Save Ticker WAV")
+    && appJs.includes("Render + Save CV ZIP")
+    && appJs.includes("saveBlobFromButton")
+    && appJs.includes("nav?.share")
+    && appJs.includes("iPadLikeBrowser")
+    && appJs.includes("await renderAudioExport(kind, state.lastPiece)")
+    && appJs.includes("updateAudioExportButtons();\n  }\n}\n\nfunction readSettings");
   const context = makeAppContext();
   const results = vm.runInContext(`
     (() => {
@@ -1824,7 +1833,7 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk && audioSaveOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
@@ -1836,6 +1845,7 @@ function runFugueTests() {
   console.log(`${inputRaceOk ? "ok" : "failed"} living reference race guards`);
   console.log(`${audioHardeningOk ? "ok" : "failed"} audio engine timing and probe guards`);
   console.log(`${wavHardeningOk ? "ok" : "failed"} wav zero-level and memory guards`);
+  console.log(`${audioSaveOk ? "ok" : "failed"} audio stem render-on-demand saves`);
   for (const result of results) {
     const status = result.ok ? "ok" : "failed";
     console.log(`${status} fugue ${result.name}`);

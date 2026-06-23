@@ -748,9 +748,9 @@ function bindEvents() {
   els.generateButton.addEventListener("click", generatePiece);
   els.downloadMidiButton.addEventListener("click", () => downloadLast("midi"));
   els.downloadJsonButton.addEventListener("click", () => downloadLast("json"));
-  els.downloadProbeWavButton?.addEventListener("click", () => downloadLast("probeWav"));
-  els.downloadTickerWavButton?.addEventListener("click", () => downloadLast("tickerWav"));
-  els.downloadCvWavButton?.addEventListener("click", () => downloadLast("cvWav"));
+  els.downloadProbeWavButton?.addEventListener("click", () => void downloadLast("probeWav"));
+  els.downloadTickerWavButton?.addEventListener("click", () => void downloadLast("tickerWav"));
+  els.downloadCvWavButton?.addEventListener("click", () => void downloadLast("cvWav"));
   els.referenceListenButton?.addEventListener("click", startLivingReferenceInput);
   els.referenceStopButton?.addEventListener("click", () => stopLivingReferenceInput("Input ended", { restoreAudio: true }));
   els.referenceUsePitchButton?.addEventListener("click", () => captureLivingReferencePitch(false));
@@ -2357,6 +2357,7 @@ async function generatePiece() {
     els.generateButton.classList.remove("is-generating");
     setGenerationControlsDisabled(false);
     state.generating = false;
+    updateAudioExportButtons();
   }
 }
 
@@ -5432,7 +5433,7 @@ function pushLimited(list, message, limit = 12) {
   if (list.length < limit && !list.includes(message)) list.push(message);
 }
 
-function downloadLast(kind) {
+async function downloadLast(kind) {
   if (!state.lastPiece) return;
   if (kind === "midi") {
     if (state.lastPiece.audit?.issues?.length) {
@@ -5445,11 +5446,11 @@ function downloadLast(kind) {
     downloadBlob(new Blob([JSON.stringify(state.lastPiece.manifest, null, 2)], { type: "application/json" }), "amy-cin-fishtail-generator.json");
     els.statusLabel.textContent = "Settings save requested";
   } else if (kind === "probeWav") {
-    downloadAudioExport("probe");
+    await downloadAudioExport("probe");
   } else if (kind === "tickerWav") {
-    downloadAudioExport("ticker");
+    await downloadAudioExport("ticker");
   } else if (kind === "cvWav") {
-    downloadAudioExport("cv");
+    await downloadAudioExport("cv");
   } else {
     downloadBlob(new Blob([state.lastPiece.report], { type: "text/plain" }), "amy-cin-fishtail-generation-notes.txt");
     els.statusLabel.textContent = "Notes save requested";
@@ -5463,16 +5464,79 @@ function releaseAudioExports() {
 }
 
 function updateAudioExportButtons() {
-  if (els.downloadProbeWavButton) els.downloadProbeWavButton.disabled = !state.lastAudioExports.probe?.blob;
-  if (els.downloadTickerWavButton) els.downloadTickerWavButton.disabled = !state.lastAudioExports.ticker?.blob;
-  if (els.downloadCvWavButton) els.downloadCvWavButton.disabled = !state.lastAudioExports.cv?.blob;
+  const canRender = Boolean(state.lastPiece && !state.generating && !state.lastPiece.audit?.issues?.length);
+  updateAudioExportButton("probe", canRender);
+  updateAudioExportButton("ticker", canRender);
+  updateAudioExportButton("cv", canRender);
+}
+
+function audioExportButton(kind) {
+  if (kind === "probe") return els.downloadProbeWavButton;
+  if (kind === "ticker") return els.downloadTickerWavButton;
+  if (kind === "cv") return els.downloadCvWavButton;
+  return null;
+}
+
+function audioExportDescriptor(kind) {
+  if (kind === "probe") {
+    return {
+      label: "Probe WAV",
+      readyText: "Save Probe WAV",
+      renderText: "Render + Save Probe WAV",
+      renderingText: "Rendering Probe WAV",
+      renderer: FishtailWavExport.renderProbeWav,
+    };
+  }
+  if (kind === "ticker") {
+    return {
+      label: "Ticker WAV",
+      readyText: "Save Ticker WAV",
+      renderText: "Render + Save Ticker WAV",
+      renderingText: "Rendering Ticker WAV",
+      renderer: FishtailWavExport.renderTickerWav,
+    };
+  }
+  return {
+    label: "CV ZIP",
+    readyText: "Save CV ZIP",
+    renderText: "Render + Save CV ZIP",
+    renderingText: "Rendering CV ZIP",
+    renderer: FishtailWavExport.renderCvZip,
+  };
+}
+
+function updateAudioExportButton(kind, canRender) {
+  const button = audioExportButton(kind);
+  if (!button) return;
+  const descriptor = audioExportDescriptor(kind);
+  const ready = Boolean(state.lastAudioExports[kind]?.blob);
+  const rendering = document.body.dataset.audioRendering === kind;
+  button.disabled = state.generating || rendering || (!ready && !canRender);
+  button.textContent = rendering ? descriptor.renderingText : ready ? descriptor.readyText : descriptor.renderText;
+}
+
+async function renderAudioExport(kind, piece) {
+  const descriptor = audioExportDescriptor(kind);
+  els.statusLabel.textContent = descriptor.renderingText;
+  document.body.dataset.audioRendering = kind;
+  updateAudioExportButtons();
+  try {
+    const audioExport = await descriptor.renderer(piece);
+    state.lastAudioExports[kind] = audioExport;
+    recordAudioExport(piece, audioExport);
+    updateAudioExportButtons();
+    return audioExport;
+  } finally {
+    document.body.dataset.audioRendering = "";
+    updateAudioExportButtons();
+  }
 }
 
 async function prepareRequestedAudioExports(piece) {
   const requested = [];
-  if (piece.settings.prepareProbeWav) requested.push(["probe", FishtailWavExport.renderProbeWav]);
-  if (piece.settings.prepareTickerWav) requested.push(["ticker", FishtailWavExport.renderTickerWav]);
-  if (piece.settings.prepareCvWav) requested.push(["cv", FishtailWavExport.renderCvZip]);
+  if (piece.settings.prepareProbeWav) requested.push("probe");
+  if (piece.settings.prepareTickerWav) requested.push("ticker");
+  if (piece.settings.prepareCvWav) requested.push("cv");
   if (!requested.length) return;
 
   const rendered = [];
@@ -5480,25 +5544,19 @@ async function prepareRequestedAudioExports(piece) {
   piece.manifest.audio_stems = piece.manifest.audio_stems || { requested: {}, rendered: {}, bit_depth: 24, channels: 1 };
   piece.manifest.audio_stems.errors = [];
 
-  for (const [kind, renderer] of requested) {
+  for (const kind of requested) {
+    const descriptor = audioExportDescriptor(kind);
     try {
-      els.statusLabel.textContent = kind === "cv" ? "Rendering CV ZIP" : `Rendering ${kind} WAV`;
-      document.body.dataset.audioRendering = kind;
-      const audioExport = await renderer(piece);
-      state.lastAudioExports[kind] = audioExport;
-      recordAudioExport(piece, audioExport);
+      const audioExport = await renderAudioExport(kind, piece);
       const peakLabel = audioExport.normalization ? `, peak ${audioExport.normalization.targetDbfs} dBFS` : "";
       const label = audioExport.label || kind;
       const rateLabel = audioExport.sampleRate ? `${audioExport.sampleRate / 1000} kHz` : "package";
       rendered.push(`${label} ${rateLabel}${peakLabel}`);
-      updateAudioExportButtons();
     } catch (error) {
-      const message = `${kind === "cv" ? "CV ZIP" : `${kind} WAV`} skipped: ${error.message}`;
+      const message = `${descriptor.label} skipped: ${error.message}`;
       failed.push(message);
       piece.manifest.audio_stems.errors.push(message);
       console.warn(message, error);
-    } finally {
-      document.body.dataset.audioRendering = "";
     }
   }
 
@@ -5518,6 +5576,8 @@ function roundedFinite(value, places) {
 
 function recordAudioExport(piece, audioExport) {
   const kind = audioExport.kind;
+  piece.manifest.audio_stems = piece.manifest.audio_stems || { requested: {}, rendered: {}, bit_depth: 24, channels: 1 };
+  piece.manifest.audio_stems.rendered = piece.manifest.audio_stems.rendered || {};
   piece.manifest.audio_stems.rendered[kind] = true;
   const stem = {
     filename: audioExport.filename,
@@ -5545,14 +5605,24 @@ function recordAudioExport(piece, audioExport) {
   piece.manifest.audio_stems[kind] = stem;
 }
 
-function downloadAudioExport(kind) {
-  const audioExport = state.lastAudioExports[kind];
+async function downloadAudioExport(kind) {
+  const descriptor = audioExportDescriptor(kind);
+  let audioExport = state.lastAudioExports[kind];
+  if (!audioExport?.blob && state.lastPiece && !state.lastPiece.audit?.issues?.length) {
+    try {
+      audioExport = await renderAudioExport(kind, state.lastPiece);
+    } catch (error) {
+      els.statusLabel.textContent = `${descriptor.label} skipped: ${error.message}`;
+      console.warn(`${descriptor.label} render failed.`, error);
+      return;
+    }
+  }
   if (!audioExport?.blob) {
-    els.statusLabel.textContent = kind === "cv" ? "CV ZIP not ready" : `${kind} WAV not ready`;
+    els.statusLabel.textContent = `${descriptor.label} not ready`;
     return;
   }
-  downloadBlob(audioExport.blob, audioExport.filename);
-  els.statusLabel.textContent = kind === "cv" ? "CV ZIP save requested" : `${kind} WAV save requested`;
+  const savedVia = await saveBlobFromButton(audioExport.blob, audioExport.filename);
+  els.statusLabel.textContent = savedVia === "share" ? `${descriptor.label} share opened` : `${descriptor.label} save requested`;
 }
 
 function toggleNotes() {
@@ -5604,6 +5674,31 @@ function downloadBlob(blob, filename) {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function iPadLikeBrowser() {
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  const ua = String(nav?.userAgent || "");
+  const touchPoints = Number(nav?.maxTouchPoints) || 0;
+  return /iPad|iPhone|iPod/i.test(ua) || (touchPoints > 1 && /Macintosh/i.test(ua));
+}
+
+async function saveBlobFromButton(blob, filename) {
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  if (iPadLikeBrowser() && typeof File === "function" && nav?.share && nav?.canShare) {
+    const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+    if (nav.canShare({ files: [file] })) {
+      try {
+        await nav.share({ files: [file], title: filename });
+        return "share";
+      } catch (error) {
+        if (error?.name === "AbortError") return "share";
+        console.warn("File share unavailable; falling back to download.", error);
+      }
+    }
+  }
+  downloadBlob(blob, filename);
+  return "download";
 }
 
 function outputModeLabel(mode) {
