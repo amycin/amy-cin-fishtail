@@ -793,7 +793,9 @@ function runStabilityTests() {
             && Math.abs(cvCalibration[0] + 0.4) < 1e-6
             && Math.abs(cvCalibration[20]) < 1e-6
             && FishtailWavExport.CV_MAX_RENDER_SECONDS === 60,
-          probeShortExport: probeSeconds === 2 && FishtailWavExport.PROBE_EXPORT_BARS === 2,
+          probeShortExport: probeSeconds === FishtailTempoLattice.TEARDROP_MIN_SUSTAIN_SECONDS
+            && FishtailTempoLattice.TEARDROP_MIN_SUSTAIN_SECONDS === 4
+            && FishtailWavExport.PROBE_EXPORT_BARS === 2,
           zeroLevels: FishtailWavExport.levelSetting(0, 0.25) === 0
             && FishtailWavExport.levelSetting(undefined, 0.25) === 0.25,
           conservativeMemory: renderEstimate.offlineBytes > 0
@@ -2372,10 +2374,10 @@ function runFugueTests() {
     && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
   const velocitySwitchOk = indexHtml.includes('id="velocityModeInput" type="checkbox" checked')
     && indexHtml.includes("Gravity velocity");
-  const panelOrderOk = indexHtml.indexOf('class="panel sound-time-panel"') < indexHtml.indexOf('class="panel pitch-panel pitch-drawer"')
-    && indexHtml.indexOf('class="panel pitch-panel pitch-drawer"') < indexHtml.indexOf('class="panel voices-panel"')
-    && stylesCss.includes(".pitch-panel {\n  grid-column: 1 / -1;\n  grid-row: 2;")
-    && stylesCss.includes(".sound-time-panel {\n  grid-column: 1;\n  grid-row: 1;");
+  const panelOrderOk = indexHtml.indexOf('class="panel sound-time-panel"') < indexHtml.indexOf('class="panel voices-panel"')
+    && indexHtml.indexOf("<h3>Pitch Behaviour</h3>") > indexHtml.indexOf('id="settingsModal"')
+    && stylesCss.includes(".sound-time-panel {\n  grid-column: 1 / -1;\n  grid-row: 2;")
+    && !indexHtml.includes('class="panel pitch-panel pitch-drawer"');
   const timelineUiOk = indexHtml.includes('class="form-timeline-shell"')
     && indexHtml.includes('id="sectionTimeline" role="list"')
     && !indexHtml.includes('id="timelineStatus"')
@@ -2445,8 +2447,8 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=59"')
-    && indexHtml.includes('src/tempo-lattice.js?v=4')
+    && indexHtml.includes('href="styles.css?v=64"')
+    && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
@@ -2458,10 +2460,10 @@ function runFugueTests() {
     && indexHtml.includes("Stroll to swagger")
     && indexHtml.includes("Stumble")
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
-    && indexHtml.includes('src/audio-engine.js?v=7')
-    && indexHtml.includes('src/wav-export.js?v=7')
+    && indexHtml.includes('src/audio-engine.js?v=8')
+    && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=103')
+    && indexHtml.includes('src/app.js?v=107')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -2469,7 +2471,7 @@ function runFugueTests() {
     && indexHtml.includes("Living Reference Input, pink-noise ticker")
     && indexHtml.includes("optional MediaDevices audio input")
     && indexHtml.includes("ticker WAV stays whole-piece and peak-normalized to -6 dBFS")
-    && indexHtml.includes("Pulse pitch")
+    && indexHtml.includes("Pulse Pitch")
     && indexHtml.includes("Pulse sound")
     && indexHtml.includes('id="prepareProbeWavInput" type="checkbox" hidden')
     && indexHtml.includes('id="prepareTickerWavInput" type="checkbox" hidden')
@@ -2483,8 +2485,10 @@ function runFugueTests() {
     && indexHtml.includes("feel Living Drift")
     && indexHtml.includes("first share 0.333")
     && stylesCss.includes(".probe-pitch-field")
+    && stylesCss.includes(".pulse-label-with-input")
+    && stylesCss.includes(".line-in-icon")
     && stylesCss.includes(".living-reference")
-    && stylesCss.includes("grid-column: 1 / -1")
+    && stylesCss.includes("position: absolute")
     && stylesCss.includes("isolation: isolate")
     && stylesCss.includes("contain: layout paint")
     && stylesCss.includes(".torus-host > canvas")

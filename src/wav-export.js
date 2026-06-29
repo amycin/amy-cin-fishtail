@@ -609,7 +609,9 @@
       }
       seconds += Math.max(0, Number(segment.durationSeconds) || 0);
     }
-    return Math.min(fullSeconds || seconds, Math.max(0.5, seconds || fullSeconds));
+    const naturalSeconds = Math.min(fullSeconds || seconds, Math.max(0.5, seconds || fullSeconds));
+    const minimumSustain = Number(global.FishtailTempoLattice?.TEARDROP_MIN_SUSTAIN_SECONDS) || 0;
+    return Math.max(minimumSustain, naturalSeconds);
   }
 
   async function renderProbeWav(piece) {

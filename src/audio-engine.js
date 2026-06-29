@@ -168,6 +168,10 @@
     if (!context || settings.probeMuted) return null;
     ensureAudioState(audio, context);
     if (audio.probe && !audio.probe.released) {
+      if (audio.probe.releaseTimer) {
+        clearTimeout(audio.probe.releaseTimer);
+        audio.probe.releaseTimer = null;
+      }
       updateProbe(audio, context, settings);
       return audio.probe;
     }
@@ -197,7 +201,7 @@
       gains.push(gain);
     });
     mix.connect(filter).connect(envelope).connect(audio.safetyBus);
-    audio.probe = { oscillators, gains, mix, filter, envelope, released: false };
+    audio.probe = { oscillators, gains, mix, filter, envelope, startedAt: now, releaseTimer: null, released: false };
     return audio.probe;
   }
 
@@ -227,10 +231,23 @@
     probe.mix.gain.linearRampToValueAtTime(levelToGain(settings.probeLevel, PROBE_MAX_GAIN), now + 0.04);
   }
 
-  function stopProbe(audio, context) {
+  function stopProbe(audio, context, options = {}) {
     const probe = audio?.probe;
     if (!probe || !context || probe.released) return;
     const now = context.currentTime;
+    const minimumSustain = options.immediate ? 0 : (global.FishtailTempoLattice.TEARDROP_MIN_SUSTAIN_SECONDS || 0);
+    const releaseAt = Math.max(now, (Number(probe.startedAt) || now) + minimumSustain);
+    if (releaseAt - now > 0.02) {
+      if (probe.releaseTimer) clearTimeout(probe.releaseTimer);
+      probe.releaseTimer = setTimeout(() => {
+        stopProbe(audio, context, { immediate: true });
+      }, (releaseAt - now) * 1000);
+      return;
+    }
+    if (probe.releaseTimer) {
+      clearTimeout(probe.releaseTimer);
+      probe.releaseTimer = null;
+    }
     probe.released = true;
     if (audio.probe === probe) audio.probe = null;
     cancelAndHold(probe.envelope.gain, now);
@@ -376,7 +393,7 @@
 
   function stopAll(audio, context) {
     stopMetronome(audio);
-    stopProbe(audio, context || audio?.context);
+    stopProbe(audio, context || audio?.context, { immediate: true });
   }
 
   global.FishtailAudioEngine = {

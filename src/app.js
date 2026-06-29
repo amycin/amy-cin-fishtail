@@ -5,6 +5,7 @@ const DEFAULT_A4_HZ = 432;
 const DEFAULT_REFERENCE_NOTE = "A3";
 const DEFAULT_REFERENCE_HZ = 216;
 const DEFAULT_TEMPO_DIVISOR = 216;
+const DEFAULT_FORM_STATE_NAME = "Fishtail form";
 const DEFAULT_RHYTHM_MOTION = 0.18;
 const REFERENCE_FINE_CENTS_MIN = -100;
 const REFERENCE_FINE_CENTS_MAX = 100;
@@ -705,7 +706,10 @@ function bindElements() {
     "copySectionButton",
     "duplicateSectionButton",
     "pasteSectionButton",
+    "formStateNameInput",
     "saveFormStateButton",
+    "loadFormStateButton",
+    "loadFormStateInput",
     "clearFormStateButton",
     "gentleRollButton",
     "wildRollButton",
@@ -787,6 +791,9 @@ function bindElements() {
     "helpButton",
     "helpModal",
     "closeHelpButton",
+    "settingsButton",
+    "settingsModal",
+    "closeSettingsButton",
     "creditsButton",
     "creditsModal",
     "closeCreditsButton",
@@ -822,12 +829,12 @@ function hydrateSelects() {
     const follow = document.createElement("option");
     follow.value = "section-1";
     follow.textContent = "Follow section 1";
-    follow.selected = true;
     els.metronomeMeterInput.append(follow);
     Object.keys(METERS).forEach((meter) => {
       const option = document.createElement("option");
       option.value = meter;
       option.textContent = meter;
+      if (meter === "3/4") option.selected = true;
       els.metronomeMeterInput.append(option);
     });
   }
@@ -845,6 +852,8 @@ function bindEvents() {
   els.duplicateSectionButton?.addEventListener("click", duplicateSelectedSection);
   els.pasteSectionButton?.addEventListener("click", pasteAfterSelectedSection);
   els.saveFormStateButton?.addEventListener("click", saveFormState);
+  els.loadFormStateButton?.addEventListener("click", loadFormState);
+  els.loadFormStateInput?.addEventListener("change", handleFormStateFileSelection);
   els.clearFormStateButton?.addEventListener("click", clearFormState);
   els.gentleRollButton.addEventListener("click", () => randomiseForm("gentle"));
   els.wildRollButton.addEventListener("click", () => randomiseForm("wild"));
@@ -937,6 +946,11 @@ function bindEvents() {
   els.helpModal.addEventListener("click", (event) => {
     if (event.target === els.helpModal) closeHelp();
   });
+  els.settingsButton.addEventListener("click", openSettings);
+  els.closeSettingsButton.addEventListener("click", closeSettings);
+  els.settingsModal.addEventListener("click", (event) => {
+    if (event.target === els.settingsModal) closeSettings();
+  });
   els.creditsButton.addEventListener("click", openCredits);
   els.closeCreditsButton.addEventListener("click", closeCredits);
   els.creditsModal.addEventListener("click", (event) => {
@@ -945,6 +959,7 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (handleFormHistoryShortcut(event)) return;
     if (event.key === "Escape" && !els.helpModal.hidden) closeHelp();
+    if (event.key === "Escape" && !els.settingsModal.hidden) closeSettings();
     if (event.key === "Escape" && !els.creditsModal.hidden) closeCredits();
   });
   document.addEventListener("visibilitychange", () => {
@@ -1182,13 +1197,42 @@ function pasteAfterSelectedSection() {
   renderSections();
 }
 
-function formStateSnapshot() {
+function currentFormStateName() {
+  const name = String(els.formStateNameInput?.value || "").trim();
+  return name || DEFAULT_FORM_STATE_NAME;
+}
+
+function formStateFilenameSlug(name) {
+  const slug = String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return slug || "fishtail-form";
+}
+
+function formStatePickerTypes() {
+  return [{
+    description: "Fishtail form state",
+    accept: { "application/json": [".json"] },
+  }];
+}
+
+function formStateSuggestedFilename(snapshot) {
+  const stamp = String(snapshot.saved_at || new Date().toISOString()).replace(/[:.]/g, "-");
+  return `amy-cin-fishtail-${formStateFilenameSlug(snapshot.name)}-${stamp}.json`;
+}
+
+function formStateSnapshot(name = currentFormStateName()) {
   const sections = state.sections.map(normalizeSection);
   const selectedIndex = clampSelectedSectionIndex();
   const tempoDivisor = clamp(parseInt(els.tempoDivisorInput?.value, 10) || DEFAULT_TEMPO_DIVISOR, 1, 100000);
   return {
     title: "amy_cin fishtail form state",
     version: "form_state_v1",
+    name,
     saved_at: new Date().toISOString(),
     selected_section_index: selectedIndex,
     selected_section_number: selectedIndex >= 0 ? selectedIndex + 1 : null,
@@ -1308,12 +1352,239 @@ function resetRangeControl(input) {
 
 async function saveFormState() {
   const snapshot = formStateSnapshot();
-  const stamp = snapshot.saved_at.replace(/[:.]/g, "-");
   const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
-  const savedVia = await saveBlobFromButton(blob, `amy-cin-fishtail-form-state-${stamp}.json`);
+  const savedVia = await saveJsonBlobFromButton(blob, formStateSuggestedFilename(snapshot));
   if (els.statusLabel) {
-    els.statusLabel.textContent = savedVia === "share" ? "Form state share opened" : "Form state save requested";
+    if (savedVia === "picker") els.statusLabel.textContent = `Saved ${snapshot.name}`;
+    else if (savedVia === "cancelled") els.statusLabel.textContent = "Form state save cancelled";
+    else els.statusLabel.textContent = savedVia === "share" ? "Form state share opened" : "Form state save requested";
   }
+}
+
+async function saveJsonBlobFromButton(blob, filename) {
+  if (typeof window !== "undefined" && typeof window.showSaveFilePicker === "function") {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: formStatePickerTypes(),
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return "picker";
+    } catch (error) {
+      if (error?.name === "AbortError") return "cancelled";
+      console.warn("File save picker unavailable; falling back to download.", error);
+    }
+  }
+  return saveBlobFromButton(blob, filename);
+}
+
+async function loadFormState() {
+  if (state.generating || state.randomising) return;
+  if (typeof window !== "undefined" && typeof window.showOpenFilePicker === "function") {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: formStatePickerTypes(),
+      });
+      if (!handle) return;
+      await loadFormStateFile(await handle.getFile());
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        if (els.statusLabel) els.statusLabel.textContent = "Form state load cancelled";
+        return;
+      }
+      console.warn("File open picker unavailable; falling back to file input.", error);
+    }
+  }
+  if (els.loadFormStateInput) {
+    els.loadFormStateInput.value = "";
+    els.loadFormStateInput.click();
+  }
+}
+
+async function handleFormStateFileSelection(event) {
+  const file = event.target?.files?.[0];
+  if (!file) return;
+  await loadFormStateFile(file);
+  event.target.value = "";
+}
+
+async function loadFormStateFile(file) {
+  if (state.generating || state.randomising) return;
+  try {
+    const text = await file.text();
+    const snapshot = JSON.parse(text);
+    applyLoadedFormStateSnapshot(snapshot, file.name);
+  } catch (error) {
+    console.warn("Could not load form state.", error);
+    if (els.statusLabel) els.statusLabel.textContent = `Load failed: ${error?.message || "invalid state file"}`;
+  }
+}
+
+function loadedFormStateName(snapshot, sourceName) {
+  const savedName = String(snapshot?.name || "").trim();
+  if (savedName) return savedName;
+  const source = String(sourceName || "").replace(/\.json$/i, "").trim();
+  return source || DEFAULT_FORM_STATE_NAME;
+}
+
+function loadedFormSections(snapshot) {
+  if (Array.isArray(snapshot?.form?.sections)) return snapshot.form.sections;
+  if (Array.isArray(snapshot?.sections)) return snapshot.sections;
+  return null;
+}
+
+function loadedFormSelectedIndex(snapshot, sectionCount) {
+  if (sectionCount <= 0) return -1;
+  const candidates = [snapshot?.selected_section_index, snapshot?.selectedSectionIndex];
+  const found = candidates.map(Number).find(Number.isFinite);
+  return clamp(Math.trunc(found ?? 0), 0, sectionCount - 1);
+}
+
+function setSelectControlValue(input, value, fallback = "") {
+  if (!input) return;
+  const options = Array.from(input.options || []);
+  const next = String(value ?? "");
+  if (options.some((option) => option.value === next)) {
+    input.value = next;
+    return;
+  }
+  const fallbackValue = String(fallback ?? "");
+  if (options.some((option) => option.value === fallbackValue)) input.value = fallbackValue;
+}
+
+function setPercentControlValue(input, value, fallback = 0) {
+  if (!input) return;
+  const numeric = Number(value);
+  const normalized = Number.isFinite(numeric) ? numeric : fallback;
+  const percent = normalized > 1 ? normalized : normalized * 100;
+  input.value = String(Math.round(clamp(percent, 0, 100)));
+}
+
+function setCheckedControlValue(input, value) {
+  if (input) input.checked = Boolean(value);
+}
+
+function applyLoadedPulseTime(pulseTime) {
+  if (!pulseTime || typeof pulseTime !== "object") return;
+  if ("reference_note" in pulseTime) {
+    setSelectControlValue(els.referenceNoteInput, pulseTime.reference_note, DEFAULT_REFERENCE_NOTE);
+  }
+  if ("reference_hz" in pulseTime) {
+    const hz = Number(pulseTime.reference_hz);
+    if (Number.isFinite(hz) && els.referenceFreqInput) {
+      els.referenceFreqInput.value = clamp(hz, 20, 2000).toFixed(4);
+      updateReferenceAnchorFromFrequency();
+    }
+  } else if ("reference_note" in pulseTime) {
+    updateReferenceFrequencyFromAnchor();
+  }
+  if ("tempo_divisor" in pulseTime && els.tempoDivisorInput) {
+    const divisor = Number(pulseTime.tempo_divisor);
+    if (Number.isFinite(divisor)) els.tempoDivisorInput.value = String(Math.round(clamp(divisor, 1, 100000)));
+  }
+  if ("tempo_lattice" in pulseTime) setCheckedControlValue(els.tempoLatticeInput, pulseTime.tempo_lattice);
+  if ("rational_swing" in pulseTime) setPercentControlValue(els.rationalSwingInput, pulseTime.rational_swing, 0);
+  if ("irrational_swing" in pulseTime) setPercentControlValue(els.irrationalSwingInput, pulseTime.irrational_swing, 0);
+  if ("irrational_feel" in pulseTime) {
+    setSelectControlValue(els.irrationalFeelInput, FishtailTempoLattice.normalizeIrrationalFeelMode(pulseTime.irrational_feel));
+  }
+  syncReferencePitchDisplay();
+  updateTempoControls();
+  syncProbePitchControls();
+}
+
+function applyLoadedPedalVoices(pedalVoices, voices, dubMode) {
+  if (!pedalVoices || typeof pedalVoices !== "object") return;
+  const normalized = normalizePedalVoices(pedalVoices, voices, dubMode);
+  VOICE_ORDER.forEach((voice) => {
+    const input = pedalInputForVoice(voice);
+    if (input) input.checked = Boolean(normalized[voice]);
+  });
+  state.pedalTouched = true;
+}
+
+function applyLoadedStructure(structure) {
+  if (!structure || typeof structure !== "object") return;
+  let voices = clamp(parseInt(els.voicesInput?.value, 10) || 4, 2, 4);
+  if ("style" in structure) setSelectControlValue(els.styleInput, structure.style, "counterpoint");
+  if ("voices" in structure && els.voicesInput) {
+    voices = clamp(parseInt(structure.voices, 10) || 4, 2, 4);
+    els.voicesInput.value = String(voices);
+  }
+  if ("gravity_velocity" in structure) setCheckedControlValue(els.velocityModeInput, structure.gravity_velocity);
+  if ("dub_armed" in structure) setCheckedControlValue(els.dubModeInput, structure.dub_armed);
+  if ("breathing" in structure) setPercentControlValue(els.breathingInput, structure.breathing, 0.74);
+  if ("density" in structure) setPercentControlValue(els.densityInput, structure.density, 0.26);
+  if ("rhythm_motion" in structure) setPercentControlValue(els.rhythmMotionInput, structure.rhythm_motion, DEFAULT_RHYTHM_MOTION);
+  if ("strangeness" in structure) setPercentControlValue(els.strangenessInput, structure.strangeness, 0.16);
+  updatePedalControls();
+  if ("pedal_voices" in structure) {
+    applyLoadedPedalVoices(structure.pedal_voices, voices, Boolean(els.dubModeInput?.checked));
+  }
+}
+
+function applyLoadedPitch(pitch) {
+  if (!pitch || typeof pitch !== "object") return;
+  const loadedRootHz = "root_hz" in pitch;
+  if ("map" in pitch) setSelectControlValue(els.resolutionInput, pitch.map, "literal");
+  if ("output" in pitch) setSelectControlValue(els.outputModeInput, pitch.output, "equal");
+  if ("root_note" in pitch) setSelectControlValue(els.rootNoteInput, pitch.root_note, "A");
+  if (loadedRootHz && els.rootFreqInput) {
+    const hz = Number(pitch.root_hz);
+    if (Number.isFinite(hz)) els.rootFreqInput.value = clamp(hz, 20, 2000).toFixed(2);
+  }
+  if ("link_root_to_reference" in pitch) setCheckedControlValue(els.linkRootInput, pitch.link_root_to_reference);
+  if (els.linkRootInput?.checked && !loadedRootHz) updateTuningRootReference(true);
+  updateBendControls();
+  applyPitchBehaviourLock();
+  refreshTorusTuning();
+}
+
+function applyLoadedFormStateSnapshot(snapshot, sourceName = "") {
+  if (!snapshot || typeof snapshot !== "object") throw new Error("This is not a Fishtail state file.");
+  const rawSections = loadedFormSections(snapshot);
+  if (!rawSections) throw new Error("No form sections found.");
+  const sections = rawSections.map((section, index) => normalizeSection(section, index));
+  const selectedIndex = loadedFormSelectedIndex(snapshot, sections.length);
+  const displayName = loadedFormStateName(snapshot, sourceName);
+
+  beginFormEdit();
+  clearTimelinePopoverTimer();
+  clearTimelineDeletePress();
+  if (state.timelineResize) clearTimelineResizeListeners();
+  state.timelineDrag = null;
+  state.formFollowsReference = false;
+  state.sections = sections;
+  state.selectedSectionIndex = selectedIndex;
+  state.timelineDetailIndex = selectedIndex >= 0 ? selectedIndex : null;
+
+  const referencePc = Number(snapshot.form_reference_pc ?? snapshot.formReferencePc);
+  if (Number.isFinite(referencePc)) state.formReferencePc = mod(Math.round(referencePc), 12);
+
+  applyLoadedPulseTime(snapshot.pulse_time);
+  applyLoadedStructure(snapshot.structure);
+  applyLoadedPitch(snapshot.pitch);
+
+  const followsReference = snapshot.form_follows_reference ?? snapshot.formFollowsReference;
+  state.formFollowsReference = Boolean(followsReference);
+
+  renderSections();
+  updateDubModeUi({ applySwingPreset: false, applyStylePreset: false });
+  updatePedalControls();
+  updateTempoControls();
+  updateSoundTimeControls();
+  updateLiveAudioFromControls();
+  updateFormSafety();
+  updateGenerationAvailability();
+  applyVisualPitchColorChange();
+  animateFor(900);
+
+  if (els.formStateNameInput) els.formStateNameInput.value = displayName;
+  if (els.statusLabel) els.statusLabel.textContent = `Loaded ${displayName}`;
 }
 
 function bindSoundTimeEvents() {
@@ -2164,12 +2435,12 @@ function isTuningRootVisible() {
   return els.outputModeInput?.value === "bend" || els.outputModeInput?.value === "retuner";
 }
 
-function updateDubModeUi() {
+function updateDubModeUi(options = {}) {
   const enabled = Boolean(els.dubModeInput?.checked);
   document.body?.classList.toggle("dub-mode", enabled);
-  applyDubSwingPreset(enabled);
+  if (options.applySwingPreset !== false) applyDubSwingPreset(enabled);
   if (enabled) {
-    if (els.styleInput) els.styleInput.value = FUGUE_STYLE_ID;
+    if (options.applyStylePreset !== false && els.styleInput) els.styleInput.value = FUGUE_STYLE_ID;
     els.statusLabel.textContent = "DUB armed";
   } else if (els.statusLabel.textContent === "DUB armed") {
     els.statusLabel.textContent = "Ready";
@@ -2415,7 +2686,7 @@ function syncProbePitchControls() {
     els.probeFineInput.value = fineCents.toFixed(1);
   }
   if (els.probePitchLabel) {
-    els.probePitchLabel.textContent = `${note} = ${currentReferenceHz().toFixed(2)} Hz`;
+    els.probePitchLabel.textContent = `${note} ${currentReferenceHz().toFixed(2)}Hz`;
   }
   if (els.probeFineLabel) {
     const sign = fineCents >= 0 ? "+" : "";
@@ -2488,6 +2759,7 @@ function updateTimelineActions() {
   if (els.pasteSectionButton) els.pasteSectionButton.disabled = busy || !state.sectionClipboard;
   if (els.clearFormStateButton) els.clearFormStateButton.disabled = busy;
   if (els.saveFormStateButton) els.saveFormStateButton.disabled = busy;
+  if (els.loadFormStateButton) els.loadFormStateButton.disabled = busy;
   if (!els.timelineStatus) return;
   if (!selected) {
     els.timelineStatus.textContent = "Select a section";
@@ -3316,7 +3588,9 @@ function setGenerationControlsDisabled(disabled) {
     els.copySectionButton,
     els.duplicateSectionButton,
     els.pasteSectionButton,
+    els.formStateNameInput,
     els.saveFormStateButton,
+    els.loadFormStateButton,
     els.clearFormStateButton,
     els.styleInput,
     els.voicesInput,
@@ -6474,6 +6748,7 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
         p: FishtailTempoLattice.TEARDROP_P,
         glide_seconds: FishtailTempoLattice.TEARDROP_GLIDE_SECONDS,
         attack_seconds: FishtailTempoLattice.TEARDROP_ATTACK_SECONDS,
+        min_sustain_seconds: FishtailTempoLattice.TEARDROP_MIN_SUSTAIN_SECONDS,
         release_seconds: FishtailTempoLattice.TEARDROP_RELEASE_SECONDS,
         muted_by_default: true,
       },
@@ -7569,6 +7844,7 @@ function toggleNotes() {
 
 function openHelp() {
   els.creditsModal.hidden = true;
+  els.settingsModal.hidden = true;
   els.helpModal.hidden = false;
   els.closeHelpButton.focus();
 }
@@ -7578,8 +7854,21 @@ function closeHelp() {
   els.helpButton.focus();
 }
 
+function openSettings() {
+  els.helpModal.hidden = true;
+  els.creditsModal.hidden = true;
+  els.settingsModal.hidden = false;
+  els.closeSettingsButton.focus();
+}
+
+function closeSettings() {
+  els.settingsModal.hidden = true;
+  els.settingsButton.focus();
+}
+
 function openCredits() {
   els.helpModal.hidden = true;
+  els.settingsModal.hidden = true;
   els.creditsModal.hidden = false;
   els.closeCreditsButton.focus();
 }
