@@ -43,8 +43,7 @@ const VISUAL_LIGHT_TEARDROP_P = 2;
 const VISUAL_LIGHT_PITCH_GLIDE_MS = 1500;
 const VISUAL_LIGHT_IDLE_GLIDE_MS = 820;
 const VISUAL_LIGHT_MAX_FRAME_MS = 120;
-const TIMELINE_HOVER_DETAIL_MS = 1500;
-const TIMELINE_LONG_PRESS_DELETE_MS = 680;
+const TIMELINE_LONG_PRESS_ACTION_MS = 680;
 const TIMELINE_LONG_PRESS_MOVE_CANCEL_PX = 9;
 const RANGE_RESET_DOUBLE_CLICK_MS = 360;
 const RANGE_RESET_DOUBLE_CLICK_MOVE_PX = 8;
@@ -2788,7 +2787,7 @@ function timelineSectionLabel(section, index) {
   const mode = MODES[section.mode]?.label || section.mode;
   const role = SECTION_ROLES[section.role] || "Fishtail";
   const treatment = sectionTreatmentLabel(section.role, section.treatment);
-  return `Section ${index + 1}, ${sectionBarsLabel(section)}, ${sectionDirectionLabel(section)}, ${section.key} ${mode}, ${section.meter}, ${role}, ${treatment}`;
+  return `Section ${index + 1}, ${sectionBarsLabel(section)}, ${section.key} ${mode}, ${section.meter}, ${role}, ${treatment}`;
 }
 
 function timelinePopoverHtml(section) {
@@ -2798,7 +2797,7 @@ function timelinePopoverHtml(section) {
   const treatment = sectionTreatmentLabel(section.role, section.treatment);
   return `
     <div class="timeline-popover-title">${escapeHtml(section.key)} ${escapeHtml(mode)}</div>
-    <div class="timeline-popover-line">${escapeHtml(sectionBarsLabel(section))} · ${escapeHtml(sectionDirectionLabel(section))} · ${escapeHtml(section.meter)} · ${escapeHtml(cadence)}</div>
+    <div class="timeline-popover-line">${escapeHtml(sectionBarsLabel(section))} · ${escapeHtml(section.meter)} · ${escapeHtml(cadence)}</div>
     <div class="timeline-popover-line">${escapeHtml(role)} · ${escapeHtml(treatment)}</div>
     <button class="timeline-popover-delete" type="button" data-delete-section>Delete</button>
   `;
@@ -2808,12 +2807,11 @@ function timelineBlockHtml(section, index) {
   const mode = MODES[section.mode]?.label || section.mode;
   const role = SECTION_ROLES[section.role] || "Fishtail";
   const treatment = sectionTreatmentLabel(section.role, section.treatment);
-  const direction = sectionIsRetrograde(section) ? "Retrograde" : "Forward";
   return `
     <span class="timeline-block-kicker">${escapeHtml(String(index + 1).padStart(2, "0"))}</span>
     <span class="timeline-block-title">${escapeHtml(sectionBarsLabel(section))}</span>
     <span class="timeline-block-meta">${escapeHtml(section.key)} ${escapeHtml(mode)} · ${escapeHtml(section.meter)}</span>
-    <span class="timeline-block-meta">${escapeHtml(direction)} · ${escapeHtml(role)} / ${escapeHtml(treatment)}</span>
+    <span class="timeline-block-meta">${escapeHtml(role)} / ${escapeHtml(treatment)}</span>
   `;
 }
 
@@ -2887,11 +2885,10 @@ function showTimelinePopover(index, options = {}) {
   updateSectionSelectionUi();
 }
 
-function scheduleTimelinePopover(index) {
-  clearTimelinePopoverTimer();
-  state.timelinePopoverTimer = setTimeout(() => {
-    showTimelinePopover(index, { select: false });
-  }, TIMELINE_HOVER_DETAIL_MS);
+function openTimelineActions(index) {
+  if (!state.sections.length) return;
+  const safeIndex = clamp(parseInt(index, 10) || 0, 0, state.sections.length - 1);
+  selectSection(safeIndex, { reveal: true });
 }
 
 function hideTimelinePopover(index = null) {
@@ -2903,6 +2900,7 @@ function hideTimelinePopover(index = null) {
 
 function clearTimelineDeletePress() {
   if (state.timelineDeletePress?.timer) clearTimeout(state.timelineDeletePress.timer);
+  state.timelineDeletePress?.item?.classList.remove("is-action-pressing");
   state.timelineDeletePress = null;
 }
 
@@ -2916,15 +2914,17 @@ function beginTimelineDeletePress(event) {
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
+    item: block.closest?.("[data-timeline-index]") || null,
     timer: null,
   };
+  press.item?.classList.add("is-action-pressing");
   press.timer = setTimeout(() => {
     if (state.timelineDeletePress !== press) return;
     state.timelineSuppressClickUntil = Date.now() + 520;
     state.timelineSuppressContextMenuUntil = Date.now() + 700;
-    showTimelinePopover(index, { select: true });
+    openTimelineActions(index);
     clearTimelineDeletePress();
-  }, TIMELINE_LONG_PRESS_DELETE_MS);
+  }, TIMELINE_LONG_PRESS_ACTION_MS);
   state.timelineDeletePress = press;
   block.setPointerCapture?.(event.pointerId);
 }
@@ -3102,6 +3102,7 @@ function renderSectionTimeline() {
     block.className = "timeline-block";
     block.type = "button";
     block.dataset.selectSection = String(index);
+    block.title = "Select section. Long press, right-click, or double-click for actions.";
     block.setAttribute("aria-pressed", String(index === selectedIndex));
     block.setAttribute("aria-label", timelineSectionLabel(normalized, index));
     block.innerHTML = timelineBlockHtml(normalized, index);
@@ -3113,6 +3114,15 @@ function renderSectionTimeline() {
     block.addEventListener("pointermove", updateTimelineDeletePress);
     block.addEventListener("pointerup", finishTimelineDeletePress);
     block.addEventListener("pointercancel", finishTimelineDeletePress);
+    block.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      openTimelineActions(index);
+    });
+    block.addEventListener("keydown", (event) => {
+      if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+      event.preventDefault();
+      openTimelineActions(index);
+    });
 
     const popover = document.createElement("div");
     popover.className = "timeline-popover";
@@ -3142,16 +3152,13 @@ function renderSectionTimeline() {
     handle.textContent = "|||";
     handle.addEventListener("pointerdown", beginTimelineDrag);
 
-    item.addEventListener("mouseenter", () => scheduleTimelinePopover(index));
-    item.addEventListener("mouseleave", () => hideTimelinePopover(index));
-    item.addEventListener("focusin", () => showTimelinePopover(index, { select: false }));
     item.addEventListener("focusout", (event) => {
       if (!item.contains(event.relatedTarget)) hideTimelinePopover(index);
     });
     item.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       if (Date.now() < state.timelineSuppressContextMenuUntil) return;
-      showTimelinePopover(index, { select: true });
+      openTimelineActions(index);
     });
 
     item.append(block, resizeHandle, popover, handle);
@@ -3420,7 +3427,7 @@ function renderSections() {
     <label>Cadence<select data-field="cadence">${Object.entries(CADENCES).map(([id, cadence]) => optionHtml(id, cadence.label, id === normalized.cadence)).join("")}</select></label>
     <label>Role<select data-field="role">${roleOptionsForSection(index).map(([id, label]) => optionHtml(id, label, id === normalized.role)).join("")}</select></label>
     <label>Treatment<select data-field="treatment">${treatmentOptionsForRole(normalized.role).map(([id, label]) => optionHtml(id, label, id === normalized.treatment)).join("")}</select></label>
-    <button class="icon-button" type="button" data-remove="${index}" title="Remove section">-</button>
+    <button class="icon-button" type="button" data-remove="${index}" title="Remove section" aria-label="Remove selected section">-</button>
     ${sectionExpressionControlsHtml(normalized.expression, index)}
   `;
   row.querySelectorAll("[data-field]").forEach((input) => {
