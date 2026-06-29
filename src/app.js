@@ -1811,7 +1811,7 @@ function updateReferenceInputStatus(status) {
   state.inputReference.status = status;
   const inputActive = Boolean(state.inputReference.stream);
   const inputStarting = Boolean(state.inputReference.starting);
-  if (els.referenceInputStatus) els.referenceInputStatus.textContent = status;
+  if (els.referenceInputStatus) els.referenceInputStatus.textContent = referenceInputDisplayStatus(status, inputActive || inputStarting);
   if (els.referenceListenButton) els.referenceListenButton.disabled = inputActive || inputStarting;
   if (els.referenceStopButton) els.referenceStopButton.disabled = !inputActive && !inputStarting;
   if (els.referenceUsePitchButton) {
@@ -1822,6 +1822,13 @@ function updateReferenceInputStatus(status) {
     const stats = FishtailPitchInput.pitchStats(state.inputReference.pitchHistory, Date.now());
     els.referenceCaptureAnywayButton.disabled = !inputActive || !stats.ok;
   }
+}
+
+function referenceInputDisplayStatus(status, active = Boolean(state.inputReference.stream || state.inputReference.starting)) {
+  if (status === "Pitch stable" || status === "Stable pitch found") return "Stable pitch found";
+  if (active) return "Listening";
+  if (status === "Permission denied" || status === "Input unavailable") return status;
+  return "Permission needed";
 }
 
 function referenceMidiBounds() {
@@ -2096,7 +2103,7 @@ function updateReferenceInputReadouts(result) {
       if (stats.ok) {
         const movement = `±${Math.max(0, stats.spreadCents).toFixed(1)} cents`;
         els.referenceStabilityLabel.textContent = stats.state === "stable" ? `Stable ${movement}` : `Moving ${movement}`;
-        updateReferenceInputStatus(stats.state === "stable" ? "Pitch stable" : "Pitch moving");
+        updateReferenceInputStatus(stats.state === "stable" ? "Stable pitch found" : "Listening");
       } else {
         els.referenceStabilityLabel.textContent = "Collecting pitch centre.";
         updateReferenceInputStatus("Listening");

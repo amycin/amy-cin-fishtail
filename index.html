@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=65">
+    <link rel="stylesheet" href="styles.css?v=66">
   </head>
   <body>
     <main class="shell">
@@ -16,7 +16,12 @@
           </label>
           <span class="menu-chip pitch-menu-chip" id="probePitchLabel">A3 216.00Hz</span>
         </div>
-        <button class="icon-button floating-settings-button" id="settingsButton" type="button" title="Settings" aria-label="Settings">⚙</button>
+        <button class="icon-button floating-settings-button" id="settingsButton" type="button" title="Settings" aria-label="Settings">
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 8.4a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2Z"></path>
+            <path d="M19.4 13.4a7.7 7.7 0 0 0 0-2.8l2-1.5-2-3.4-2.4 1a7.3 7.3 0 0 0-2.4-1.4L14.2 2h-4.4l-.4 3.3A7.3 7.3 0 0 0 7 6.7l-2.4-1-2 3.4 2 1.5a7.7 7.7 0 0 0 0 2.8l-2 1.5 2 3.4 2.4-1a7.3 7.3 0 0 0 2.4 1.4l.4 3.3h4.4l.4-3.3a7.3 7.3 0 0 0 2.4-1.4l2.4 1 2-3.4-2-1.5Z"></path>
+          </svg>
+        </button>
       </div>
       <section class="instrument">
         <div class="art-layer" aria-hidden="true"></div>
@@ -60,9 +65,14 @@
                   <span class="pulse-label-with-input">
                     <label for="probePitchInput">Pulse Pitch</label>
                     <details class="living-reference-drawer">
-                      <summary id="livingReferenceTitle" aria-label="Living Reference">
-                        <span class="line-in-icon" aria-hidden="true"></span>
-                        <span class="visually-hidden">Living Reference</span>
+                      <summary id="livingReferenceTitle" aria-label="Living Reference microphone input">
+                        <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                          <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"></path>
+                          <path d="M19 10.5a7 7 0 0 1-14 0"></path>
+                          <path d="M12 17.5V21"></path>
+                          <path d="M8.5 21h7"></path>
+                        </svg>
+                        <span>Living Reference</span>
                         <span id="referenceInputStatus" aria-live="polite">Permission needed</span>
                       </summary>
                       <div class="living-reference" aria-labelledby="livingReferenceTitle">
@@ -224,21 +234,41 @@
             <div class="form-timeline-shell" aria-label="Form timeline">
               <div class="timeline-toolbar">
                 <div class="timeline-actions" aria-label="Selected section actions">
-                  <button id="undoFormButton" type="button">Undo</button>
-                  <button id="redoFormButton" type="button">Redo</button>
-                  <button id="moveSectionLeftButton" type="button">Move Left</button>
-                  <button id="moveSectionRightButton" type="button">Move Right</button>
-                  <button id="copySectionButton" type="button">Copy</button>
-                  <button id="duplicateSectionButton" type="button">Duplicate</button>
-                  <button id="pasteSectionButton" type="button">Paste After</button>
+                  <button class="toolbar-icon-button" id="undoFormButton" type="button" title="Undo" aria-label="Undo">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 7 4 12l5 5"></path><path d="M5 12h9a6 6 0 0 1 0 12h-1"></path></svg>
+                  </button>
+                  <button class="toolbar-icon-button" id="redoFormButton" type="button" title="Redo" aria-label="Redo">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 7 5 5-5 5"></path><path d="M19 12h-9a6 6 0 0 0 0 12h1"></path></svg>
+                  </button>
+                  <button class="toolbar-icon-button" id="moveSectionLeftButton" type="button" title="Move left" aria-label="Move section left">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11 6 5 12l6 6"></path><path d="M5 12h14"></path></svg>
+                  </button>
+                  <button class="toolbar-icon-button" id="moveSectionRightButton" type="button" title="Move right" aria-label="Move section right">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m13 6 6 6-6 6"></path><path d="M5 12h14"></path></svg>
+                  </button>
+                  <button class="toolbar-icon-button" id="copySectionButton" type="button" title="Copy" aria-label="Copy section">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path></svg>
+                  </button>
+                  <button class="toolbar-icon-button" id="duplicateSectionButton" type="button" title="Duplicate" aria-label="Duplicate section">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="8" y="7" width="11" height="11" rx="2"></rect><path d="M5 14H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path><path d="M13.5 10.5v4"></path><path d="M11.5 12.5h4"></path></svg>
+                  </button>
+                  <button class="toolbar-icon-button" id="pasteSectionButton" type="button" title="Paste after" aria-label="Paste after selected section">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4h6l1 2h2a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2l1-2Z"></path><path d="M9 12h6"></path><path d="M12 9v6"></path></svg>
+                  </button>
                   <label class="form-state-name-field">
                     <span>State name</span>
                     <input id="formStateNameInput" type="text" value="Fishtail form" autocomplete="off" spellcheck="false">
                   </label>
-                  <button id="saveFormStateButton" type="button">Save State</button>
-                  <button id="loadFormStateButton" type="button">Load State</button>
+                  <button class="toolbar-icon-button" id="saveFormStateButton" type="button" title="Save state" aria-label="Save state">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path><path d="M7 3v6h9"></path><path d="M7 21v-8h10v8"></path></svg>
+                  </button>
+                  <button class="toolbar-icon-button" id="loadFormStateButton" type="button" title="Load state" aria-label="Load state">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 19V5a2 2 0 0 1 2-2h8l6 6v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path><path d="M14 3v6h6"></path><path d="M12 17V9"></path><path d="m8.5 12.5 3.5-3.5 3.5 3.5"></path></svg>
+                  </button>
                   <input id="loadFormStateInput" type="file" accept="application/json,.json" hidden>
-                  <button id="clearFormStateButton" type="button">Clean State</button>
+                  <button class="toolbar-icon-button" id="clearFormStateButton" type="button" title="Clean state" aria-label="Clean state">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m6 6 1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
+                  </button>
                 </div>
               </div>
               <div class="section-timeline" id="sectionTimeline" role="list" aria-label="Form sections"></div>
@@ -622,6 +652,6 @@
     <script src="src/wav-export.js?v=8"></script>
     <script src="src/pitch-input.js?v=3"></script>
     <script src="src/random-router.js?v=1"></script>
-    <script src="src/app.js?v=108"></script>
+    <script src="src/app.js?v=109"></script>
   </body>
 </html>
