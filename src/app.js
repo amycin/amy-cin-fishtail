@@ -447,7 +447,7 @@ const SECTION_TREATMENTS = {
   dubby: "Dubby",
 };
 
-const SECTION_EXPRESSION_VERSION = "section_expression_v1";
+const SECTION_EXPRESSION_VERSION = "section_expression_v3";
 const SECTION_EXPRESSION_DEFAULTS = Object.freeze({
   velocityContour: "natural",
   registerSpread: 0.5,
@@ -455,6 +455,22 @@ const SECTION_EXPRESSION_DEFAULTS = Object.freeze({
   pressureDensity: null,
   keyboardBloom: false,
 });
+const KEYBOARD_BLOOM_STATUS_STUB = "saved_state_stub";
+const KEYBOARD_BLOOM_STATUS_ACTIVE = "active_guarded_arranger";
+const KEYBOARD_BLOOM_STATUS_NO_SAFE_CANDIDATES = "active_no_safe_candidates";
+const BLOOM_LANES = Object.freeze(["bloom_bass_anchor", "bloom_octave_echo", "bloom_shimmer"]);
+const BLOOM_LANE_RANGES = Object.freeze({
+  bloom_bass_anchor: [36, 60],
+  bloom_octave_echo: [67, 96],
+  bloom_shimmer: [72, 96],
+});
+const BLOOM_LANE_LABELS = Object.freeze({
+  bloom_bass_anchor: "Bass anchors",
+  bloom_octave_echo: "Octave echoes",
+  bloom_shimmer: "High shimmer",
+});
+const BLOOM_PRESSURE_MIN = 0.65;
+const BLOOM_PRESSURE_FULL = 0.85;
 const SECTION_VELOCITY_CONTOURS = {
   natural: "Natural",
   rise: "Rise",
@@ -3311,8 +3327,11 @@ function pressureDensityLabel(value) {
 function expressionSummaryLabel(expression) {
   const normalized = normalizeSectionExpression(expression);
   const contour = SECTION_VELOCITY_CONTOURS[normalized.velocityContour] || SECTION_VELOCITY_CONTOURS.natural;
-  const bloom = normalized.keyboardBloom ? " · Keyboard Bloom saved" : "";
-  return `Dynamics · ${contour}${bloom}`;
+  const spread = normalized.registerSpread === SECTION_EXPRESSION_DEFAULTS.registerSpread ? "" : ` · Width ${percentLabel(normalized.registerSpread)}`;
+  const lift = normalized.voicingLift === SECTION_EXPRESSION_DEFAULTS.voicingLift ? "" : ` · Lift ${voicingLiftLabel(normalized.voicingLift)}`;
+  const pressure = normalized.pressureDensity == null ? "" : ` · Pressure ${percentLabel(normalized.pressureDensity)}`;
+  const bloom = normalized.keyboardBloom ? " · Guarded Bloom" : "";
+  return `Dynamics · ${contour}${spread}${lift}${pressure}${bloom}`;
 }
 
 function sectionExpressionDrawerIsOpen(index, expression) {
@@ -3342,23 +3361,17 @@ function sectionExpressionControlsHtml(expression, index) {
       </summary>
       <div class="section-expression-grid">
         <label class="expression-field expression-field-select">Velocity contour<select data-expression-field="velocityContour">${Object.entries(SECTION_VELOCITY_CONTOURS).map(([id, label]) => optionHtml(id, label, id === normalized.velocityContour)).join("")}</select></label>
-        <label class="expression-field expression-field-range is-inactive"><span><span>Register width</span><output data-expression-output="registerSpread">${percentLabel(normalized.registerSpread)}</output></span><input type="range" min="0" max="100" step="1" value="${percentRangeValue(normalized.registerSpread)}" data-reset-value="50" data-expression-field="registerSpread" aria-label="Register width" disabled></label>
-        <label class="expression-field expression-field-range is-inactive"><span><span>Voicing lift</span><output data-expression-output="voicingLift">${voicingLiftLabel(normalized.voicingLift)}</output></span><input type="range" min="-100" max="100" step="1" value="${signedPercentRangeValue(normalized.voicingLift)}" data-reset-value="0" data-expression-field="voicingLift" aria-label="Voicing lift" disabled></label>
-        <div class="expression-field expression-pressure-field is-inactive">
-          <label class="expression-field-range"><span><span>Pressure / Density</span><output data-expression-output="pressureDensity">${pressureDensityLabel(normalized.pressureDensity)}</output></span><input type="range" min="0" max="100" step="1" value="${pressureValue}" data-reset-value="50" data-expression-field="pressureDensity" aria-label="Pressure density" disabled></label>
-          <label class="expression-auto-toggle"><input type="checkbox" data-expression-field="pressureAuto"${pressureAuto ? " checked" : ""} disabled>Auto</label>
+        <label class="expression-field expression-field-range"><span><span>Register width</span><output data-expression-output="registerSpread">${percentLabel(normalized.registerSpread)}</output></span><input type="range" min="0" max="100" step="1" value="${percentRangeValue(normalized.registerSpread)}" data-reset-value="50" data-expression-field="registerSpread" aria-label="Register width"></label>
+        <label class="expression-field expression-field-range"><span><span>Voicing lift</span><output data-expression-output="voicingLift">${voicingLiftLabel(normalized.voicingLift)}</output></span><input type="range" min="-100" max="100" step="1" value="${signedPercentRangeValue(normalized.voicingLift)}" data-reset-value="0" data-expression-field="voicingLift" aria-label="Voicing lift"></label>
+        <div class="expression-field expression-pressure-field">
+          <label class="expression-field-range"><span><span>Pressure / Density</span><output data-expression-output="pressureDensity">${pressureDensityLabel(normalized.pressureDensity)}</output></span><input type="range" min="0" max="100" step="1" value="${pressureValue}" data-reset-value="50" data-expression-field="pressureDensity" aria-label="Pressure density"></label>
+          <label class="expression-auto-toggle"><input type="checkbox" data-expression-field="pressureAuto"${pressureAuto ? " checked" : ""}>Auto</label>
         </div>
-        <label class="expression-bloom-check is-inactive">
-          <input type="checkbox" data-expression-field="keyboardBloom"${normalized.keyboardBloom ? " checked" : ""} disabled>
+        <label class="expression-bloom-check">
+          <input type="checkbox" data-expression-field="keyboardBloom"${normalized.keyboardBloom ? " checked" : ""}>
           <span><strong>Keyboard Bloom</strong><small>Spread the section across the keyboard with bass anchors, octave echoes, and high shimmer.</small></span>
         </label>
-        <div class="expression-keyboard is-inactive${normalized.keyboardBloom ? " is-bloom" : ""}" data-expression-keyboard role="img" aria-label="Expression Keyboard preview">
-          <span class="expression-keyboard-title">Expression Keyboard</span>
-          <span class="expression-keyboard-low">Low</span>
-          <span class="expression-keyboard-high">High</span>
-          <b aria-hidden="true"></b>
-        </div>
-        <p class="expression-scope-note">Velocity contour shapes MIDI in this build. Width, lift, pressure, and Keyboard Bloom are saved for the next arranger pass.</p>
+        <p class="expression-scope-note">Velocity contour shapes MIDI dynamics. At higher pressure, Keyboard Bloom may add guarded post-counterpoint bass anchors, octave echoes, and high shimmer; width and lift guide where those additions may live.</p>
       </div>
     </details>
   `;
@@ -3393,15 +3406,6 @@ function updateSectionExpressionControlLabels(row) {
   if (summary) summary.textContent = expressionSummaryLabel(expression);
   const badge = row.querySelector(".expression-active-badge");
   if (badge) badge.hidden = sectionExpressionIsDefault(expression);
-  const keyboard = row.querySelector("[data-expression-keyboard]");
-  if (keyboard) {
-    const width = clamp(expression.registerSpread * 90, 8, 96);
-    keyboard.style.setProperty("--expression-keyboard-pressure", String(0.14 + (expression.pressureDensity ?? 0.5) * 0.22));
-    keyboard.style.setProperty("--expression-keyboard-width", `${width}%`);
-    keyboard.style.setProperty("--expression-keyboard-band-left", `${50 - width / 2}%`);
-    keyboard.style.setProperty("--expression-keyboard-lift-x", `${(expression.voicingLift + 1) * 50}%`);
-    keyboard.classList.toggle("is-bloom", expression.keyboardBloom);
-  }
 }
 
 function commitSectionExpression(index, patch, options = {}) {
@@ -3426,11 +3430,23 @@ function bindSectionExpressionControls(row, index) {
   });
   row.querySelectorAll("[data-expression-field]").forEach((input) => {
     if (input.disabled) return;
-    input.addEventListener("input", () => updateSectionExpressionControlLabels(row));
+    input.addEventListener("input", () => {
+      if (input.dataset.expressionField === "pressureDensity") {
+        const auto = row.querySelector('[data-expression-field="pressureAuto"]');
+        if (auto) auto.checked = false;
+      }
+      updateSectionExpressionControlLabels(row);
+    });
     input.addEventListener("change", () => {
       updateSectionExpressionControlLabels(row);
+      const pressureAuto = Boolean(row.querySelector('[data-expression-field="pressureAuto"]')?.checked);
+      const pressureInput = row.querySelector('[data-expression-field="pressureDensity"]');
       const patch = {
         velocityContour: row.querySelector('[data-expression-field="velocityContour"]')?.value,
+        registerSpread: clamp((parseFloat(row.querySelector('[data-expression-field="registerSpread"]')?.value) || 0) / 100, 0, 1),
+        voicingLift: clamp((parseFloat(row.querySelector('[data-expression-field="voicingLift"]')?.value) || 0) / 100, -1, 1),
+        pressureDensity: pressureAuto ? null : clamp((parseFloat(pressureInput?.value) || 0) / 100, 0, 1),
+        keyboardBloom: Boolean(row.querySelector('[data-expression-field="keyboardBloom"]')?.checked),
       };
       commitSectionExpression(index, patch);
     });
@@ -3596,6 +3612,499 @@ function normalizeSectionExpression(expression = null) {
     pressureDensity,
     keyboardBloom: Boolean(safe.keyboardBloom ?? safe.wholeKeyboardSam),
   };
+}
+
+function normalizedModeInfo(mode) {
+  if (typeof mode === "string") return MODES[mode] || MODES.major;
+  return mode && typeof mode === "object" ? mode : MODES.major;
+}
+
+function sectionModeInfo(section, mode = null) {
+  return normalizedModeInfo(mode || section?.mode);
+}
+
+function modeThirdOffset(mode) {
+  const info = normalizedModeInfo(mode);
+  return info.stable?.find((offset) => offset === 3 || offset === 4) ?? (info.cadenceQuality === "minor" ? 3 : 4);
+}
+
+function noteMidiValue(note) {
+  if (typeof note === "number") return note;
+  if (!note || typeof note !== "object") return null;
+  const midi = note.carrierMidi ?? note.midi ?? note.pitch;
+  return Number.isFinite(Number(midi)) ? Number(midi) : null;
+}
+
+function noteSymbolicOffset(note, section = null) {
+  if (note && typeof note === "object" && note.symbolicOffset != null) return mod(Number(note.symbolicOffset) || 0, 12);
+  const midi = noteMidiValue(note);
+  if (midi == null) return null;
+  return mod(midi - noteToPc(section?.key || "C"), 12);
+}
+
+function intervalAboveBass(candidateMidi, bassMidi) {
+  if (!Number.isFinite(Number(candidateMidi)) || !Number.isFinite(Number(bassMidi))) return null;
+  return mod(Number(candidateMidi) - Number(bassMidi), 12);
+}
+
+function normalizeSonorityNote(note, section, mode = null) {
+  const midi = noteMidiValue(note);
+  if (midi == null) return null;
+  const offset = noteSymbolicOffset(note, section);
+  return {
+    source: note,
+    midi,
+    pc: mod(midi, 12),
+    symbolicOffset: offset == null ? mod(midi - noteToPc(section?.key || "C"), 12) : offset,
+    voice: note && typeof note === "object" ? note.voice || null : null,
+    functionRole: note && typeof note === "object" ? note.functionRole || note.role || null : null,
+    motionRole: note && typeof note === "object" ? note.motionRole || null : null,
+    suspension: Boolean(note && typeof note === "object" && note.suspension),
+    preparedSuspension: Boolean(note && typeof note === "object" && note.preparedSuspension),
+    unresolvedSuspension: Boolean(note && typeof note === "object" && note.unresolvedSuspension),
+    mode: sectionModeInfo(section, mode),
+  };
+}
+
+function classifyVerticalSonority(snapshot, section = {}, mode = null) {
+  const modeInfo = sectionModeInfo(section, mode);
+  const notes = (Array.isArray(snapshot) ? snapshot : Object.values(snapshot || {}))
+    .map((note) => normalizeSonorityNote(note, section, modeInfo))
+    .filter(Boolean)
+    .sort((a, b) => a.midi - b.midi);
+  const bass = notes[0] || null;
+  const rootOffset = 0;
+  const thirdOffset = modeThirdOffset(modeInfo);
+  const fifthOffset = 7;
+  const countsByOffset = {};
+  notes.forEach((note) => {
+    countsByOffset[note.symbolicOffset] = (countsByOffset[note.symbolicOffset] || 0) + 1;
+  });
+  const hasRoot = Boolean(countsByOffset[rootOffset]);
+  const hasThird = Boolean(countsByOffset[thirdOffset]);
+  const hasFifth = Boolean(countsByOffset[fifthOffset]);
+  const hasStableTriad = hasRoot && hasThird && hasFifth;
+  const intervalsAboveBass = notes.map((note) => bass ? intervalAboveBass(note.midi, bass.midi) : null);
+  const hasFourthAboveBass = intervalsAboveBass.includes(5);
+  const bassOffset = bass?.symbolicOffset ?? null;
+  let inversion = "ambiguous_modal";
+  if (hasStableTriad) {
+    if (bassOffset === rootOffset) inversion = "root_position";
+    else if (bassOffset === thirdOffset) inversion = "first_inversion";
+    else if (bassOffset === fifthOffset) inversion = "second_inversion";
+  } else if (hasFourthAboveBass || notes.some((note) => note.suspension || note.unresolvedSuspension)) {
+    inversion = "suspension_or_pedal";
+  }
+  const tendencyOffsets = new Set(Object.keys(modeInfo.tendencies || {}).map(Number));
+  if (modeInfo.offsets?.includes(11)) tendencyOffsets.add(11);
+  return {
+    bass,
+    bassPitchClass: bass?.pc ?? null,
+    bassOffset,
+    notes,
+    mode: modeInfo,
+    rootOffset,
+    thirdOffset,
+    fifthOffset,
+    countsByOffset,
+    intervalsAboveBass,
+    hasRoot,
+    hasThird,
+    hasFifth,
+    hasStableTriad,
+    hasFourthAboveBass,
+    hasSeventhLikeTone: Boolean(countsByOffset[10] || countsByOffset[11]),
+    tendencyOffsets: [...tendencyOffsets],
+    inversion,
+    likelyFunction: hasStableTriad ? "stable_triad" : hasFourthAboveBass ? "suspension_or_pedal" : "modal_or_contrapuntal",
+  };
+}
+
+function isLeadingToneOffset(offset, mode) {
+  const info = normalizedModeInfo(mode);
+  return mod(offset, 12) === 11 && (info.offsets?.includes(11) || info.tendencies?.[11]);
+}
+
+function isFourthAboveBass(candidate, sonority) {
+  const midi = noteMidiValue(candidate);
+  return midi != null && sonority?.bass?.midi != null && intervalAboveBass(midi, sonority.bass.midi) === 5;
+}
+
+function isSixthAboveBass(candidate, sonority) {
+  const midi = noteMidiValue(candidate);
+  return midi != null && sonority?.bass?.midi != null && [8, 9].includes(intervalAboveBass(midi, sonority.bass.midi));
+}
+
+function classifyCandidateFunction(candidate, sonority, section = {}, mode = null) {
+  const modeInfo = sectionModeInfo(section, mode || sonority?.mode);
+  const vertical = sonority?.notes ? sonority : classifyVerticalSonority([], section, modeInfo);
+  const midi = noteMidiValue(candidate);
+  const offset = noteSymbolicOffset(candidate, section);
+  const interval = midi == null || vertical.bass?.midi == null ? null : intervalAboveBass(midi, vertical.bass.midi);
+  const thirdOffset = vertical.thirdOffset ?? modeThirdOffset(modeInfo);
+  const forced = candidate && typeof candidate === "object" ? candidate.functionRole || candidate.role || null : null;
+  const motionRole = candidate && typeof candidate === "object" ? candidate.motionRole || null : null;
+  const leadingTone = offset != null && isLeadingToneOffset(offset, modeInfo);
+  const chordalSeventh = forced === "seventh" || (offset === 10 && vertical.hasRoot && vertical.hasThird);
+  let functionName = "modal_colour";
+  if (forced === "root" || offset === 0) functionName = "root";
+  else if (forced === "third" || offset === thirdOffset) functionName = "third";
+  else if (forced === "fifth" || offset === 7) functionName = "fifth";
+  else if (leadingTone) functionName = "tendency";
+  else if (chordalSeventh) functionName = "seventh";
+  const fourthAboveBass = interval === 5;
+  const sixthAboveBass = interval === 8 || interval === 9;
+  const firstInversionRootAsSixth = vertical.inversion === "first_inversion" && offset === 0 && sixthAboveBass;
+  const secondInversionRootAsFourth = vertical.inversion === "second_inversion" && offset === 0 && fourthAboveBass;
+  return {
+    midi,
+    pitchClass: midi == null ? null : mod(midi, 12),
+    symbolicOffset: offset,
+    intervalAboveBass: interval,
+    function: functionName,
+    forcedFunction: forced,
+    inversion: vertical.inversion,
+    leadingTone,
+    raisedTendency: offset != null && Boolean(modeInfo.tendencies?.[offset]),
+    chordalSeventh,
+    unresolvedSuspension: Boolean(candidate && typeof candidate === "object" && candidate.unresolvedSuspension),
+    suspension: Boolean(candidate && typeof candidate === "object" && candidate.suspension) || fourthAboveBass,
+    preparedSuspension: Boolean(candidate && typeof candidate === "object" && candidate.preparedSuspension),
+    passingOrNeighbour: motionRole === "passing" || motionRole === "neighbour",
+    fourthAboveBass,
+    sixthAboveBass,
+    firstInversionRootAsSixth,
+    secondInversionRootAsFourth,
+    existingSameOffsetCount: offset == null ? 0 : (vertical.countsByOffset?.[offset] || 0),
+    lowThird: functionName === "third" && midi != null && midi < 48,
+  };
+}
+
+function isForbiddenDoublingFunction(functionInfo) {
+  if (!functionInfo) return true;
+  return Boolean(
+    functionInfo.leadingTone
+    || functionInfo.chordalSeventh
+    || functionInfo.unresolvedSuspension
+    || functionInfo.passingOrNeighbour
+    || functionInfo.lowThird
+    || (functionInfo.fourthAboveBass && !functionInfo.preparedSuspension)
+    || functionInfo.secondInversionRootAsFourth
+  );
+}
+
+function hasLowSemitoneCrunch(candidateMidi, notes) {
+  if (!Number.isFinite(Number(candidateMidi)) || candidateMidi >= 60) return false;
+  return (notes || []).some((note) => {
+    const midi = noteMidiValue(note);
+    return midi != null && midi < 60 && Math.abs(midi - candidateMidi) === 1;
+  });
+}
+
+function wouldCreateParallelPerfect(candidate, lanePrevious, structuralVoicePrevious, structuralVoiceCurrent) {
+  const currentMidi = noteMidiValue(candidate);
+  const lanePreviousMidi = noteMidiValue(lanePrevious);
+  const previousStructuralMidi = noteMidiValue(structuralVoicePrevious);
+  const currentStructuralMidi = noteMidiValue(structuralVoiceCurrent);
+  if ([currentMidi, lanePreviousMidi, previousStructuralMidi, currentStructuralMidi].some((value) => value == null)) return false;
+  const previousInterval = mod(lanePreviousMidi - previousStructuralMidi, 12);
+  const currentInterval = mod(currentMidi - currentStructuralMidi, 12);
+  const laneMotion = Math.sign(currentMidi - lanePreviousMidi);
+  const structuralMotion = Math.sign(currentStructuralMidi - previousStructuralMidi);
+  if (structuralMotion === 0) return false;
+  const similarMotion = laneMotion === structuralMotion && laneMotion !== 0;
+  if (!similarMotion || !isPerfectInterval(currentInterval)) return false;
+  if (isPerfectInterval(previousInterval)) return true;
+  return Math.abs(currentMidi - lanePreviousMidi) > 2 || Math.abs(currentStructuralMidi - previousStructuralMidi) > 2;
+}
+
+function evaluateSupportBloomCandidate(candidate, snapshot, section = {}, mode = null, options = {}) {
+  const sonority = snapshot?.notes ? snapshot : classifyVerticalSonority(snapshot, section, mode);
+  const info = classifyCandidateFunction(candidate, sonority, section, mode);
+  const counters = {
+    parallel_gate_drops: 0,
+    fourth_above_bass_drops: 0,
+    low_mud_drops: 0,
+    forbidden_doubling_drops: 0,
+  };
+  const drop = (reason, counter) => {
+    if (counter) counters[counter] += 1;
+    return { ok: false, reason, functionInfo: info, sonority, counters };
+  };
+  if (info.leadingTone) return drop("leading_tone_doubling", "forbidden_doubling_drops");
+  if (info.chordalSeventh) return drop("chordal_seventh_doubling", "forbidden_doubling_drops");
+  if (info.unresolvedSuspension) return drop("unresolved_suspension_doubling", "forbidden_doubling_drops");
+  if (info.passingOrNeighbour) return drop("active_nonchord_tone_doubling", "forbidden_doubling_drops");
+  if (info.lowThird) return drop("low_third_below_48", "low_mud_drops");
+  if (hasLowSemitoneCrunch(info.midi, sonority.notes)) return drop("low_semitone_crunch", "low_mud_drops");
+  if (sonority.notes.some((note) => note.midi !== info.midi && Math.abs(note.midi - info.midi) <= 2)) return drop("near_structural_overlap", "forbidden_doubling_drops");
+  if (info.fourthAboveBass && !options.allowFourthAboveBass && !info.preparedSuspension) return drop("fourth_above_bass_without_context", "fourth_above_bass_drops");
+  if (info.secondInversionRootAsFourth && !options.allowSecondInversionRootSupport) return drop("second_inversion_fourth_emphasis", "fourth_above_bass_drops");
+  if (options.maxSimultaneousNotes && sonority.notes.length + 1 > options.maxSimultaneousNotes) return drop("too_many_simultaneous_notes", "forbidden_doubling_drops");
+  if (sonority.notes.some((note) => note.midi === info.midi)) return drop("exact_structural_overlap", "forbidden_doubling_drops");
+  if (options.lanePrevious && Array.isArray(options.structuralPreviousSnapshot) && Array.isArray(options.structuralCurrentSnapshot)) {
+    for (let i = 0; i < options.structuralCurrentSnapshot.length; i += 1) {
+      if (wouldCreateParallelPerfect(candidate, options.lanePrevious, options.structuralPreviousSnapshot[i], options.structuralCurrentSnapshot[i])) {
+        return drop("parallel_or_direct_perfect", "parallel_gate_drops");
+      }
+    }
+  }
+  return { ok: true, reason: "accepted", functionInfo: info, sonority, counters };
+}
+
+function emptyBloomArrangementSummary() {
+  return {
+    version: "keyboard_bloom_v1",
+    active: false,
+    pressure_events_affected: 0,
+    keyboard_bloom_status: "off",
+    support_events_added: 0,
+    support_events_dropped: 0,
+    parallel_gate_drops: 0,
+    fourth_above_bass_drops: 0,
+    low_mud_drops: 0,
+    forbidden_doubling_drops: 0,
+    candidate_sites: 0,
+    events_by_lane: Object.fromEntries(BLOOM_LANES.map((lane) => [lane, 0])),
+    dropped_by_reason: {},
+    sections: [],
+  };
+}
+
+function addBloomCounters(summary, counters) {
+  Object.entries(counters || {}).forEach(([key, value]) => {
+    if (key in summary) summary[key] += value;
+  });
+}
+
+function bloomFunctionRoleForOffset(offset, section, mode = null) {
+  const modeInfo = sectionModeInfo(section, mode);
+  const pc = mod(offset, 12);
+  if (pc === 0) return "root";
+  if (pc === 7) return "fifth";
+  if (pc === modeThirdOffset(modeInfo)) return "third";
+  if (pc === 10 || pc === 11) return "seventh";
+  return "modal_colour";
+}
+
+function bloomPitchCandidate(offset, section, settings, lane, preferMidi, meta = {}) {
+  const [low, high] = BLOOM_LANE_RANGES[lane] || [36, 96];
+  const literalPc = mod(noteToPc(section.key) + offset, 12);
+  const midi = nearestMidiForPc(literalPc, low, high, preferMidi);
+  return {
+    ...decorateResolvedPitch({ midi, symbolicOffset: mod(offset, 12), literalPc, score: 0 }, settings, literalPc),
+    lane,
+    supportRole: meta.supportRole || lane,
+    functionRole: meta.functionRole || bloomFunctionRoleForOffset(offset, section),
+  };
+}
+
+function bloomSitesForSection(section, sectionIndex, settings, pressure, spread, lift) {
+  const steps = Math.max(1, section.bars * section.numerator);
+  const pulse = section.barTicks / section.numerator;
+  const sectionEnd = section.startTick + section.bars * section.barTicks;
+  const siteMap = new Map();
+  const add = (step, kind) => {
+    const safeStep = clamp(Math.round(step), 0, steps - 1);
+    const tick = section.startTick + safeStep * pulse;
+    siteMap.set(`${safeStep}:${kind}`, { step: safeStep, tick, kind });
+  };
+
+  add(0, "section_start");
+  add(steps - 1, "cadence");
+  if (pressure >= BLOOM_PRESSURE_FULL) {
+    const spacingBars = spread >= 0.72 ? 2 : 3;
+    for (let bar = spacingBars; bar < section.bars - 1; bar += spacingBars) {
+      add(bar * section.numerator, "strong_beat");
+    }
+    const liftBias = Math.round(lift * section.numerator);
+    add(Math.floor(steps * 0.62) + liftBias, "phrase_peak");
+  }
+
+  const maxSites = pressure >= BLOOM_PRESSURE_FULL
+    ? clamp(Math.round(2 + section.bars * (0.2 + spread * 0.22)), 2, 8)
+    : 2;
+  return [...siteMap.values()]
+    .filter((site) => site.tick < sectionEnd)
+    .sort((a, b) => a.tick - b.tick || a.kind.localeCompare(b.kind))
+    .slice(0, maxSites);
+}
+
+function bloomBassAnchorCandidate(sonority, section, settings, expression) {
+  if (!sonority.bass) return null;
+  let offset = sonority.inversion === "second_inversion" ? sonority.fifthOffset : sonority.rootOffset;
+  if (sonority.inversion === "ambiguous_modal" && [0, 7].includes(sonority.bassOffset)) offset = sonority.bassOffset;
+  const preferShift = expression.registerSpread >= 0.72 && expression.voicingLift < 0.35 ? -12 : 12;
+  const prefer = clamp(sonority.bass.midi + preferShift, BLOOM_LANE_RANGES.bloom_bass_anchor[0], BLOOM_LANE_RANGES.bloom_bass_anchor[1]);
+  return bloomPitchCandidate(offset, section, settings, "bloom_bass_anchor", prefer, { supportRole: "bass_anchor" });
+}
+
+function bloomShimmerCandidate(sonority, section, settings, expression, site) {
+  const rootBias = site.kind === "cadence" || sonority.inversion === "first_inversion" ? 0.72 : 0.56;
+  const unit = hashUnit(settings.seed, "keyboard-bloom-shimmer", section.startTick, site.tick, section.key, section.mode);
+  const offset = unit < rootBias ? 0 : 7;
+  const prefer = clamp(78 + Math.round(expression.voicingLift * 10 + expression.registerSpread * 6), BLOOM_LANE_RANGES.bloom_shimmer[0], BLOOM_LANE_RANGES.bloom_shimmer[1]);
+  return bloomPitchCandidate(offset, section, settings, "bloom_shimmer", prefer, { supportRole: "high_shimmer" });
+}
+
+function bloomOctaveEchoCandidate(sonority, section, settings, expression) {
+  const top = sonority.notes[sonority.notes.length - 1];
+  if (!top || top.voice !== "soprano") return null;
+  const modeInfo = sectionModeInfo(section);
+  if (!modeInfo.stable?.map((offset) => mod(offset, 12)).includes(mod(top.symbolicOffset, 12))) return null;
+  const prefer = top.midi + 12;
+  if (prefer > BLOOM_LANE_RANGES.bloom_octave_echo[1]) return null;
+  return bloomPitchCandidate(top.symbolicOffset, section, settings, "bloom_octave_echo", prefer, { supportRole: "octave_echo", functionRole: bloomFunctionRoleForOffset(top.symbolicOffset, section) });
+}
+
+function bloomCandidatesForSite(sonority, section, settings, expression, site) {
+  const pressure = expression.pressureDensity ?? 0;
+  const spread = expression.registerSpread;
+  const lift = expression.voicingLift;
+  const candidates = [];
+  const allowBass = spread >= 0.42 || lift < -0.18;
+  const allowShimmer = spread >= 0.28 || lift > 0.08;
+  const allowEcho = pressure >= 0.9 && spread >= 0.72 && lift >= -0.25 && (site.kind === "cadence" || site.kind === "phrase_peak");
+
+  const bass = allowBass ? bloomBassAnchorCandidate(sonority, section, settings, expression) : null;
+  const shimmer = allowShimmer ? bloomShimmerCandidate(sonority, section, settings, expression, site) : null;
+  const echo = allowEcho ? bloomOctaveEchoCandidate(sonority, section, settings, expression) : null;
+  const order = lift < -0.24
+    ? [bass, shimmer, echo]
+    : lift > 0.32
+      ? [shimmer, echo, bass]
+      : [bass, shimmer, echo];
+  order.filter(Boolean).forEach((candidate) => candidates.push(candidate));
+
+  if (pressure < BLOOM_PRESSURE_FULL) {
+    return candidates.filter((candidate) => candidate.lane === "bloom_bass_anchor" && (site.kind === "section_start" || site.kind === "cadence")).slice(0, 1);
+  }
+  return candidates;
+}
+
+function quantizedBloomDuration(rawDuration, maxDuration) {
+  const unit = PPQ / 4;
+  const quantized = Math.max(unit, Math.round(rawDuration / unit) * unit);
+  return Math.max(unit, Math.min(quantized, Math.max(unit, Math.floor(maxDuration / unit) * unit || unit)));
+}
+
+function makeBloomEvent(candidate, lane, site, duration, settings, section) {
+  const event = makeNoteEvent(candidate, lane, site.tick, duration, settings, {
+    startStep: site.step,
+    endStep: site.step + 1,
+    minDurationTicks: PPQ / 8,
+    bloomLane: lane,
+    supportRole: candidate.supportRole,
+    nonStructural: true,
+  });
+  return {
+    ...event,
+    bloomSite: site.kind,
+    phraseRole: "support",
+  };
+}
+
+function applySectionExpressionBloom(tracks, sectionMeta, settings, activeVoices) {
+  const summary = emptyBloomArrangementSummary();
+  const structuralByVoice = Object.fromEntries(activeVoices.map((voice) => [
+    voice,
+    (tracks[voice]?.events || []).map(scoreTimeEvent).sort((a, b) => a.tick - b.tick || b.duration - a.duration),
+  ]));
+  const laneEvents = Object.fromEntries(BLOOM_LANES.map((lane) => [lane, []]));
+  const previousByLane = Object.fromEntries(BLOOM_LANES.map((lane) => [lane, null]));
+  let previousStructuralSnapshot = null;
+
+  sectionMeta.forEach((section, sectionIndex) => {
+    const expression = normalizeSectionExpression(section.expression);
+    const pressure = expression.pressureDensity;
+    const sectionSummary = {
+      section: sectionIndex + 1,
+      pressure: pressure == null ? null : Number(pressure.toFixed(3)),
+      register_spread: Number(expression.registerSpread.toFixed(3)),
+      voicing_lift: Number(expression.voicingLift.toFixed(3)),
+      keyboard_bloom: Boolean(expression.keyboardBloom),
+      candidate_sites: 0,
+      support_events_added: 0,
+      support_events_dropped: 0,
+    };
+    if (pressure != null) summary.active = true;
+    if (!expression.keyboardBloom) {
+      if (pressure != null) summary.sections.push(sectionSummary);
+      return;
+    }
+    summary.active = true;
+    if (pressure == null || pressure < BLOOM_PRESSURE_MIN) {
+      summary.sections.push(sectionSummary);
+      return;
+    }
+
+    const sites = bloomSitesForSection(section, sectionIndex, settings, pressure, expression.registerSpread, expression.voicingLift);
+    summary.pressure_events_affected += sites.length;
+    summary.candidate_sites += sites.length;
+    sectionSummary.candidate_sites = sites.length;
+
+    sites.forEach((site) => {
+      const structuralSnapshot = snapshotAtTick(structuralByVoice, activeVoices, site.tick).filter(Boolean);
+      if (structuralSnapshot.length < 2) return;
+      const acceptedAtSite = [];
+      const sonority = classifyVerticalSonority(structuralSnapshot, section, section.mode);
+      const maxExtra = site.kind === "cadence" && sectionIndex === sectionMeta.length - 1 ? 3 : 2;
+      const duration = quantizedBloomDuration(
+        (section.barTicks / section.numerator) * (site.kind === "cadence" ? 1.1 : 0.72),
+        section.startTick + section.bars * section.barTicks - site.tick,
+      );
+      const candidates = bloomCandidatesForSite(sonority, section, settings, expression, site);
+
+      candidates.forEach((candidate) => {
+        if (acceptedAtSite.length >= maxExtra) return;
+        const lane = candidate.lane;
+        const previousLane = previousByLane[lane];
+        if (previousLane && previousLane.gridTick + previousLane.gridDuration > site.tick) {
+          summary.support_events_dropped += 1;
+          sectionSummary.support_events_dropped += 1;
+          summary.forbidden_doubling_drops += 1;
+          summary.dropped_by_reason.lane_overlap = (summary.dropped_by_reason.lane_overlap || 0) + 1;
+          return;
+        }
+        const expandedSnapshot = classifyVerticalSonority([...structuralSnapshot, ...acceptedAtSite], section, section.mode);
+        const result = evaluateSupportBloomCandidate(candidate, expandedSnapshot, section, section.mode, {
+          lanePrevious: previousLane,
+          structuralPreviousSnapshot: previousStructuralSnapshot,
+          structuralCurrentSnapshot: structuralSnapshot,
+          maxSimultaneousNotes: activeVoices.length + maxExtra,
+        });
+        if (!result.ok) {
+          summary.support_events_dropped += 1;
+          sectionSummary.support_events_dropped += 1;
+          summary.dropped_by_reason[result.reason] = (summary.dropped_by_reason[result.reason] || 0) + 1;
+          addBloomCounters(summary, result.counters);
+          return;
+        }
+        const event = makeBloomEvent(candidate, lane, site, duration, settings, section);
+        laneEvents[lane].push(event);
+        previousByLane[lane] = scoreTimeEvent(event);
+        acceptedAtSite.push({ ...event, voice: lane });
+        summary.support_events_added += 1;
+        sectionSummary.support_events_added += 1;
+        summary.events_by_lane[lane] += 1;
+      });
+      previousStructuralSnapshot = structuralSnapshot;
+    });
+    summary.sections.push(sectionSummary);
+  });
+
+  BLOOM_LANES.forEach((lane) => {
+    if (!laneEvents[lane].length) return;
+    tracks[lane] = {
+      name: BLOOM_LANE_LABELS[lane] || lane,
+      channel: Object.keys(tracks).length,
+      events: laneEvents[lane].sort((a, b) => a.tick - b.tick || a.midi - b.midi),
+    };
+  });
+
+  if (summary.support_events_added > 0) summary.keyboard_bloom_status = KEYBOARD_BLOOM_STATUS_ACTIVE;
+  else if (summary.sections.some((section) => section.keyboard_bloom)) summary.keyboard_bloom_status = KEYBOARD_BLOOM_STATUS_NO_SAFE_CANDIDATES;
+  return summary;
 }
 
 function sectionExpressionIsDefault(expression) {
@@ -5115,9 +5624,11 @@ function buildPiece(settings, randomSource = null) {
   const complexity = estimateComplexity(sectionMeta, settings.voices);
   const tempoTimeline = buildPerformanceTempoTimeline(sectionMeta, settings);
   applyPerformanceTiming(tracks, sectionMeta, settings, tempoTimeline, currentTick);
-  const velocitySummary = applyGravityVelocity(tracks, sectionMeta, settings);
-  const events = activeVoices.flatMap((voice) => tracks[voice].events.map((event) => ({ ...event, voice })));
-  const rhythmSummary = summarizeRhythm(settings, sectionMeta, events, subject, rhythmMaterial, currentTick);
+  const bloomSummary = applySectionExpressionBloom(tracks, sectionMeta, settings, activeVoices);
+  const velocitySummary = applyGravityVelocity(tracks, sectionMeta, settings, bloomSummary);
+  const events = Object.entries(tracks).flatMap(([voice, track]) => track.events.map((event) => ({ ...event, voice })));
+  const structuralEvents = activeVoices.flatMap((voice) => tracks[voice].events.map((event) => ({ ...event, voice })));
+  const rhythmSummary = summarizeRhythm(settings, sectionMeta, structuralEvents, subject, rhythmMaterial, currentTick);
   const serializationIssues = validateMidiSerializationInput(tracks, settings);
   let midiBytes = new Uint8Array();
   if (!serializationIssues.length) {
@@ -5130,9 +5641,9 @@ function buildPiece(settings, randomSource = null) {
   const audit = checkGeneratedPiece(settings, sectionMeta, events, midiBytes, currentTick, serializationIssues);
   const refrainSummary = summarizeRefrainState(refrainState);
   const dubGrooveSummary = summarizeDubGroove(settings, events, dubBassMemory);
-  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, rhythmSummary }, audit);
-  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, rhythmSummary, sweetness }, audit);
-  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, complexity, tempoTimeline, rhythmSummary, sweetness }, audit);
+  const sweetness = checkSweetness(settings, sectionMeta, events, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, bloomSummary, complexity, tempoTimeline, rhythmSummary }, audit);
+  const manifest = makeManifest(settings, sectionMeta, events, subject, { avoidedParallels, resolvedTendencies, rests, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, bloomSummary, complexity, tempoTimeline, rhythmSummary, sweetness }, audit);
+  const report = makeReport(settings, sectionMeta, subject, events, { avoidedParallels, resolvedTendencies, rests, reports, suspensionStats, fallbackStats, refrainSummary, fugueSummary, dubGrooveSummary, velocitySummary, bloomSummary, complexity, tempoTimeline, rhythmSummary, sweetness }, audit);
 
   return {
     settings,
@@ -6177,8 +6688,9 @@ function makeNoteEvent(note, voice, tick, duration, settings, meta = {}) {
   let midi = note.midi;
   let bend = null;
   let tunedFrequency = ratioFrequency;
+  const [low, high] = VOICE_RANGES[voice] || BLOOM_LANE_RANGES[voice] || [0, 127];
   if (settings.outputMode === "equal") {
-    midi = nearestMidiForPc(note.literalPc, VOICE_RANGES[voice][0], VOICE_RANGES[voice][1], note.midi);
+    midi = nearestMidiForPc(note.literalPc, low, high, note.midi);
     tunedFrequency = midiFrequency(midi);
   } else if (settings.outputMode === "bend") {
     midi = Math.round(69 + 12 * Math.log2(ratioFrequency / 440));
@@ -6204,6 +6716,9 @@ function makeNoteEvent(note, voice, tick, duration, settings, meta = {}) {
     rhythmSubdivisions: meta.rhythmSubdivisions || null,
     rhythmDurationUnits: meta.rhythmDurationUnits || null,
     rhythmLocalIndex: meta.rhythmLocalIndex ?? null,
+    supportRole: meta.supportRole || null,
+    bloomLane: meta.bloomLane || null,
+    nonStructural: Boolean(meta.nonStructural),
     grooveOffsetTicks: 0,
     grooveOffsetMsRequested: 0,
     grooveOffsetMsRealized: 0,
@@ -6383,7 +6898,7 @@ function velocityForPitch(midi) {
   return clamp(Math.round(92 + registerVelocityBalance(midi)), 1, 127);
 }
 
-function applyGravityVelocity(tracks, sectionMeta, settings) {
+function applyGravityVelocity(tracks, sectionMeta, settings, bloomSummary = null) {
   const profileId = velocityProfileId(settings);
   const profile = VELOCITY_PROFILES[profileId] || VELOCITY_PROFILES.calm;
   const refs = Object.entries(tracks)
@@ -6430,11 +6945,26 @@ function applyGravityVelocity(tracks, sectionMeta, settings) {
       velocity = clamp(velocity, previous - limit, previous + limit);
     }
     ref.event.velocity = clamp(Math.round(velocity), 1, 127);
+    if (ref.event.bloomLane) {
+      ref.event.velocity = bloomSupportVelocity(ref.event, sectionMeta, settings, ref.event.velocity);
+    }
     velocityByVoice[ref.voice] = ref.event.velocity;
   });
 
-  const expressionSummary = sectionExpressionVelocitySummary(sectionMeta, refs, profileId !== "flat");
+  const expressionSummary = sectionExpressionVelocitySummary(sectionMeta, refs, profileId !== "flat", bloomSummary);
   return velocitySummary(refs.map((ref) => ref.event.velocity), profileId, profile, settings, tempo, expressionSummary);
+}
+
+function bloomSupportVelocity(event, sectionMeta, settings, baseVelocity) {
+  const section = velocityEventLocation(event, sectionMeta).section || sectionMeta[0] || DEFAULT_SECTIONS[0];
+  const expression = normalizeSectionExpression(section.expression);
+  const pressure = expression.pressureDensity ?? 0.72;
+  const role = event.supportRole || event.bloomLane;
+  const roleBase = role === "bass_anchor" ? 56 : role === "octave_echo" ? 48 : 38;
+  const roleCeiling = role === "bass_anchor" ? 76 : role === "octave_echo" ? 64 : 54;
+  const pressureLift = Math.round(clamp(pressure, 0, 1) * (role === "bass_anchor" ? 12 : 9));
+  const velocity = Math.min(baseVelocity - 10, roleBase + pressureLift);
+  return clamp(Math.round(velocity), 24, roleCeiling);
 }
 
 function velocityComponentsForEvent(ref, previous, sectionMeta, settings, simultaneousStarts) {
@@ -6489,7 +7019,7 @@ function sectionExpressionVelocityOffset(section, location) {
   return clamp(offset, -9, 9);
 }
 
-function sectionExpressionVelocitySummary(sectionMeta, refs = [], velocityActive = true) {
+function sectionExpressionVelocitySummary(sectionMeta, refs = [], velocityActive = true, bloomSummary = null) {
   const sections = (sectionMeta || []).map((section, index) => {
     const expression = normalizeSectionExpression(section.expression);
     const active = [];
@@ -6510,26 +7040,48 @@ function sectionExpressionVelocitySummary(sectionMeta, refs = [], velocityActive
     const contour = section.expression.velocityContour;
     if (contour !== "natural") contours[contour] = (contours[contour] || 0) + 1;
   });
+  const pressureSections = activeSections
+    .filter((section) => section.expression.pressureDensity != null)
+    .map((section) => section.section);
+  const keyboardBloomSections = activeSections
+    .filter((section) => section.expression.keyboardBloom)
+    .map((section) => section.section);
+  const arrangement = bloomSummary || emptyBloomArrangementSummary();
   return {
     version: SECTION_EXPRESSION_VERSION,
     active_sections: activeSections.length,
     velocity_active: Boolean(velocityActive),
     velocity_events_shaped: velocityActive ? refs.filter((ref) => Number(ref.event.expressionVelocityOffset)).length : 0,
     velocity_contours: contours,
+    energy_contours: contours,
+    pressure_active_sections: pressureSections,
+    pressure_events_affected: arrangement.pressure_events_affected || 0,
     stored_only: {
-      register_spread: true,
-      voicing_lift: true,
-      pressure_density: true,
+      register_spread: arrangement.support_events_added === 0,
+      voicing_lift: arrangement.support_events_added === 0,
+      pressure_density: false,
+      keyboard_bloom: false,
     },
-    keyboard_bloom_sections: activeSections
-      .filter((section) => section.expression.keyboardBloom)
-      .map((section) => section.section),
-    keyboard_bloom_status: "saved_for_arranger_pass",
+    keyboard_bloom_sections: keyboardBloomSections,
+    keyboard_bloom_status: arrangement.keyboard_bloom_status || (keyboardBloomSections.length ? KEYBOARD_BLOOM_STATUS_STUB : "off"),
+    bloom_lanes: [...BLOOM_LANES],
+    bloom_lane_labels: { ...BLOOM_LANE_LABELS },
+    support_events_added: arrangement.support_events_added || 0,
+    support_events_dropped: arrangement.support_events_dropped || 0,
+    parallel_gate_drops: arrangement.parallel_gate_drops || 0,
+    fourth_above_bass_drops: arrangement.fourth_above_bass_drops || 0,
+    low_mud_drops: arrangement.low_mud_drops || 0,
+    forbidden_doubling_drops: arrangement.forbidden_doubling_drops || 0,
+    events_by_lane: arrangement.events_by_lane || Object.fromEntries(BLOOM_LANES.map((lane) => [lane, 0])),
+    dropped_by_reason: arrangement.dropped_by_reason || {},
+    candidate_sites: arrangement.candidate_sites || 0,
+    gravity_gate: "post_counterpoint_guarded_arranger_active",
     sections: activeSections.map((section) => ({
       section: section.section,
       active: section.active,
       ...section.expression,
     })),
+    arranger_sections: arrangement.sections || [],
   };
 }
 
@@ -7236,6 +7788,10 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       rhythm_transform: event.rhythmTransform,
       rhythm_subdivisions: event.rhythmSubdivisions,
       rhythm_duration_units: event.rhythmDurationUnits,
+      non_structural: Boolean(event.nonStructural || event.bloomLane),
+      support_role: event.supportRole || null,
+      bloom_lane: event.bloomLane || null,
+      bloom_site: event.bloomSite || null,
       retrograde_section: Boolean(event.retrogradeSection),
       section_direction: event.sectionDirection || 1,
       groove_role: event.grooveRole,
@@ -7289,10 +7845,18 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
       .map(([contour, count]) => `${SECTION_VELOCITY_CONTOURS[contour] || contour} x${count}`)
       .join(", ") || "Natural";
     const shaped = expression.velocity_active ? `${expression.velocity_events_shaped} velocity events shaped` : "velocity contours stored; fixed velocity is on";
-    const bloom = expression.keyboard_bloom_sections?.length
-      ? ` Keyboard Bloom is saved for section ${expression.keyboard_bloom_sections.join(", ")} for the next arranger pass.`
+    const pressure = expression.pressure_active_sections?.length
+      ? ` Pressure/Density is active in section ${expression.pressure_active_sections.join(", ")} across ${expression.pressure_events_affected || 0} Bloom candidate site(s).`
       : "";
-    lines.push(`Section Expression: ${expression.active_sections} active section(s); contours ${contours}; ${shaped}. Register width, voicing lift, pressure/density, and Keyboard Bloom are saved for the next arranger pass.${bloom}`);
+    const bloom = expression.keyboard_bloom_sections?.length
+      ? expression.support_events_added > 0
+        ? ` Keyboard Bloom added ${expression.support_events_added} guarded support note(s) in section ${expression.keyboard_bloom_sections.join(", ")}.`
+        : ` Keyboard Bloom was armed for section ${expression.keyboard_bloom_sections.join(", ")}, but the gravity guards found no safe support notes.`
+      : "";
+    const drops = (expression.support_events_dropped || expression.parallel_gate_drops || expression.fourth_above_bass_drops || expression.low_mud_drops || expression.forbidden_doubling_drops)
+      ? ` Gravity guards dropped ${expression.support_events_dropped} support candidate(s): parallel ${expression.parallel_gate_drops}, fourth-above-bass ${expression.fourth_above_bass_drops}, low mud ${expression.low_mud_drops}, forbidden doubling ${expression.forbidden_doubling_drops}.`
+      : "";
+    lines.push(`Section Expression: ${expression.active_sections} active section(s); contours ${contours}; ${shaped}. Keyboard Bloom is a post-counterpoint arranger layer; structural voices are unchanged.${pressure}${bloom}${drops}`);
   }
   if (settings.prepareProbeWav || settings.prepareTickerWav || settings.prepareCvWav) {
     const requested = [
@@ -7491,10 +8055,13 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     dubBassPulses: 0,
     rhythmStructuralEvents: 0,
     rhythmOffPulseAttacks: 0,
+    bloomSupportEvents: 0,
   };
   const activeVoices = activeVoiceLayout(settings.voices);
-  const byVoice = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
-  const byVoiceGrid = Object.fromEntries(activeVoices.map((voice) => [voice, []]));
+  const bloomVoices = BLOOM_LANES.filter((lane) => events.some((event) => event.voice === lane || event.bloomLane === lane));
+  const eventVoices = [...activeVoices, ...bloomVoices];
+  const byVoice = Object.fromEntries(eventVoices.map((voice) => [voice, []]));
+  const byVoiceGrid = Object.fromEntries(eventVoices.map((voice) => [voice, []]));
   const pushIssue = (message) => pushLimited(issues, message);
   const pushWarning = (message) => pushLimited(warnings, message);
   preflightIssues.forEach(pushIssue);
@@ -7510,7 +8077,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     const format = readUint16(midiBytes, 8);
     const trackCount = readUint16(midiBytes, 10);
     const division = readUint16(midiBytes, 12);
-    const expectedTracks = activeVoices.length + (settings.includeTempoMap ? 1 : 0);
+    const expectedTracks = activeVoices.length + bloomVoices.length + (settings.includeTempoMap ? 1 : 0);
     if (headerLength !== 6) pushIssue(`MIDI header length should be 6 bytes, got ${headerLength}.`);
     if (format !== 1) pushIssue(`MIDI format should be 1 for separate voice tracks, got ${format}.`);
     if (trackCount !== expectedTracks) pushIssue(`MIDI header track count should be ${expectedTracks}, got ${trackCount}.`);
@@ -7526,7 +8093,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
   if (expectedTotalTicks !== totalTicks) pushIssue(`Section duration mismatch: expected ${expectedTotalTicks} ticks, got ${totalTicks}.`);
 
   events.forEach((event) => {
-    const voiceRange = VOICE_RANGES[event.voice];
+    const voiceRange = VOICE_RANGES[event.voice] || BLOOM_LANE_RANGES[event.voice];
     if (!byVoice[event.voice]) {
       pushIssue(`Unexpected voice ${event.voice}.`);
       return;
@@ -7539,6 +8106,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     if (!Number.isInteger(event.gridDuration) || event.gridDuration <= 0) pushIssue(`${event.voice} has invalid structural duration ${event.gridDuration}.`);
     if (event.tick + event.duration > totalTicks) pushIssue(`${event.voice} note starting at ${describeTickLocation(event.tick, sectionMeta, settings)} extends past the piece end.`);
     if (event.structuralRhythm) summary.rhythmStructuralEvents += 1;
+    if (event.bloomLane || event.nonStructural) summary.bloomSupportEvents += 1;
     const structuralTick = event.gridTick ?? event.tick;
     const structuralDuration = event.gridDuration ?? event.duration;
     const intentionalRhythmGrid = event.structuralRhythm
@@ -7572,7 +8140,7 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     summary.rangeChecks += 1;
   });
 
-  activeVoices.forEach((voice) => {
+  eventVoices.forEach((voice) => {
     const voiceEvents = byVoice[voice].sort((a, b) => a.tick - b.tick || b.duration - a.duration);
     byVoiceGrid[voice].sort((a, b) => a.tick - b.tick || b.duration - a.duration);
     for (let i = 1; i < voiceEvents.length; i += 1) {

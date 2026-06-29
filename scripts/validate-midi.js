@@ -1588,6 +1588,7 @@ function runRhythmTests() {
 
 function runVelocityTests() {
   const context = makeAppContext();
+  context.validateMidiBytes = (bytes, options) => validateMidiBytes(Buffer.from(bytes), options);
   const results = vm.runInContext(`
     (() => {
       function velocitySettings(profile = "auto", seed = "velocity-test") {
@@ -1660,6 +1661,19 @@ function runVelocityTests() {
 
       function nonVelocitySignature(piece) {
         return JSON.stringify(piece.events.map((event) => ({
+          tick: event.tick,
+          duration: event.duration,
+          voice: event.voice,
+          midi: event.midi,
+          carrierMidi: event.carrierMidi,
+          symbolicOffset: event.symbolicOffset,
+          grooveRole: event.grooveRole,
+          grooveOffsetTicks: event.grooveOffsetTicks,
+        })));
+      }
+
+      function structuralNonVelocitySignature(piece) {
+        return JSON.stringify(piece.events.filter((event) => !event.bloomLane && !event.nonStructural).map((event) => ({
           tick: event.tick,
           duration: event.duration,
           voice: event.voice,
@@ -1748,6 +1762,85 @@ function runVelocityTests() {
       }));
       const naturalExpressionPiece = buildWithSettings(naturalSettings);
       const contourExpressionPiece = buildWithSettings(expressionSettings);
+      const pressureNullSettings = velocitySettings("auto", "velocity-expression");
+      pressureNullSettings.sections = structuredClone(DEFAULT_SECTIONS).slice(0, 3).map((section) => ({
+        ...section,
+        expression: { ...SECTION_EXPRESSION_DEFAULTS, pressureDensity: null },
+      }));
+      const pressureNullPiece = buildWithSettings(pressureNullSettings);
+      const bloomOffSettings = velocitySettings("auto", "velocity-expression");
+      bloomOffSettings.sections = structuredClone(DEFAULT_SECTIONS).slice(0, 3).map((section) => ({
+        ...section,
+        expression: { ...SECTION_EXPRESSION_DEFAULTS, keyboardBloom: false },
+      }));
+      const bloomOffPiece = buildWithSettings(bloomOffSettings);
+      const bloomOnSettings = velocitySettings("auto", "velocity-expression");
+      bloomOnSettings.sections = structuredClone(DEFAULT_SECTIONS).slice(0, 3).map((section, index) => ({
+        ...section,
+        expression: index === 0
+          ? { ...SECTION_EXPRESSION_DEFAULTS, pressureDensity: 0.92, registerSpread: 0.86, voicingLift: 0.28, keyboardBloom: true }
+          : { ...SECTION_EXPRESSION_DEFAULTS },
+      }));
+      const bloomOnPiece = buildWithSettings(bloomOnSettings);
+      const bloomOnMidi = validateMidiBytes(bloomOnPiece.midiBytes, {
+        expectedTracks: 1 + activeVoiceLayout(bloomOnPiece.settings.voices).length + Object.values(bloomOnPiece.manifest.section_expression?.events_by_lane || {}).filter(Boolean).length,
+        allowBendEvents: false,
+      });
+
+      const cMajorSection = { bars: 1, key: "C", mode: "major", meter: "4/4", cadence: "authentic" };
+      const rootPosition = classifyVerticalSonority([
+        { midi: 48, symbolicOffset: 0, voice: "bass" },
+        { midi: 52, symbolicOffset: 4, voice: "tenor" },
+        { midi: 55, symbolicOffset: 7, voice: "alto" },
+      ], cMajorSection, "major");
+      const firstInversion = classifyVerticalSonority([
+        { midi: 52, symbolicOffset: 4, voice: "bass" },
+        { midi: 55, symbolicOffset: 7, voice: "tenor" },
+        { midi: 60, symbolicOffset: 0, voice: "alto" },
+      ], cMajorSection, "major");
+      const secondInversion = classifyVerticalSonority([
+        { midi: 43, symbolicOffset: 7, voice: "bass" },
+        { midi: 48, symbolicOffset: 0, voice: "tenor" },
+        { midi: 52, symbolicOffset: 4, voice: "alto" },
+      ], cMajorSection, "major");
+      const firstInversionRootSupport = evaluateSupportBloomCandidate({ midi: 72, symbolicOffset: 0, functionRole: "root" }, firstInversion, cMajorSection, "major");
+      const leadingToneBass = classifyVerticalSonority([
+        { midi: 47, symbolicOffset: 11, voice: "bass" },
+        { midi: 50, symbolicOffset: 2, voice: "tenor" },
+        { midi: 55, symbolicOffset: 7, voice: "alto" },
+      ], cMajorSection, "major");
+      const leadingToneDoubling = evaluateSupportBloomCandidate({ midi: 59, symbolicOffset: 11 }, leadingToneBass, cMajorSection, "major");
+      const secondInversionBassSupport = evaluateSupportBloomCandidate({ midi: 55, symbolicOffset: 7, functionRole: "fifth" }, secondInversion, cMajorSection, "major");
+      const secondInversionFourth = evaluateSupportBloomCandidate({ midi: 60, symbolicOffset: 0, functionRole: "root" }, secondInversion, cMajorSection, "major");
+      const fourthOutsideContext = evaluateSupportBloomCandidate({ midi: 65, symbolicOffset: 5 }, rootPosition, cMajorSection, "major");
+      const friendlySixth = evaluateSupportBloomCandidate({ midi: 69, symbolicOffset: 9 }, rootPosition, cMajorSection, "major");
+      const friendlySixthInfo = classifyCandidateFunction({ midi: 69, symbolicOffset: 9 }, rootPosition, cMajorSection, "major");
+      const seventhSonority = classifyVerticalSonority([
+        { midi: 48, symbolicOffset: 0, voice: "bass" },
+        { midi: 52, symbolicOffset: 4, voice: "tenor" },
+        { midi: 55, symbolicOffset: 7, voice: "alto" },
+        { midi: 58, symbolicOffset: 10, voice: "soprano" },
+      ], cMajorSection, "major");
+      const seventhDoubling = evaluateSupportBloomCandidate({ midi: 70, symbolicOffset: 10, functionRole: "seventh" }, seventhSonority, cMajorSection, "major");
+      const leadingToneSupport = evaluateSupportBloomCandidate({ midi: 71, symbolicOffset: 11 }, rootPosition, cMajorSection, "major");
+      const lowThird = evaluateSupportBloomCandidate({ midi: 40, symbolicOffset: 4, functionRole: "third" }, rootPosition, cMajorSection, "major");
+      const octaveTrackingRejected = wouldCreateParallelPerfect(
+        { midi: 74, symbolicOffset: 2, lane: "bloom_octave_echo" },
+        { midi: 72, symbolicOffset: 0, lane: "bloom_octave_echo" },
+        { midi: 60, symbolicOffset: 0, voice: "soprano" },
+        { midi: 62, symbolicOffset: 2, voice: "soprano" },
+      );
+      const acceptedObliqueSupport = evaluateSupportBloomCandidate(
+        { midi: 69, symbolicOffset: 9 },
+        rootPosition,
+        cMajorSection,
+        "major",
+        {
+          lanePrevious: { midi: 67, symbolicOffset: 7 },
+          structuralPreviousSnapshot: [{ midi: 48, symbolicOffset: 0 }],
+          structuralCurrentSnapshot: [{ midi: 48, symbolicOffset: 0 }],
+        },
+      );
 
       const sectionMeta = [{ ...DEFAULT_SECTIONS[0], bars: 2, meter: "4/4", startTick: 0, barTicks: 1920, numerator: 4, denominator: 4 }];
       const registerTracks = syntheticTracks({
@@ -1844,6 +1937,89 @@ function runVelocityTests() {
             && contourExpressionPiece.manifest.section_expression?.active_sections === 1
             && contourExpressionPiece.manifest.section_expression?.velocity_events_shaped > 0
             && contourExpressionPiece.report.includes("Section Expression:"),
+        },
+        {
+          name: "pressure null preserves prior non-velocity signature",
+          ok: nonVelocitySignature(pressureNullPiece) === nonVelocitySignature(naturalExpressionPiece)
+            && pressureNullPiece.manifest.section_expression?.pressure_events_affected === 0,
+        },
+        {
+          name: "energy contour changes velocity only",
+          ok: nonVelocitySignature(contourExpressionPiece) === nonVelocitySignature(naturalExpressionPiece)
+            && contourExpressionPiece.manifest.section_expression?.energy_contours?.rise === 1,
+        },
+        {
+          name: "first inversion allows safe root-as-sixth support",
+          ok: firstInversion.inversion === "first_inversion"
+            && firstInversionRootSupport.ok
+            && firstInversionRootSupport.functionInfo.firstInversionRootAsSixth,
+        },
+        {
+          name: "first inversion does not double leading-tone bass",
+          ok: leadingToneDoubling.ok === false
+            && leadingToneDoubling.reason === "leading_tone_doubling",
+        },
+        {
+          name: "second inversion prefers bass support and rejects fourth-above-bass Bloom",
+          ok: secondInversion.inversion === "second_inversion"
+            && secondInversionBassSupport.ok
+            && secondInversionFourth.ok === false
+            && secondInversionFourth.counters.fourth_above_bass_drops === 1,
+        },
+        {
+          name: "fourth-above-bass candidate is rejected outside suspension context",
+          ok: fourthOutsideContext.ok === false
+            && fourthOutsideContext.reason === "fourth_above_bass_without_context",
+        },
+        {
+          name: "sixth consonance can be allowed without automatic doubling",
+          ok: friendlySixth.ok
+            && friendlySixthInfo.sixthAboveBass
+            && friendlySixthInfo.function === "modal_colour",
+        },
+        {
+          name: "seventh chord candidate does not double seventh",
+          ok: seventhDoubling.ok === false
+            && seventhDoubling.reason === "chordal_seventh_doubling",
+        },
+        {
+          name: "leading tone is never doubled by Bloom",
+          ok: leadingToneSupport.ok === false
+            && leadingToneSupport.reason === "leading_tone_doubling",
+        },
+        {
+          name: "low third below MIDI 48 is rejected",
+          ok: lowThird.ok === false
+            && lowThird.reason === "low_third_below_48",
+        },
+        {
+          name: "continuous octave echo tracking is rejected",
+          ok: octaveTrackingRejected === true,
+        },
+        {
+          name: "no accepted Bloom event creates consecutive fifths or octaves with structural voices",
+          ok: acceptedObliqueSupport.ok
+            && acceptedObliqueSupport.counters.parallel_gate_drops === 0,
+        },
+        {
+          name: "Keyboard Bloom off adds no Bloom events",
+          ok: bloomOffPiece.manifest.section_expression?.keyboard_bloom_status === "off"
+            && bloomOffPiece.manifest.section_expression?.support_events_added === 0
+            && nonVelocitySignature(bloomOffPiece) === nonVelocitySignature(naturalExpressionPiece),
+        },
+        {
+          name: "Keyboard Bloom on adds guarded non-structural support events",
+          ok: bloomOnPiece.manifest.section_expression?.keyboard_bloom_status === KEYBOARD_BLOOM_STATUS_ACTIVE
+            && bloomOnPiece.manifest.section_expression?.keyboard_bloom_sections?.includes(1)
+            && bloomOnPiece.manifest.section_expression?.support_events_added > 0
+            && bloomOnPiece.manifest.section_expression?.pressure_events_affected > 0
+            && bloomOnPiece.manifest.section_expression?.parallel_gate_drops >= 0
+            && bloomOnPiece.events.some((event) => event.bloomLane && event.nonStructural)
+            && bloomOnPiece.events.every((event) => !event.bloomLane || event.velocity < 80)
+            && structuralNonVelocitySignature(bloomOnPiece) === structuralNonVelocitySignature(naturalExpressionPiece)
+            && bloomOnPiece.report.includes("Keyboard Bloom added")
+            && bloomOnMidi.ok
+            && nonVelocitySignature(bloomOnPiece) !== nonVelocitySignature(naturalExpressionPiece),
         },
       ];
     })()
@@ -2610,7 +2786,6 @@ function runFugueTests() {
     && stylesCss.includes(".section-expression:not([open])")
     && stylesCss.includes(".section-expression-grid")
     && stylesCss.includes(".expression-piano-icon")
-    && stylesCss.includes(".expression-keyboard")
     && stylesCss.includes(".expression-bloom-check")
     && stylesCss.includes(".expression-scope-note")
     && stylesCss.includes("body.dub-mode .section-expression")
@@ -2650,8 +2825,13 @@ function runFugueTests() {
     && appJs.includes("data-expression-field=\"velocityContour\"")
     && appJs.includes("data-expression-field=\"keyboardBloom\"")
     && appJs.includes("Spread the section across the keyboard with bass anchors, octave echoes, and high shimmer.")
-    && appJs.includes("Velocity contour shapes MIDI in this build")
-    && appJs.includes("Expression Keyboard")
+    && appJs.includes("Velocity contour shapes MIDI dynamics")
+    && appJs.includes("function applySectionExpressionBloom(")
+    && appJs.includes("active_guarded_arranger")
+    && !appJs.includes("Expression Keyboard")
+    && appJs.includes("function classifyVerticalSonority(")
+    && appJs.includes("function evaluateSupportBloomCandidate(")
+    && appJs.includes("function wouldCreateParallelPerfect(")
     && appJs.includes("keyboard_bloom_sections")
     && appJs.includes("function sectionExpressionVelocityOffset(")
     && appJs.includes("section_expression")
@@ -2728,7 +2908,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=8')
     && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=122')
+    && indexHtml.includes('src/app.js?v=125')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
