@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=67">
+    <link rel="stylesheet" href="styles.css?v=68">
   </head>
   <body>
     <main class="shell">
@@ -255,20 +255,6 @@
                   <button class="toolbar-icon-button" id="pasteSectionButton" type="button" title="Paste after" aria-label="Paste after selected section">
                     <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4h6l1 2h2a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2l1-2Z"></path><path d="M9 12h6"></path><path d="M12 9v6"></path></svg>
                   </button>
-                  <label class="form-state-name-field">
-                    <span>State name</span>
-                    <input id="formStateNameInput" type="text" value="Fishtail form" autocomplete="off" spellcheck="false">
-                  </label>
-                  <button class="toolbar-icon-button" id="saveFormStateButton" type="button" title="Save state" aria-label="Save state">
-                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path><path d="M7 3v6h9"></path><path d="M7 21v-8h10v8"></path></svg>
-                  </button>
-                  <button class="toolbar-icon-button" id="loadFormStateButton" type="button" title="Load state" aria-label="Load state">
-                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 19V5a2 2 0 0 1 2-2h8l6 6v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path><path d="M14 3v6h6"></path><path d="M12 17V9"></path><path d="m8.5 12.5 3.5-3.5 3.5 3.5"></path></svg>
-                  </button>
-                  <input id="loadFormStateInput" type="file" accept="application/json,.json" hidden>
-                  <button class="toolbar-icon-button" id="clearFormStateButton" type="button" title="Clean state" aria-label="Clean state">
-                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m6 6 1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
-                  </button>
                 </div>
               </div>
               <div class="section-timeline" id="sectionTimeline" role="list" aria-label="Form sections"></div>
@@ -284,16 +270,69 @@
             <div class="panel-head">
               <h2>Generate</h2>
             </div>
-            <div class="action-buttons">
-              <button class="primary-button" id="generateButton" type="button">Generate + Save MIDI</button>
-              <button id="downloadProbeWavButton" type="button" disabled>Save Pulse WAV</button>
-              <button id="downloadTickerWavButton" type="button" disabled>Save Ticker WAV</button>
-              <button id="downloadMidiButton" type="button" disabled>Save MIDI Again</button>
-              <button id="downloadJsonButton" type="button" disabled>Save Project JSON</button>
-              <button id="downloadCvWavButton" type="button" disabled>Save CV ZIP</button>
-              <button class="notes-toggle-button" id="toggleNotesButton" type="button">Show Notes</button>
+            <div class="generate-strip">
+              <label class="project-name-field">
+                <span>Project name</span>
+                <input id="formStateNameInput" type="text" value="Fishtail project" autocomplete="off" spellcheck="false">
+              </label>
+              <button class="primary-button" id="generateButton" type="button">Generate</button>
             </div>
-            <p class="download-help">Generate + Save MIDI is the final step. The pulse and ticker save buttons render the reference pulse or ticker for the generated song, then save the WAV. Large audio exports show a size estimate before rendering.</p>
+            <details class="export-drawer">
+              <summary>
+                <span>Exports</span>
+                <span>Project, MIDI, WAV, CV, notes</span>
+              </summary>
+              <div class="export-drawer-body">
+                <div class="export-group" aria-label="Project actions">
+                  <span class="export-group-label">Project</span>
+                  <div class="export-icon-set">
+                    <button class="toolbar-icon-button" id="saveFormStateButton" type="button" title="Save project" aria-label="Save project">
+                      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path><path d="M7 3v6h9"></path><path d="M7 21v-8h10v8"></path></svg>
+                    </button>
+                    <button class="toolbar-icon-button" id="loadFormStateButton" type="button" title="Load project" aria-label="Load project">
+                      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 19V5a2 2 0 0 1 2-2h8l6 6v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path><path d="M14 3v6h6"></path><path d="M12 17V9"></path><path d="m8.5 12.5 3.5-3.5 3.5 3.5"></path></svg>
+                    </button>
+                    <input id="loadFormStateInput" type="file" accept="application/json,.json" hidden>
+                    <button class="toolbar-icon-button" id="clearFormStateButton" type="button" title="Clear project" aria-label="Clear project">
+                      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m6 6 1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="export-group" aria-label="File exports">
+                  <span class="export-group-label">Export</span>
+                  <div class="export-icon-set">
+                    <button class="toolbar-icon-button" id="downloadMidiButton" type="button" disabled title="Export MIDI" aria-label="Export MIDI">
+                      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 18V5l11-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="17" cy="16" r="3"></circle><path d="M9 9l11-2"></path></svg>
+                    </button>
+                    <button class="toolbar-icon-button" id="downloadProbeWavButton" type="button" disabled title="Export Pulse WAV" aria-label="Export Pulse WAV">
+                      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h2l2-5 4 10 3-7 2 2h3"></path></svg>
+                    </button>
+                    <button class="toolbar-icon-button" id="downloadTickerWavButton" type="button" disabled title="Export Ticker WAV" aria-label="Export Ticker WAV">
+                      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h3l2-4 4 8 2-4h5"></path><path d="M6 20V4"></path><path d="M18 20V4"></path></svg>
+                    </button>
+                    <button class="toolbar-icon-button" id="downloadCvWavButton" type="button" disabled title="Export CV ZIP" aria-label="Export CV ZIP">
+                      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 17V7"></path><path d="M8 17V7"></path><path d="M12 17V7"></path><path d="M16 17V7"></path><path d="M20 17V7"></path><path d="M4 12h16"></path></svg>
+                    </button>
+                    <button class="toolbar-icon-button" id="downloadJsonButton" type="button" disabled title="Export manifest JSON" aria-label="Export manifest JSON">
+                      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path><path d="m10 9-3 3 3 3"></path><path d="m14 9 3 3-3 3"></path></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="export-group" aria-label="Notes">
+                  <span class="export-group-label">Notes</span>
+                  <div class="export-icon-set">
+                    <button class="toolbar-icon-button notes-toggle-button" id="toggleNotesButton" type="button" title="Show generation notes" aria-label="Show generation notes">
+                      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 4h14v16H5z"></path><path d="M8 8h8"></path><path d="M8 12h8"></path><path d="M8 16h5"></path></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="midi-export-note">
+                <span>What Export MIDI delivers</span>
+                <p>Export MIDI saves Standard MIDI note events, plus tempo and time-signature data when Tempo Data is on. Equal Temperament MIDI follows the receiving synth tuning, usually A4 = 440; tune the synth to A4 = 432 to match the default A3 216 Hz pulse, or use Bend MIDI / Amy Dub Intonation for tuning-aware playback.</p>
+              </div>
+              <p class="download-help">Generate creates the piece. Export MIDI saves the music file using the project name, BPM, style, and seed. Save Project keeps the loadable Fishtail settings and form. Audio and CV exports render from the generated piece and may show a size estimate.</p>
+            </details>
           </section>
         </section>
 
@@ -302,7 +341,7 @@
             <h2>Generation Notes</h2>
             <span id="pieceLengthLabel">No piece yet</span>
           </div>
-          <pre id="reportOutput">Choose a form, roll the dice if you like, then press Generate + Save MIDI.</pre>
+          <pre id="reportOutput">Choose a form, roll the dice if you like, then press Generate.</pre>
         </section>
 
         <section class="help-modal" id="helpModal" hidden aria-labelledby="helpTitle" aria-modal="true" role="dialog">
@@ -327,7 +366,7 @@
               <section>
                 <h3>What It Does</h3>
                 <p>This is a browser-based imitation, invention, counterpoint, and Fishtail Fugue MIDI generator. It creates a structured piece from sections of bars, keys, modes, metres, cadences, voice-leading rules, breath/rest choices, and weighted randomness.</p>
-                <p>The generator aims for calm, coherent, harmonically pleasing material rather than completely wild note soup. It writes a MIDI file, a project JSON recipe, and generation notes with musical observations, form details, and kind little Gemma reassurances.</p>
+                <p>The generator aims for calm, coherent, harmonically pleasing material. It writes a MIDI file, a project JSON recipe, and generation notes with musical observations, form details, and kind little Gemma reassurances.</p>
               </section>
 
               <section>
@@ -335,8 +374,8 @@
                 <ol>
                   <li>Choose sections in Form: bars, key, mode, meter, cadence, role, and treatment.</li>
                   <li>Choose Imitation + Invention, Counterpoint, or Fishtail Fugue, then set voice count, pedal voices, breathing, density, and pitch mode.</li>
-                  <li>Press Generate + Save MIDI. The MIDI file should download automatically.</li>
-                  <li>Use Save Project JSON to keep the exact recipe and seed for later.</li>
+                  <li>Press Generate to make the piece, then open Exports and choose Export MIDI.</li>
+                  <li>Use Save Project to keep the form, pitch, tempo, and structure settings for later.</li>
                 </ol>
               </section>
 
@@ -346,7 +385,7 @@
                 <p><strong>Living Reference</strong> listens only after you press Listen for pitch. Play or sing one sustained monophonic note, then press Use stable pitch to freeze the recent pitch centre as Fishtail's exact reference. Capture anyway is there when the source is intentionally moving. The input is analysed locally through a silent graph; it is not monitored, recorded, uploaded, or saved with device identity.</p>
                 <p><strong>Metronome</strong> starts a louder pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. Rational swing moves from stroll to swagger; irrational swing adds stumble, with Lattice Safe, Hybrid Drift, and Living Drift feel modes. Swing starts straight by default; DUB mode sets a gentle strolling swing. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
                 <p>Plain Equal Temperament MIDI exports ordinary note numbers, so exact captured acoustic tuning depends on the receiving synth. Amy Dub Intonation, Bend MIDI, project JSON, Pulse WAV, and Fishtail's tempo/reference metadata preserve the captured relationship more directly.</p>
-                <p>Save Pulse WAV and Save Ticker WAV render optional mono 48 kHz / 24-bit stems for the generated song. Pulse WAV is a short first-two-bars reference tone; ticker WAV stays whole-piece and peak-normalized to -6 dBFS for DAW-friendly alignment. Prepare analogue CV ZIP renders the selected voice set as clock, 1V/oct pitch, gate, and calibration WAV files. Fishtail shows estimated file size and temporary render memory before audio export. The CV controls set voice package, first-60s / whole-short-piece duration, musical pulse / bar / 24 PPQN clock, full-scale volts, zero offset, gate polarity, and retrigger gap. Browser CV export defaults to one voice and the first 60 seconds for iPad memory safety. Pitch CV needs a DC-coupled interface or DAW CV utility; ordinary phone and headphone outputs usually will not preserve DC pitch voltage.</p>
+                <p>Export Pulse WAV and Export Ticker WAV render optional mono 48 kHz / 24-bit stems for the generated song. Pulse WAV is a short first-two-bars reference tone; ticker WAV stays whole-piece and peak-normalized to -6 dBFS for DAW-friendly alignment. Prepare analogue CV ZIP renders the selected voice set as clock, 1V/oct pitch, gate, and calibration WAV files. Fishtail shows estimated file size and temporary render memory before audio export. The CV controls set voice package, first-60s / whole-short-piece duration, musical pulse / bar / 24 PPQN clock, full-scale volts, zero offset, gate polarity, and retrigger gap. Browser CV export defaults to one voice and the first 60 seconds for iPad memory safety. Pitch CV needs a DC-coupled interface or DAW CV utility; ordinary phone and headphone outputs usually will not preserve DC pitch voltage.</p>
               </section>
 
               <section>
@@ -357,7 +396,7 @@
 
               <section>
                 <h3>Pitch Modes</h3>
-                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs. The voice tracks stay clean: note on/off events only, no program changes, no controller setup, and no track-name clutter. If Tempo map is on, a separate conductor track writes BPM and time signatures. The selected BPM is also shown in the downloaded filename.</p>
+                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs, but it does not retune the instrument. Fishtail's default reference is A3 = 216 Hz, which implies A4 = 432 Hz; most synths play ordinary MIDI at A4 = 440, so tune the synth to A4 = 432 if you want Equal MIDI to match the pulse. The voice tracks stay clean: note on/off events only, no program changes, no controller setup, and no track-name clutter. If Tempo Data is on, a separate conductor track writes BPM and time signatures. The selected BPM is also shown in the downloaded filename.</p>
                 <p><strong>Amy Dub Intonation</strong> is Amy McBride's experimental ratio-based dub tuning. Instead of dividing the octave into twelve equal steps, it maps chromatic slots to chosen ratios. It is designed to be run through Entonal or a similar retuner that can define these ratios. In retuner mode the MIDI notes are carrier keys: the note number may look ordinary or unusual, but the retuner turns that key into the intended ratio pitch.</p>
                 <p><strong>Amy Dub ratio pattern</strong>, chromatic from the selected root:</p>
                 <ul class="ratio-list">
@@ -652,6 +691,6 @@
     <script src="src/wav-export.js?v=8"></script>
     <script src="src/pitch-input.js?v=3"></script>
     <script src="src/random-router.js?v=1"></script>
-    <script src="src/app.js?v=109"></script>
+    <script src="src/app.js?v=110"></script>
   </body>
 </html>

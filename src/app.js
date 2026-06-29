@@ -5,7 +5,7 @@ const DEFAULT_A4_HZ = 432;
 const DEFAULT_REFERENCE_NOTE = "A3";
 const DEFAULT_REFERENCE_HZ = 216;
 const DEFAULT_TEMPO_DIVISOR = 216;
-const DEFAULT_FORM_STATE_NAME = "Fishtail form";
+const DEFAULT_FORM_STATE_NAME = "Fishtail project";
 const DEFAULT_RHYTHM_MOTION = 0.18;
 const REFERENCE_FINE_CENTS_MIN = -100;
 const REFERENCE_FINE_CENTS_MAX = 100;
@@ -1210,12 +1210,12 @@ function formStateFilenameSlug(name) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
-  return slug || "fishtail-form";
+  return slug || "fishtail-project";
 }
 
 function formStatePickerTypes() {
   return [{
-    description: "Fishtail form state",
+    description: "Fishtail project",
     accept: { "application/json": [".json"] },
   }];
 }
@@ -1230,7 +1230,7 @@ function formStateSnapshot(name = currentFormStateName()) {
   const selectedIndex = clampSelectedSectionIndex();
   const tempoDivisor = clamp(parseInt(els.tempoDivisorInput?.value, 10) || DEFAULT_TEMPO_DIVISOR, 1, 100000);
   return {
-    title: "amy_cin fishtail form state",
+    title: "amy_cin fishtail project",
     version: "form_state_v1",
     name,
     saved_at: new Date().toISOString(),
@@ -1355,50 +1355,17 @@ async function saveFormState() {
   const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
   const savedVia = await saveJsonBlobFromButton(blob, formStateSuggestedFilename(snapshot));
   if (els.statusLabel) {
-    if (savedVia === "picker") els.statusLabel.textContent = `Saved ${snapshot.name}`;
-    else if (savedVia === "cancelled") els.statusLabel.textContent = "Form state save cancelled";
-    else els.statusLabel.textContent = savedVia === "share" ? "Form state share opened" : "Form state save requested";
+    if (savedVia === "cancelled") els.statusLabel.textContent = "Project save cancelled";
+    else els.statusLabel.textContent = savedVia === "share" ? "Project share opened" : "Project save requested";
   }
 }
 
 async function saveJsonBlobFromButton(blob, filename) {
-  if (typeof window !== "undefined" && typeof window.showSaveFilePicker === "function") {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: formStatePickerTypes(),
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return "picker";
-    } catch (error) {
-      if (error?.name === "AbortError") return "cancelled";
-      console.warn("File save picker unavailable; falling back to download.", error);
-    }
-  }
   return saveBlobFromButton(blob, filename);
 }
 
 async function loadFormState() {
   if (state.generating || state.randomising) return;
-  if (typeof window !== "undefined" && typeof window.showOpenFilePicker === "function") {
-    try {
-      const [handle] = await window.showOpenFilePicker({
-        multiple: false,
-        types: formStatePickerTypes(),
-      });
-      if (!handle) return;
-      await loadFormStateFile(await handle.getFile());
-      return;
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        if (els.statusLabel) els.statusLabel.textContent = "Form state load cancelled";
-        return;
-      }
-      console.warn("File open picker unavailable; falling back to file input.", error);
-    }
-  }
   if (els.loadFormStateInput) {
     els.loadFormStateInput.value = "";
     els.loadFormStateInput.click();
@@ -1419,8 +1386,8 @@ async function loadFormStateFile(file) {
     const snapshot = JSON.parse(text);
     applyLoadedFormStateSnapshot(snapshot, file.name);
   } catch (error) {
-    console.warn("Could not load form state.", error);
-    if (els.statusLabel) els.statusLabel.textContent = `Load failed: ${error?.message || "invalid state file"}`;
+    console.warn("Could not load project.", error);
+    if (els.statusLabel) els.statusLabel.textContent = `Load failed: ${error?.message || "invalid project file"}`;
   }
 }
 
@@ -1545,7 +1512,7 @@ function applyLoadedPitch(pitch) {
 }
 
 function applyLoadedFormStateSnapshot(snapshot, sourceName = "") {
-  if (!snapshot || typeof snapshot !== "object") throw new Error("This is not a Fishtail state file.");
+  if (!snapshot || typeof snapshot !== "object") throw new Error("This is not a Fishtail project file.");
   const rawSections = loadedFormSections(snapshot);
   if (!rawSections) throw new Error("No form sections found.");
   const sections = rawSections.map((section, index) => normalizeSection(section, index));
@@ -3710,8 +3677,7 @@ async function generatePiece() {
     els.downloadMidiButton.disabled = fatalIssues;
     els.downloadJsonButton.disabled = false;
     if (!fatalIssues) {
-      saveMidiPiece(piece);
-      els.statusLabel.textContent = piece.audit.ok ? "MIDI checked + saved" : "Saved with notes";
+      els.statusLabel.textContent = piece.audit.ok ? "MIDI ready" : "Generated with notes";
       await prepareRequestedAudioExports(piece);
     } else {
       els.statusLabel.textContent = "MIDI blocked by checker";
@@ -7515,10 +7481,10 @@ async function downloadLast(kind) {
       return;
     }
     saveMidiPiece(state.lastPiece);
-    els.statusLabel.textContent = "MIDI save requested";
+    els.statusLabel.textContent = "MIDI export requested";
   } else if (kind === "json") {
-    downloadBlob(new Blob([JSON.stringify(state.lastPiece.manifest, null, 2)], { type: "application/json" }), "amy-cin-fishtail-generator.json");
-    els.statusLabel.textContent = "Settings save requested";
+    downloadBlob(new Blob([JSON.stringify(state.lastPiece.manifest, null, 2)], { type: "application/json" }), `${pieceFilenameBase(state.lastPiece)}-manifest.json`);
+    els.statusLabel.textContent = "Manifest export requested";
   } else if (kind === "probeWav") {
     await downloadAudioExport("probe");
   } else if (kind === "tickerWav") {
@@ -7526,8 +7492,8 @@ async function downloadLast(kind) {
   } else if (kind === "cvWav") {
     await downloadAudioExport("cv");
   } else {
-    downloadBlob(new Blob([state.lastPiece.report], { type: "text/plain" }), "amy-cin-fishtail-generation-notes.txt");
-    els.statusLabel.textContent = "Notes save requested";
+    downloadBlob(new Blob([state.lastPiece.report], { type: "text/plain" }), `${pieceFilenameBase(state.lastPiece)}-notes.txt`);
+    els.statusLabel.textContent = "Notes export requested";
   }
 }
 
@@ -7555,8 +7521,8 @@ function audioExportDescriptor(kind) {
   if (kind === "probe") {
     return {
       label: "Pulse WAV",
-      readyText: "Save Pulse WAV",
-      renderText: "Save Pulse WAV",
+      readyText: "Export Pulse WAV",
+      renderText: "Export Pulse WAV",
       renderingText: "Rendering Pulse WAV",
       renderer: FishtailWavExport.renderProbeWav,
     };
@@ -7564,19 +7530,26 @@ function audioExportDescriptor(kind) {
   if (kind === "ticker") {
     return {
       label: "Ticker WAV",
-      readyText: "Save Ticker WAV",
-      renderText: "Save Ticker WAV",
+      readyText: "Export Ticker WAV",
+      renderText: "Export Ticker WAV",
       renderingText: "Rendering Ticker WAV",
       renderer: FishtailWavExport.renderTickerWav,
     };
   }
   return {
     label: "CV ZIP",
-    readyText: "Save CV ZIP",
-    renderText: "Render + Save CV ZIP",
+    readyText: "Export CV ZIP",
+    renderText: "Render CV ZIP",
     renderingText: "Rendering CV ZIP",
     renderer: FishtailWavExport.renderCvZip,
   };
+}
+
+function setIconButtonLabel(button, label) {
+  if (!button) return;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.dataset.stateLabel = label;
 }
 
 function updateAudioExportButton(kind, canRender) {
@@ -7586,7 +7559,7 @@ function updateAudioExportButton(kind, canRender) {
   const ready = Boolean(state.lastAudioExports[kind]?.blob);
   const rendering = document.body.dataset.audioRendering === kind;
   button.disabled = state.generating || rendering || (!ready && !canRender);
-  button.textContent = rendering ? descriptor.renderingText : ready ? descriptor.readyText : descriptor.renderText;
+  setIconButtonLabel(button, rendering ? descriptor.renderingText : ready ? descriptor.readyText : descriptor.renderText);
 }
 
 function requestedAudioKindsForSettings(settings) {
@@ -7703,7 +7676,7 @@ function confirmAudioExportEstimate(kinds, options = {}) {
     "Large exports can take a while and may make smaller browsers reload the page.",
     "",
     options.action === "generation"
-      ? "OK = generate and render these files. Cancel = generate MIDI only."
+      ? "OK = generate and render these files. Cancel = generate the piece only."
       : "OK = render and save this file. Cancel = skip.",
   ];
   if (typeof window === "undefined" || typeof window.confirm !== "function") return true;
@@ -7770,7 +7743,7 @@ async function prepareRequestedAudioExports(piece) {
     piece.report = `${piece.report}\n\nAudio stems\n  ${lines.join("\n  ")}`;
     els.reportOutput.textContent = piece.report;
   }
-  els.statusLabel.textContent = rendered.length ? "Audio ready" : "MIDI saved";
+  els.statusLabel.textContent = rendered.length ? "Audio ready" : "MIDI ready";
 }
 
 function roundedFinite(value, places) {
@@ -7846,7 +7819,7 @@ async function downloadAudioExport(kind) {
 function toggleNotes() {
   const isHidden = els.notesPanel.hidden;
   els.notesPanel.hidden = !isHidden;
-  els.toggleNotesButton.textContent = isHidden ? "Hide Notes" : "Show Notes";
+  setIconButtonLabel(els.toggleNotesButton, isHidden ? "Hide generation notes" : "Show generation notes");
 }
 
 function openHelp() {
@@ -7886,10 +7859,15 @@ function closeCredits() {
 }
 
 function saveMidiPiece(piece) {
+  downloadBlob(new Blob([piece.midiBytes], { type: "audio/midi" }), `${pieceFilenameBase(piece)}.mid`);
+}
+
+function pieceFilenameBase(piece) {
   const seed = piece.settings.seed.slice(0, 8);
   const style = generationStyleSlug(piece.settings.generationStyle);
   const tempo = tempoFilenameSlug(piece.settings.tempo);
-  downloadBlob(new Blob([piece.midiBytes], { type: "audio/midi" }), `amy-cin-fishtail-${style}-${tempo}-${seed}.mid`);
+  const project = formStateFilenameSlug(currentFormStateName());
+  return `amy-cin-fishtail-${project}-${style}-${tempo}-${seed}`;
 }
 
 function tempoFilenameSlug(bpm) {

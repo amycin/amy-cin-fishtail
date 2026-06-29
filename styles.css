@@ -401,7 +401,10 @@ body.dub-mode .generator-core {
   background-size: 22px 22px, 22px 22px, auto, auto;
 }
 
-body.dub-mode .action-buttons,
+body.dub-mode .generate-strip,
+body.dub-mode .export-drawer summary,
+body.dub-mode .export-drawer-body,
+body.dub-mode .midi-export-note,
 body.dub-mode .download-help {
   background: rgba(0, 14, 6, 0.58);
 }
@@ -920,7 +923,8 @@ button:disabled {
   background: rgba(255, 239, 196, 0.78);
 }
 
-.form-state-name-field {
+.form-state-name-field,
+.project-name-field {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -937,12 +941,14 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.form-state-name-field span {
+.form-state-name-field span,
+.project-name-field span {
   flex: 0 0 auto;
   white-space: nowrap;
 }
 
-.form-state-name-field input {
+.form-state-name-field input,
+.project-name-field input {
   width: clamp(104px, 14vw, 170px);
   min-height: 26px;
   padding: 0 7px;
@@ -2073,22 +2079,145 @@ canvas {
   height: 100%;
 }
 
-.action-buttons {
+.generate-strip {
   position: relative;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(180px, 1fr) minmax(148px, auto);
+  align-items: stretch;
   gap: 8px;
   padding: 12px 12px 6px;
   background: linear-gradient(180deg, rgba(255, 248, 221, 0.62), rgba(255, 235, 178, 0.48));
 }
 
-.primary-button {
-  grid-column: 1 / -1;
+.generate-strip .project-name-field {
+  max-width: none;
+  min-height: 42px;
+  justify-content: space-between;
 }
 
-.notes-toggle-button {
-  grid-column: 1 / -1;
+.generate-strip .project-name-field input {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.generate-strip .primary-button {
+  min-height: 42px;
+}
+
+.export-drawer {
+  position: relative;
+  z-index: 3;
+  overflow: hidden;
+  background: rgba(255, 235, 178, 0.48);
+}
+
+.export-drawer summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 12px;
+  color: #6d3a22;
+  border-top: 1px solid rgba(192, 83, 42, 0.14);
+  background: rgba(255, 247, 216, 0.5);
+  cursor: pointer;
+  list-style: none;
+}
+
+.export-drawer summary::marker,
+.export-drawer summary::-webkit-details-marker {
+  display: none;
+  content: "";
+}
+
+.export-drawer summary::after {
+  content: "+";
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(184, 74, 42, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 252, 239, 0.58);
+  font-weight: 780;
+}
+
+.export-drawer[open] summary::after {
+  content: "-";
+}
+
+.export-drawer summary span:first-child {
+  font-weight: 760;
+}
+
+.export-drawer summary span:nth-child(2) {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  justify-self: end;
+  text-align: right;
+}
+
+.export-drawer-body {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.35fr) minmax(92px, 0.4fr);
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 235, 178, 0.38);
+}
+
+.export-group {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(184, 74, 42, 0.16);
+  border-radius: 6px;
+  background: rgba(255, 252, 239, 0.5);
+}
+
+.export-group-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.export-icon-set {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.midi-export-note {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(192, 83, 42, 0.14);
+  background: rgba(255, 247, 216, 0.42);
+}
+
+.midi-export-note span {
+  color: #6d3a22;
+  font-size: 0.7rem;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.midi-export-note p {
+  max-width: 78ch;
+  margin: 0;
+  color: #5c4034;
+  font-size: 0.76rem;
+  line-height: 1.38;
 }
 
 .download-help {
@@ -2558,6 +2687,18 @@ pre {
     flex: 1 1 auto;
   }
 
+  .project-name-field {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    max-width: none;
+  }
+
+  .project-name-field input {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
   .section-timeline {
     min-height: 0;
   }
@@ -2590,8 +2731,17 @@ pre {
   .living-selects,
   .living-readouts,
   .cv-settings,
-  .action-buttons {
+  .generate-strip,
+  .export-drawer-body {
     grid-template-columns: 1fr;
+  }
+
+  .export-group {
+    grid-template-columns: 1fr;
+  }
+
+  .export-icon-set {
+    justify-content: flex-start;
   }
 
   .probe-pitch-field,
