@@ -3204,6 +3204,27 @@ button.primary-button.is-generating {
   width: min(860px, 100%);
 }
 
+.guide-card {
+  width: min(1120px, 100%);
+  height: min(88vh, 920px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.guide-frame-wrap {
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.guide-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff7d8;
+}
+
 .settings-body {
   gap: 12px;
 }

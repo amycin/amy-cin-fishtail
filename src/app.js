@@ -665,6 +665,7 @@ const state = {
   visualLightGlideUntil: 0,
   rangeResetTap: null,
   rangeResetSuppressUntil: 0,
+  returnToSettingsAfterModal: false,
 };
 
 window.fishtailApp = { state, version: "v0" };
@@ -808,6 +809,9 @@ function bindElements() {
     "downloadTickerWavButton",
     "downloadCvWavButton",
     "toggleNotesButton",
+    "guideButton",
+    "guideModal",
+    "closeGuideButton",
     "helpButton",
     "helpModal",
     "closeHelpButton",
@@ -966,6 +970,11 @@ function bindEvents() {
     updateReferenceInputStatus(state.inputReference.stream ? "Listening" : "Permission needed");
   });
   els.toggleNotesButton.addEventListener("click", toggleNotes);
+  els.guideButton.addEventListener("click", openGuide);
+  els.closeGuideButton.addEventListener("click", closeGuide);
+  els.guideModal.addEventListener("click", (event) => {
+    if (event.target === els.guideModal) closeGuide();
+  });
   els.helpButton.addEventListener("click", openHelp);
   els.closeHelpButton.addEventListener("click", closeHelp);
   els.helpModal.addEventListener("click", (event) => {
@@ -983,9 +992,12 @@ function bindEvents() {
   });
   document.addEventListener("keydown", (event) => {
     if (handleFormHistoryShortcut(event)) return;
-    if (event.key === "Escape" && !els.helpModal.hidden) closeHelp();
-    if (event.key === "Escape" && !els.settingsModal.hidden) closeSettings();
-    if (event.key === "Escape" && !els.creditsModal.hidden) closeCredits();
+    if (event.key === "Escape") {
+      if (!els.guideModal.hidden) return closeGuide();
+      if (!els.helpModal.hidden) return closeHelp();
+      if (!els.creditsModal.hidden) return closeCredits();
+      if (!els.settingsModal.hidden) return closeSettings();
+    }
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && (state.inputReference.stream || state.inputReference.starting)) {
@@ -8335,7 +8347,38 @@ function toggleNotes() {
   setIconButtonLabel(els.toggleNotesButton, isHidden ? "Hide generation notes" : "Show generation notes");
 }
 
+function rememberSettingsReturn() {
+  state.returnToSettingsAfterModal = Boolean(els.settingsModal && !els.settingsModal.hidden);
+}
+
+function restoreSettingsAfterChildModal(fallbackControl) {
+  if (state.returnToSettingsAfterModal) {
+    state.returnToSettingsAfterModal = false;
+    els.settingsModal.hidden = false;
+    fallbackControl?.focus();
+    return true;
+  }
+  return false;
+}
+
+function openGuide() {
+  rememberSettingsReturn();
+  els.helpModal.hidden = true;
+  els.creditsModal.hidden = true;
+  els.settingsModal.hidden = true;
+  els.guideModal.hidden = false;
+  els.closeGuideButton.focus();
+}
+
+function closeGuide() {
+  els.guideModal.hidden = true;
+  if (restoreSettingsAfterChildModal(els.guideButton)) return;
+  focusVisibleControl(els.guideButton);
+}
+
 function openHelp() {
+  rememberSettingsReturn();
+  els.guideModal.hidden = true;
   els.creditsModal.hidden = true;
   els.settingsModal.hidden = true;
   els.helpModal.hidden = false;
@@ -8352,10 +8395,13 @@ function focusVisibleControl(control, fallback = els.settingsButton) {
 
 function closeHelp() {
   els.helpModal.hidden = true;
+  if (restoreSettingsAfterChildModal(els.helpButton)) return;
   focusVisibleControl(els.helpButton);
 }
 
 function openSettings() {
+  state.returnToSettingsAfterModal = false;
+  els.guideModal.hidden = true;
   els.helpModal.hidden = true;
   els.creditsModal.hidden = true;
   els.settingsModal.hidden = false;
@@ -8363,11 +8409,14 @@ function openSettings() {
 }
 
 function closeSettings() {
+  state.returnToSettingsAfterModal = false;
   els.settingsModal.hidden = true;
   els.settingsButton.focus();
 }
 
 function openCredits() {
+  rememberSettingsReturn();
+  els.guideModal.hidden = true;
   els.helpModal.hidden = true;
   els.settingsModal.hidden = true;
   els.creditsModal.hidden = false;
@@ -8376,6 +8425,7 @@ function openCredits() {
 
 function closeCredits() {
   els.creditsModal.hidden = true;
+  if (restoreSettingsAfterChildModal(els.creditsButton)) return;
   focusVisibleControl(els.creditsButton);
 }
 

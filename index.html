@@ -350,7 +350,7 @@
                 <p class="eyebrow">amy_cin Fishtail generator</p>
                 <h2 id="helpTitle">HELP!</h2>
               </div>
-              <button class="icon-button" id="closeHelpButton" type="button" title="Close help" aria-label="Close help">x</button>
+              <button class="icon-button" id="closeHelpButton" type="button" title="Close help" aria-label="Close help">&times;</button>
             </div>
             <div class="help-body">
               <section class="help-guide-callout">
@@ -452,7 +452,7 @@
                 <p class="eyebrow">amy_cin Fishtail generator</p>
                 <h2 id="settingsTitle">Settings</h2>
               </div>
-              <button class="icon-button" id="closeSettingsButton" type="button" title="Close settings" aria-label="Close settings">x</button>
+              <button class="icon-button" id="closeSettingsButton" type="button" title="Close settings" aria-label="Close settings">&times;</button>
             </div>
             <div class="help-body settings-body">
               <section class="settings-app-menu">
@@ -462,7 +462,7 @@
                 </div>
                 <div class="settings-action-row" aria-label="Application menu">
                   <a class="feedback-link settings-action-link" href="mailto:amy_cin@icloud.com?subject=Fishtail%20MIDI%20Generator%20feedback">Feedback</a>
-                  <a class="feedback-link settings-action-link" href="docs/FISHTAIL_USER_GUIDE.html" target="_blank" rel="noopener">Guide</a>
+                  <button class="feedback-link settings-action-link help-link" id="guideButton" type="button">Guide</button>
                   <button class="feedback-link settings-action-link help-link" id="helpButton" type="button">HELP!</button>
                   <button class="feedback-link settings-action-link help-link" id="creditsButton" type="button">Credits</button>
                   <label class="switch-label dub-switch settings-dub-switch" title="Dub Gravity: grounded bass, offbeat skank, roomier rule gravity">
@@ -651,7 +651,7 @@
                 <p class="eyebrow">amy_cin Fishtail generator</p>
                 <h2 id="creditsTitle">Credits</h2>
               </div>
-              <button class="icon-button" id="closeCreditsButton" type="button" title="Close credits" aria-label="Close credits">x</button>
+              <button class="icon-button" id="closeCreditsButton" type="button" title="Close credits" aria-label="Close credits">&times;</button>
             </div>
             <div class="help-body">
               <section>
@@ -702,6 +702,21 @@
             </div>
           </div>
         </section>
+
+        <section class="help-modal" id="guideModal" hidden aria-labelledby="guideTitle" aria-modal="true" role="dialog">
+          <div class="help-card guide-card">
+            <div class="help-head">
+              <div>
+                <p class="eyebrow">Fishtail MIDI Generator</p>
+                <h2 id="guideTitle">Guide</h2>
+              </div>
+              <button class="icon-button" id="closeGuideButton" type="button" title="Close guide" aria-label="Close guide">&times;</button>
+            </div>
+            <div class="guide-frame-wrap">
+              <iframe class="guide-frame" src="docs/FISHTAIL_USER_GUIDE.html" title="Fishtail MIDI Generator user guide"></iframe>
+            </div>
+          </div>
+        </section>
       </section>
     </main>
 
@@ -710,6 +725,6 @@
     <script src="src/wav-export.js?v=8"></script>
     <script src="src/pitch-input.js?v=3"></script>
     <script src="src/random-router.js?v=1"></script>
-    <script src="src/app.js?v=118"></script>
+    <script src="src/app.js?v=119"></script>
   </body>
 </html>
