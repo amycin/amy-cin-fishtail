@@ -361,6 +361,44 @@ function runStabilityTests() {
         return { activeDelay, idleDelay };
       })();
 
+      const visualColorGlideAudit = (() => {
+        function colorDistance(a, b) {
+          return Math.hypot(...a.map((channel, index) => channel - b[index]));
+        }
+        els.referenceFreqInput = { value: "216.00" };
+        els.outputModeInput = { value: "equal" };
+        els.dubModeInput = { checked: false };
+        state.referenceExactHz = null;
+        state.visualLightPalette = null;
+        state.visualLightLastUpdatedAt = 0;
+        state.visualLightGlideUntil = 0;
+
+        const start = updateVisualLightPalette(false, { now: 1000 });
+        els.referenceFreqInput.value = "243.00";
+        state.referenceExactHz = null;
+        const target = buildVisualLightPalette(false);
+        beginVisualLightGlide(1016);
+        const immediate = updateVisualLightPalette(false, { now: 1016 });
+        let mid = immediate;
+        for (let now = 1116; now <= 1516; now += 100) mid = updateVisualLightPalette(false, { now });
+        let late = mid;
+        for (let now = 1616; now <= 2516; now += 100) late = updateVisualLightPalette(false, { now });
+
+        const startDistance = colorDistance(start.colors.torus, target.colors.torus);
+        const immediateDistance = colorDistance(immediate.colors.torus, target.colors.torus);
+        const midDistance = colorDistance(mid.colors.torus, target.colors.torus);
+        const lateDistance = colorDistance(late.colors.torus, target.colors.torus);
+        return {
+          constants: VISUAL_LIGHT_PITCH_GLIDE_MS === 1500
+            && VISUAL_LIGHT_IDLE_GLIDE_MS === 820
+            && VISUAL_LIGHT_MAX_FRAME_MS === 120,
+          targetMoved: startDistance > 0.08,
+          immediateInterpolates: immediateDistance > 0.02 && immediateDistance < startDistance,
+          monotonicGlide: lateDistance < midDistance && midDistance < immediateDistance,
+          stillGlidingAfterImmediate: state.visualLightGlideUntil >= 2516,
+        };
+      })();
+
       const generationDelayRemoved = typeof generationRitualMinimumMs === "undefined"
         && typeof generationRitualStatus === "undefined"
         && typeof GENERATE_MIN_MS === "undefined"
@@ -826,6 +864,14 @@ function runStabilityTests() {
           name: "visual high refresh display can use native active frames",
           ok: highRefreshVisual.activeDelay === 0
             && highRefreshVisual.idleDelay === CORE_HIGH_REFRESH_IDLE_FRAME_MS,
+        },
+        {
+          name: "visual pitch colours glide instead of snapping",
+          ok: visualColorGlideAudit.constants
+            && visualColorGlideAudit.targetMoved
+            && visualColorGlideAudit.immediateInterpolates
+            && visualColorGlideAudit.monotonicGlide
+            && visualColorGlideAudit.stillGlidingAfterImmediate,
         },
         {
           name: "generation flow has no artificial ritual delay",
@@ -2333,6 +2379,8 @@ function runFugueTests() {
   const timelineUiOk = indexHtml.includes('class="form-timeline-shell"')
     && indexHtml.includes('id="sectionTimeline" role="list"')
     && !indexHtml.includes('id="timelineStatus"')
+    && indexHtml.includes('id="undoFormButton"')
+    && indexHtml.includes('id="redoFormButton"')
     && indexHtml.includes('id="moveSectionLeftButton"')
     && indexHtml.includes('id="copySectionButton"')
     && indexHtml.includes('id="duplicateSectionButton"')
@@ -2370,15 +2418,34 @@ function runFugueTests() {
     && appJs.includes("function requestDeleteSection(")
     && appJs.includes("function beginTimelineResize(")
     && appJs.includes("function resetRangeControl(")
+    && appJs.includes("const FORM_HISTORY_LIMIT = 256")
+    && appJs.includes("function undoFormEdit()")
+    && appJs.includes("function redoFormEdit()")
+    && appJs.includes("function handleFormHistoryShortcut(")
+    && appJs.includes("const RANGE_RESET_DOUBLE_CLICK_MS = 360")
+    && appJs.includes("rangeResetSuppressUntil")
+    && appJs.includes("const SECTION_MAX_ABS_BARS = 64")
+    && appJs.includes("function sectionGenerationShape(")
+    && appJs.includes("function retrogradeSectionEvents(")
+    && appJs.includes("negative_time")
+    && appJs.includes("negativeTimeLine(")
+    && appJs.includes("const VISUAL_LIGHT_PITCH_GLIDE_MS = 1500")
+    && appJs.includes("function beginVisualLightGlide(")
+    && appJs.includes("function visualLightGlideAlpha(")
+    && appJs.includes("renderTorusFrame(width, height, phase, visualPalette)")
+    && stylesCss.includes(".timeline-item.is-backward")
+    && appJs.includes("function dubSpectralRgb(")
+    && appJs.includes("function updateSelectedSectionEditorColor(")
+    && stylesCss.includes("body.dub-mode .section-timeline")
     && appJs.includes("version: \"form_state_v1\"")
     && appJs.includes("function sectionVisualRgb(")
     && appJs.includes("visualTeardropRgbForWavelength(foldedLightWavelengthNm(frequency))")
-    && appJs.includes("renderSectionTimeline();\n  requestCoreFrame(true);")
+    && appJs.includes("renderSectionTimeline();\n  updateSelectedSectionEditorColor();\n  requestCoreFrame(true);")
     && appJs.includes("const normalized = state.sections[index];")
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=56"')
+    && indexHtml.includes('href="styles.css?v=59"')
     && indexHtml.includes('src/tempo-lattice.js?v=4')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
@@ -2394,7 +2461,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=7')
     && indexHtml.includes('src/wav-export.js?v=7')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=97')
+    && indexHtml.includes('src/app.js?v=103')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -2635,6 +2702,53 @@ function runFugueTests() {
         return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
       }
 
+      function buildNegativeTimePiece() {
+        const settings = {
+          seed: "validation-negative-time",
+          voices: 4,
+          tempo: 60,
+          includeTempoMap: true,
+          tempoLatticeEnabled: true,
+          rationalSwing: 0.28,
+          irrationalSwing: 0.06,
+          irrationalFeelMode: FishtailTempoLattice.IRRATIONAL_FEEL_MODES.LIVING_DRIFT,
+          referenceNote: "A3",
+          referenceMidi: 57,
+          referenceHz: 216,
+          referenceAnchorA4Hz: 432,
+          tempoDivisor: 216,
+          breathing: 0.58,
+          density: 0.32,
+          rhythmMotion: 0.34,
+          strangeness: 0.16,
+          generationStyle: "counterpoint",
+          resolution: "literal",
+          outputMode: "equal",
+          dubMode: true,
+          pedalVoices: { bass: true, tenor: false, alto: false, soprano: false },
+          rootPc: 9,
+          rootNote: "A4",
+          rootMidi: 69,
+          rootFreq: 432,
+          sections: [
+            { bars: -2, key: "C", mode: "mixolydian", meter: "4/4", cadence: "dub_suspension", role: "normal", treatment: "straight" },
+            { bars: 1, key: "F", mode: "dorian", meter: "4/4", cadence: "plagal", role: "normal", treatment: "straight" },
+          ],
+        };
+        return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
+      }
+
+      function eventsInsideSections(piece) {
+        return piece.events.every((event) => {
+          const section = piece.sectionMeta.find((candidate) => event.gridTick >= candidate.startTick && event.gridTick < candidate.startTick + candidate.bars * candidate.barTicks);
+          return section
+            && event.tick >= section.startTick
+            && event.tick + event.duration <= section.startTick + section.bars * section.barTicks
+            && event.gridTick >= section.startTick
+            && event.gridTick + event.gridDuration <= section.startTick + section.bars * section.barTicks;
+        });
+      }
+
       const oneSection = buildFuguePiece({
         sections: [{ bars: 2, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" }],
       });
@@ -2667,6 +2781,10 @@ function runFugueTests() {
         dubMode: true,
         seed: "validation-fugue-dub",
       });
+      const negativeTimePiece = buildNegativeTimePiece();
+      const retroSection = negativeTimePiece.sectionMeta[0];
+      const retroSectionEnd = retroSection.startTick + retroSection.bars * retroSection.barTicks;
+      const retroEvents = negativeTimePiece.events.filter((event) => event.gridTick >= retroSection.startTick && event.gridTick < retroSectionEnd);
 
       const expo = threeSections.manifest.fugue.exposition_entries;
       const expoVoices = new Set(expo.map((entry) => entry.voice));
@@ -2736,6 +2854,20 @@ function runFugueTests() {
             && Array.isArray(threeSections.manifest.fugue.answer)
             && Array.isArray(threeSections.manifest.fugue.countersubject)
             && threeSections.manifest.fugue.sections.at(-1).role === "final_return",
+        },
+        {
+          name: "negative bars create positive MIDI retrograde sections",
+          ok: retroSection.bars === 2
+            && retroSection.signedBars === -2
+            && retroSection.direction === -1
+            && retroSection.retrograde === true
+            && retroEvents.length > 0
+            && retroEvents.some((event) => event.retrogradeSection && event.sectionDirection === -1)
+            && eventsInsideSections(negativeTimePiece)
+            && negativeTimePiece.manifest.negative_time.enabled === true
+            && negativeTimePiece.manifest.negative_time.sections[0].signed_bars === -2
+            && negativeTimePiece.report.includes("negative-time")
+            && negativeTimePiece.report.includes("Gemma says:"),
         },
       ];
     })()

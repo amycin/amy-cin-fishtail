@@ -39,12 +39,17 @@ const VISUAL_LIGHT_BAND_VOICES = 11;
 const VISUAL_LIGHT_BAND_DELTA = 1 / 12;
 const VISUAL_LIGHT_TEARDROP_Q = 2;
 const VISUAL_LIGHT_TEARDROP_P = 2;
-const VISUAL_LIGHT_SMOOTHING = 0.085;
+const VISUAL_LIGHT_PITCH_GLIDE_MS = 1500;
+const VISUAL_LIGHT_IDLE_GLIDE_MS = 820;
+const VISUAL_LIGHT_MAX_FRAME_MS = 120;
 const TIMELINE_HOVER_DETAIL_MS = 1500;
 const TIMELINE_LONG_PRESS_DELETE_MS = 680;
 const TIMELINE_LONG_PRESS_MOVE_CANCEL_PX = 9;
-const TIMELINE_RESIZE_MIN_BARS = 1;
-const TIMELINE_RESIZE_MAX_BARS = 64;
+const RANGE_RESET_DOUBLE_CLICK_MS = 360;
+const RANGE_RESET_DOUBLE_CLICK_MOVE_PX = 8;
+const SECTION_MIN_ABS_BARS = 1;
+const SECTION_MAX_ABS_BARS = 64;
+const FORM_HISTORY_LIMIT = 256;
 const DUB_RELAX_LINES = [
   "Relax: Dub Gravity is active, the bass is holding the room.",
   "Take it easy: the checker found the groove and left the shimmer in.",
@@ -180,6 +185,14 @@ const CHECK_REASSURANCE_TABLE = {
   ],
 };
 const CHECK_REASSURANCE_LINES = Object.values(CHECK_REASSURANCE_TABLE).flat();
+const NEGATIVE_TIME_LINES = [
+  "Gemma says: oh! That's delightful. You have figured out negative time.",
+  "Gemma says: backward bars detected, and honestly, that is dub gold.",
+  "Gemma says: the cadence has gone to the front door. Very stylish negative time.",
+  "Gemma says: retrograde unlocked. The timeline folded neatly and kept the MIDI clock steady.",
+  "Gemma says: you found the backwards room. The pulse is still behaving beautifully.",
+  "Gemma says: negative time is live. Tiny bar, deep echo, excellent choice.",
+];
 const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const KEY_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const REFERENCE_NOTE_NAMES = buildReferenceNoteNames(0, 6);
@@ -461,6 +474,66 @@ function keyNameForPc(pc) {
   return KEY_NAMES[mod(pc, 12)] || "C";
 }
 
+function signedSectionBars(value, fallback = SECTION_MIN_ABS_BARS) {
+  const fallbackNumeric = parseInt(fallback, 10);
+  const fallbackSign = Number.isFinite(fallbackNumeric) && fallbackNumeric < 0 ? -1 : 1;
+  const parsed = parseInt(value, 10);
+  const raw = Number.isFinite(parsed) ? parsed : fallbackSign * SECTION_MIN_ABS_BARS;
+  const magnitude = clamp(Math.abs(raw), SECTION_MIN_ABS_BARS, SECTION_MAX_ABS_BARS);
+  return (raw < 0 ? -1 : 1) * magnitude;
+}
+
+function sectionSignedValue(sectionOrBars) {
+  if (typeof sectionOrBars !== "object" || sectionOrBars === null) return sectionOrBars;
+  if (sectionOrBars.signedBars != null) return sectionOrBars.signedBars;
+  if (sectionOrBars.direction < 0 || sectionOrBars.direction === "retrograde" || sectionOrBars.retrograde === true) return -Math.abs(sectionOrBars.bars || SECTION_MIN_ABS_BARS);
+  return sectionOrBars.bars;
+}
+
+function sectionBarCount(sectionOrBars) {
+  return Math.abs(signedSectionBars(sectionSignedValue(sectionOrBars)));
+}
+
+function sectionDirection(sectionOrBars) {
+  return signedSectionBars(sectionSignedValue(sectionOrBars)) < 0 ? -1 : 1;
+}
+
+function sectionIsRetrograde(sectionOrBars) {
+  if (typeof sectionOrBars === "object" && sectionOrBars !== null) {
+    return sectionOrBars.retrograde === true || sectionDirection(sectionOrBars) < 0;
+  }
+  return sectionDirection(sectionOrBars) < 0;
+}
+
+function sectionBarsLabel(sectionOrBars) {
+  const bars = sectionBarCount(sectionOrBars);
+  return `${sectionIsRetrograde(sectionOrBars) ? "-" : ""}${bars} ${bars === 1 ? "bar" : "bars"}`;
+}
+
+function sectionDirectionLabel(sectionOrBars) {
+  return sectionIsRetrograde(sectionOrBars) ? "retrograde" : "forward";
+}
+
+function resizeSignedBars(initialBars, deltaBars) {
+  const initial = signedSectionBars(initialBars);
+  const resized = initial + deltaBars;
+  if (resized === 0) return initial > 0 ? -SECTION_MIN_ABS_BARS : SECTION_MIN_ABS_BARS;
+  return signedSectionBars(resized, initial);
+}
+
+function sectionGenerationShape(section, index = null) {
+  const normalized = normalizeSection(section, index);
+  const signedBars = signedSectionBars(sectionSignedValue(section) ?? normalized.bars, normalized.bars);
+  const direction = signedBars < 0 ? -1 : 1;
+  return {
+    ...normalized,
+    bars: Math.abs(signedBars),
+    signedBars,
+    direction,
+    retrograde: direction < 0,
+  };
+}
+
 function defaultSectionsForReferencePc(referencePc = DEFAULT_FORM_SOURCE_PC) {
   const shift = mod(referencePc - DEFAULT_FORM_SOURCE_PC, 12);
   return DEFAULT_FORM_TEMPLATE_C.map((section, index) => normalizeSection({
@@ -478,6 +551,9 @@ const state = {
   formFollowsReference: true,
   formReferencePc: DEFAULT_FORM_REFERENCE_PC,
   sectionClipboard: null,
+  formUndoStack: [],
+  formRedoStack: [],
+  formHistoryRestoring: false,
   timelineDrag: null,
   timelineResize: null,
   timelinePopoverTimer: null,
@@ -566,6 +642,10 @@ const state = {
   visualIntersectionObserver: null,
   reducedMotionQuery: null,
   visualLightPalette: null,
+  visualLightLastUpdatedAt: 0,
+  visualLightGlideUntil: 0,
+  rangeResetTap: null,
+  rangeResetSuppressUntil: 0,
 };
 
 window.fishtailApp = { state, version: "v0" };
@@ -618,6 +698,8 @@ function bindElements() {
     "formSafetyLabel",
     "addSectionButton",
     "addSectionBottomButton",
+    "undoFormButton",
+    "redoFormButton",
     "moveSectionLeftButton",
     "moveSectionRightButton",
     "copySectionButton",
@@ -755,6 +837,8 @@ function bindEvents() {
   document.addEventListener("pointerdown", requestMotionPermissionOnce, { once: true, passive: true });
   els.addSectionButton.addEventListener("click", addSection);
   els.addSectionBottomButton?.addEventListener("click", addSection);
+  els.undoFormButton?.addEventListener("click", undoFormEdit);
+  els.redoFormButton?.addEventListener("click", redoFormEdit);
   els.moveSectionLeftButton?.addEventListener("click", () => moveSelectedSection(-1));
   els.moveSectionRightButton?.addEventListener("click", () => moveSelectedSection(1));
   els.copySectionButton?.addEventListener("click", copySelectedSection);
@@ -859,6 +943,7 @@ function bindEvents() {
     if (event.target === els.creditsModal) closeCredits();
   });
   document.addEventListener("keydown", (event) => {
+    if (handleFormHistoryShortcut(event)) return;
     if (event.key === "Escape" && !els.helpModal.hidden) closeHelp();
     if (event.key === "Escape" && !els.creditsModal.hidden) closeCredits();
   });
@@ -879,9 +964,9 @@ function bindEvents() {
 }
 
 function addSection() {
-  markFormEdited();
+  beginFormEdit();
   state.sections.push({
-    bars: 4,
+    bars: 1,
     key: keyNameForPc(selectedReferenceMidi()),
     mode: "ionian",
     meter: "4/4",
@@ -892,7 +977,7 @@ function addSection() {
   state.selectedSectionIndex = state.sections.length - 1;
   state.timelineDetailIndex = state.selectedSectionIndex;
   renderSections();
-  if (els.statusLabel) els.statusLabel.textContent = "Section added";
+  if (els.statusLabel) els.statusLabel.textContent = "1 bar section added";
 }
 
 function clampSelectedSectionIndex() {
@@ -909,8 +994,110 @@ function sectionClone(section, index = null) {
   return { ...normalizeSection(section, index) };
 }
 
+function formHistorySnapshot() {
+  return {
+    sections: state.sections.map(sectionClone),
+    selectedSectionIndex: clampSelectedSectionIndex(),
+    timelineDetailIndex: state.timelineDetailIndex,
+    formFollowsReference: Boolean(state.formFollowsReference),
+    formReferencePc: state.formReferencePc,
+  };
+}
+
+function formHistoryKey(snapshot) {
+  return JSON.stringify({
+    sections: snapshot.sections,
+    selectedSectionIndex: snapshot.selectedSectionIndex,
+    formFollowsReference: snapshot.formFollowsReference,
+    formReferencePc: snapshot.formReferencePc,
+  });
+}
+
+function pushFormHistory(stack, snapshot) {
+  const entry = { ...snapshot, key: formHistoryKey(snapshot) };
+  if (stack[stack.length - 1]?.key === entry.key) return false;
+  stack.push(entry);
+  if (stack.length > FORM_HISTORY_LIMIT) stack.splice(0, stack.length - FORM_HISTORY_LIMIT);
+  return true;
+}
+
+function recordFormUndoSnapshot() {
+  if (state.formHistoryRestoring) return false;
+  const pushed = pushFormHistory(state.formUndoStack, formHistorySnapshot());
+  if (pushed) state.formRedoStack = [];
+  updateTimelineActions();
+  return pushed;
+}
+
+function beginFormEdit() {
+  recordFormUndoSnapshot();
+  markFormEdited();
+}
+
 function markFormEdited() {
   state.formFollowsReference = false;
+}
+
+function restoreFormHistorySnapshot(snapshot, label) {
+  if (!snapshot) return;
+  state.formHistoryRestoring = true;
+  clearTimelinePopoverTimer();
+  clearTimelineDeletePress();
+  if (state.timelineResize) clearTimelineResizeListeners();
+  state.timelineDrag = null;
+  state.sections = snapshot.sections.map(sectionClone);
+  state.selectedSectionIndex = snapshot.selectedSectionIndex;
+  state.timelineDetailIndex = snapshot.timelineDetailIndex;
+  state.formFollowsReference = Boolean(snapshot.formFollowsReference);
+  state.formReferencePc = snapshot.formReferencePc;
+  renderSections();
+  state.formHistoryRestoring = false;
+  updateTimelineActions();
+  if (els.statusLabel) els.statusLabel.textContent = label;
+}
+
+function undoFormEdit() {
+  if (state.generating || state.randomising || !state.formUndoStack.length) return;
+  const current = formHistorySnapshot();
+  const previous = state.formUndoStack.pop();
+  pushFormHistory(state.formRedoStack, current);
+  restoreFormHistorySnapshot(previous, "Undo");
+}
+
+function redoFormEdit() {
+  if (state.generating || state.randomising || !state.formRedoStack.length) return;
+  const current = formHistorySnapshot();
+  const next = state.formRedoStack.pop();
+  pushFormHistory(state.formUndoStack, current);
+  restoreFormHistorySnapshot(next, "Redo");
+}
+
+function handleFormHistoryShortcut(event) {
+  const key = event.key.toLowerCase();
+  const modifier = event.metaKey || event.ctrlKey;
+  if (!modifier || event.altKey) return false;
+  if (isTextEditingTarget(event.target)) return false;
+  if (key === "z") {
+    event.preventDefault();
+    if (event.shiftKey) redoFormEdit();
+    else undoFormEdit();
+    return true;
+  }
+  if (key === "y") {
+    event.preventDefault();
+    redoFormEdit();
+    return true;
+  }
+  return false;
+}
+
+function isTextEditingTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  if (target.isContentEditable) return true;
+  if (tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag !== "INPUT") return false;
+  return target.type !== "range" && target.type !== "checkbox";
 }
 
 function syncDefaultFormToReference() {
@@ -951,7 +1138,7 @@ function moveSection(fromIndex, toIndex) {
   const from = clamp(parseInt(fromIndex, 10) || 0, 0, count - 1);
   const to = clamp(parseInt(toIndex, 10) || 0, 0, count - 1);
   if (from === to) return false;
-  markFormEdited();
+  beginFormEdit();
   const [section] = state.sections.splice(from, 1);
   state.sections.splice(to, 0, sectionClone(section, to));
   state.selectedSectionIndex = to;
@@ -976,7 +1163,7 @@ function copySelectedSection() {
 function duplicateSelectedSection() {
   const index = clampSelectedSectionIndex();
   if (index < 0) return;
-  markFormEdited();
+  beginFormEdit();
   const duplicate = sectionClone(state.sections[index], index + 1);
   state.sections.splice(index + 1, 0, duplicate);
   state.selectedSectionIndex = index + 1;
@@ -988,7 +1175,7 @@ function pasteAfterSelectedSection() {
   if (!state.sectionClipboard) return;
   const index = clampSelectedSectionIndex();
   const insertIndex = index < 0 ? 0 : index + 1;
-  markFormEdited();
+  beginFormEdit();
   state.sections.splice(insertIndex, 0, sectionClone(state.sectionClipboard, insertIndex));
   state.selectedSectionIndex = insertIndex;
   state.timelineDetailIndex = state.selectedSectionIndex;
@@ -1012,6 +1199,8 @@ function formStateSnapshot() {
       timeline: sectionMetaFromSections(sections).map((section, index) => ({
         section: index + 1,
         bars: section.bars,
+        signed_bars: section.signedBars,
+        direction: section.direction < 0 ? "retrograde" : "forward",
         key: section.key,
         mode: section.mode,
         meter: section.meter,
@@ -1055,7 +1244,7 @@ function formStateSnapshot() {
 
 function clearFormState() {
   if (state.generating) return;
-  markFormEdited();
+  beginFormEdit();
   clearTimelinePopoverTimer();
   clearTimelineDeletePress();
   state.sections = [];
@@ -1066,12 +1255,42 @@ function clearFormState() {
 }
 
 function bindRangeResetEvents() {
+  document.addEventListener("pointerdown", (event) => {
+    const input = event.target?.closest?.('input[type="range"]');
+    if (!input || input.disabled) return;
+    const now = event.timeStamp || runtimeNow();
+    const previous = state.rangeResetTap;
+    const moved = previous ? Math.hypot((event.clientX || 0) - previous.x, (event.clientY || 0) - previous.y) : Infinity;
+    const sameInput = previous?.input === input;
+    const quickEnough = previous && now - previous.at <= RANGE_RESET_DOUBLE_CLICK_MS;
+    if (sameInput && quickEnough && moved <= RANGE_RESET_DOUBLE_CLICK_MOVE_PX) {
+      event.preventDefault();
+      event.stopPropagation();
+      resetRangeControl(input);
+      state.rangeResetTap = null;
+      state.rangeResetSuppressUntil = now + 520;
+      return;
+    }
+    state.rangeResetTap = {
+      input,
+      at: now,
+      x: event.clientX || 0,
+      y: event.clientY || 0,
+    };
+  }, true);
+  document.addEventListener("pointermove", (event) => {
+    const tap = state.rangeResetTap;
+    if (!tap) return;
+    const moved = Math.hypot((event.clientX || 0) - tap.x, (event.clientY || 0) - tap.y);
+    if (moved > RANGE_RESET_DOUBLE_CLICK_MOVE_PX) state.rangeResetTap = null;
+  }, true);
   document.addEventListener("dblclick", (event) => {
     const input = event.target?.closest?.('input[type="range"]');
     if (!input || input.disabled) return;
     event.preventDefault();
+    if ((event.timeStamp || runtimeNow()) < state.rangeResetSuppressUntil) return;
     resetRangeControl(input);
-  });
+  }, true);
 }
 
 function resetRangeControl(input) {
@@ -2039,15 +2258,21 @@ function sectionMetaFromSections(sections) {
   let currentTick = 0;
   return (sections || []).map(normalizeSection).map((section) => {
     const meter = METERS[section.meter] || METERS["4/4"];
+    const signedBars = signedSectionBars(section.bars);
+    const bars = Math.abs(signedBars);
     const barTicks = meter.numerator * meter.pulse;
     const meta = {
       ...section,
+      bars,
+      signedBars,
+      direction: signedBars < 0 ? -1 : 1,
+      retrograde: signedBars < 0,
       startTick: currentTick,
       barTicks,
       numerator: meter.numerator,
       denominator: meter.denominator,
     };
-    currentTick += section.bars * barTicks;
+    currentTick += bars * barTicks;
     return meta;
   });
 }
@@ -2139,8 +2364,11 @@ function applyReferencePitchChange() {
 }
 
 function applyVisualPitchColorChange() {
-  updateVisualLightPalette(isDubModeVisual());
+  const now = runtimeNow();
+  beginVisualLightGlide(now);
+  updateVisualLightPalette(isDubModeVisual(), { now });
   renderSectionTimeline();
+  updateSelectedSectionEditorColor();
   requestCoreFrame(true);
 }
 
@@ -2199,25 +2427,38 @@ function rgbCssComponents(rgb) {
   return rgb.map((channel) => Math.round(clamp(Number(channel) || 0, 0, 1) * 255)).join(", ");
 }
 
+function spectralUiRgb(rgb, dubVisual = isDubModeVisual(), options = {}) {
+  if (!dubVisual) {
+    return mixRgb(liftRgb(rgb, options.lift ?? 0.065), [1, 1, 1], options.whiteMix ?? 0.08);
+  }
+  const pressured = dubSpectralRgb(rgb, options);
+  return mixRgb(liftRgb(pressured, options.lift ?? 0.018), [1, 1, 1], options.whiteMix ?? 0.012);
+}
+
+function dubSpectralRgb(rgb, options = {}) {
+  const saturated = saturateRgb(rgb, options.saturation ?? 1.72);
+  return mixRgb(saturated, [0, 0, 0], options.shadow ?? 0.18);
+}
+
 function sectionVisualRgb(section) {
   const referencePc = mod(selectedReferenceMidi(), 12);
   const sectionPc = noteToPc(section.key || "C");
   const slot = mod(sectionPc - referencePc, 12);
   const frequency = currentReferenceHz() * ratioFrequencyForVisualSlot(slot);
   const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(frequency));
-  return mixRgb(liftRgb(rgb, isDubModeVisual() ? 0.1 : 0.065), [1, 1, 1], 0.08);
+  return spectralUiRgb(rgb, isDubModeVisual(), { saturation: 1.8, shadow: 0.16, whiteMix: isDubModeVisual() ? 0.01 : 0.08 });
 }
 
 function timelineGraphRgb() {
   const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(currentReferenceHz()));
-  return mixRgb(liftRgb(rgb, isDubModeVisual() ? 0.1 : 0.065), [1, 1, 1], 0.12);
+  return spectralUiRgb(rgb, isDubModeVisual(), { saturation: 1.58, shadow: 0.22, whiteMix: isDubModeVisual() ? 0.018 : 0.12 });
 }
 
 function timelineSectionLabel(section, index) {
   const mode = MODES[section.mode]?.label || section.mode;
   const role = SECTION_ROLES[section.role] || "Fishtail";
   const treatment = sectionTreatmentLabel(section.role, section.treatment);
-  return `Section ${index + 1}, ${section.bars} bars, ${section.key} ${mode}, ${section.meter}, ${role}, ${treatment}`;
+  return `Section ${index + 1}, ${sectionBarsLabel(section)}, ${sectionDirectionLabel(section)}, ${section.key} ${mode}, ${section.meter}, ${role}, ${treatment}`;
 }
 
 function timelinePopoverHtml(section) {
@@ -2227,7 +2468,7 @@ function timelinePopoverHtml(section) {
   const treatment = sectionTreatmentLabel(section.role, section.treatment);
   return `
     <div class="timeline-popover-title">${escapeHtml(section.key)} ${escapeHtml(mode)}</div>
-    <div class="timeline-popover-line">${escapeHtml(section.bars)} bars · ${escapeHtml(section.meter)} · ${escapeHtml(cadence)}</div>
+    <div class="timeline-popover-line">${escapeHtml(sectionBarsLabel(section))} · ${escapeHtml(sectionDirectionLabel(section))} · ${escapeHtml(section.meter)} · ${escapeHtml(cadence)}</div>
     <div class="timeline-popover-line">${escapeHtml(role)} · ${escapeHtml(treatment)}</div>
     <button class="timeline-popover-delete" type="button" data-delete-section>Delete</button>
   `;
@@ -2240,6 +2481,8 @@ function updateTimelineActions() {
   const selected = hasSections ? normalizeSection(state.sections[index], index) : null;
   if (els.moveSectionLeftButton) els.moveSectionLeftButton.disabled = busy || !hasSections || index <= 0;
   if (els.moveSectionRightButton) els.moveSectionRightButton.disabled = busy || !hasSections || index >= state.sections.length - 1;
+  if (els.undoFormButton) els.undoFormButton.disabled = busy || state.formUndoStack.length === 0;
+  if (els.redoFormButton) els.redoFormButton.disabled = busy || state.formRedoStack.length === 0;
   if (els.copySectionButton) els.copySectionButton.disabled = busy || !hasSections;
   if (els.duplicateSectionButton) els.duplicateSectionButton.disabled = busy || !hasSections;
   if (els.pasteSectionButton) els.pasteSectionButton.disabled = busy || !state.sectionClipboard;
@@ -2252,7 +2495,23 @@ function updateTimelineActions() {
   }
   const mode = MODES[selected.mode]?.label || selected.mode;
   const copied = state.sectionClipboard ? " · clipboard ready" : "";
-  els.timelineStatus.textContent = `${String(index + 1).padStart(2, "0")} of ${state.sections.length} · ${selected.bars} bars · ${selected.key} ${mode} · ${selected.meter}${copied}`;
+  els.timelineStatus.textContent = `${String(index + 1).padStart(2, "0")} of ${state.sections.length} · ${sectionBarsLabel(selected)} · ${selected.key} ${mode} · ${selected.meter}${copied}`;
+}
+
+function setSectionEditorColor(row, section) {
+  if (!row || !section) return;
+  const editorRgb = sectionVisualRgb(section);
+  row.style.setProperty("--section-editor-rgb", rgbCssComponents(editorRgb));
+  row.style.setProperty("--section-editor-soft-rgb", rgbCssComponents(mixRgb(editorRgb, [1, 1, 1], isDubModeVisual() ? 0.48 : 0.68)));
+  row.style.setProperty("--section-editor-ink-rgb", rgbCssComponents(mixRgb(editorRgb, [0.18, 0.09, 0.14], 0.82)));
+}
+
+function updateSelectedSectionEditorColor() {
+  const index = clampSelectedSectionIndex();
+  if (index < 0) return;
+  const row = els.sectionTable?.querySelector(`[data-section-index="${index}"]`);
+  if (!row) return;
+  setSectionEditorColor(row, normalizeSection(state.sections[index], index));
 }
 
 function updateSectionSelectionUi() {
@@ -2339,21 +2598,24 @@ function finishTimelineDeletePress(event) {
   clearTimelineDeletePress();
 }
 
-function updateSectionBarsFromTimeline(index, bars) {
+function updateSectionBarsFromTimeline(index, bars, options = {}) {
   if (!state.sections.length) return;
   const safeIndex = clamp(parseInt(index, 10) || 0, 0, state.sections.length - 1);
-  const safeBars = clamp(parseInt(bars, 10) || 1, TIMELINE_RESIZE_MIN_BARS, TIMELINE_RESIZE_MAX_BARS);
+  const previousBars = signedSectionBars(state.sections[safeIndex]?.bars);
+  const safeBars = signedSectionBars(bars, previousBars);
   const normalized = normalizeSection({ ...state.sections[safeIndex], bars: safeBars }, safeIndex);
+  if (options.recordHistory === false) markFormEdited();
+  else beginFormEdit();
   state.sections[safeIndex] = normalized;
   state.selectedSectionIndex = safeIndex;
-  markFormEdited();
 
   const item = els.sectionTimeline?.querySelector(`[data-timeline-index="${safeIndex}"]`);
   if (item) {
-    item.style.setProperty("--section-bars", String(normalized.bars));
+    item.style.setProperty("--section-bars", String(sectionBarCount(normalized)));
+    item.classList.toggle("is-backward", sectionIsRetrograde(normalized));
     item.querySelector(".timeline-block")?.setAttribute("aria-label", timelineSectionLabel(normalized, safeIndex));
     const popover = item.querySelector(".timeline-popover");
-  if (popover) {
+    if (popover) {
       popover.setAttribute("aria-label", timelineSectionLabel(normalized, safeIndex));
       popover.innerHTML = timelinePopoverHtml(normalized);
       popover.querySelector("[data-delete-section]")?.addEventListener("click", (event) => {
@@ -2366,6 +2628,9 @@ function updateSectionBarsFromTimeline(index, bars) {
   const selectedRow = els.sectionTable?.querySelector(`[data-section-index="${safeIndex}"]`);
   const barsInput = selectedRow?.querySelector('[data-field="bars"]');
   if (barsInput) barsInput.value = String(normalized.bars);
+  if (sectionIsRetrograde(normalized) && els.statusLabel) {
+    els.statusLabel.textContent = negativeTimeLine("timeline", safeIndex, normalized.bars);
+  }
   updateSectionSelectionUi();
   updateFormSafety();
   updateSoundTimeControls();
@@ -2395,7 +2660,8 @@ function beginTimelineResize(event) {
     startX: event.clientX,
     initialBars: section.bars,
     lastBars: section.bars,
-    pxPerBar: clamp(blockWidth / Math.max(1, section.bars), 8, 28),
+    pxPerBar: clamp(blockWidth / Math.max(1, sectionBarCount(section)), 8, 28),
+    historyRecorded: false,
   };
   state.selectedSectionIndex = index;
   state.timelineDetailIndex = index;
@@ -2411,10 +2677,14 @@ function updateTimelineResize(event) {
   if (!resize || resize.pointerId !== event.pointerId) return;
   event.preventDefault();
   const deltaBars = Math.round((event.clientX - resize.startX) / resize.pxPerBar);
-  const nextBars = clamp(resize.initialBars + deltaBars, TIMELINE_RESIZE_MIN_BARS, TIMELINE_RESIZE_MAX_BARS);
+  const nextBars = resizeSignedBars(resize.initialBars, deltaBars);
   if (nextBars === resize.lastBars) return;
+  if (!resize.historyRecorded) {
+    recordFormUndoSnapshot();
+    resize.historyRecorded = true;
+  }
   resize.lastBars = nextBars;
-  updateSectionBarsFromTimeline(resize.index, nextBars);
+  updateSectionBarsFromTimeline(resize.index, nextBars, { recordHistory: false });
 }
 
 function finishTimelineResize(event) {
@@ -2448,7 +2718,7 @@ function requestDeleteSection(index, control = null) {
     }, 2400);
     return false;
   }
-  markFormEdited();
+  beginFormEdit();
   state.sections.splice(safeIndex, 1);
   if (state.sections.length) {
     state.selectedSectionIndex = clamp(safeIndex, 0, state.sections.length - 1);
@@ -2473,10 +2743,10 @@ function renderSectionTimeline() {
   state.sections.forEach((section, index) => {
     const normalized = normalizeSection(section, index);
     const item = document.createElement("div");
-    item.className = `timeline-item${index === selectedIndex ? " is-selected" : ""}${index === state.timelineDetailIndex ? " is-detail-open" : ""}`;
+    item.className = `timeline-item${sectionIsRetrograde(normalized) ? " is-backward" : ""}${index === selectedIndex ? " is-selected" : ""}${index === state.timelineDetailIndex ? " is-detail-open" : ""}`;
     item.dataset.timelineIndex = String(index);
     const sectionRgb = sectionVisualRgb(normalized);
-    item.style.setProperty("--section-bars", String(normalized.bars));
+    item.style.setProperty("--section-bars", String(sectionBarCount(normalized)));
     item.style.setProperty("--timeline-rgb", rgbCssComponents(sectionRgb));
     item.style.setProperty("--timeline-soft-rgb", rgbCssComponents(mixRgb(sectionRgb, [1, 1, 1], 0.54)));
     item.style.setProperty("--timeline-ink-rgb", rgbCssComponents(mixRgb(sectionRgb, [0.18, 0.09, 0.14], 0.78)));
@@ -2511,7 +2781,7 @@ function renderSectionTimeline() {
     resizeHandle.className = "timeline-resize-handle";
     resizeHandle.type = "button";
     resizeHandle.dataset.resizeSection = String(index);
-    resizeHandle.setAttribute("aria-label", `Resize section ${index + 1} bars`);
+    resizeHandle.setAttribute("aria-label", `Resize section ${index + 1} signed bars`);
     resizeHandle.textContent = "↔";
     resizeHandle.addEventListener("pointerdown", beginTimelineResize);
     resizeHandle.addEventListener("click", (event) => event.stopPropagation());
@@ -2637,13 +2907,10 @@ function renderSections() {
   const row = document.createElement("div");
   row.className = "section-row is-selected";
   row.dataset.sectionIndex = String(index);
-  const editorRgb = sectionVisualRgb(normalized);
-  row.style.setProperty("--section-editor-rgb", rgbCssComponents(editorRgb));
-  row.style.setProperty("--section-editor-soft-rgb", rgbCssComponents(mixRgb(editorRgb, [1, 1, 1], 0.68)));
-  row.style.setProperty("--section-editor-ink-rgb", rgbCssComponents(mixRgb(editorRgb, [0.18, 0.09, 0.14], 0.82)));
+  setSectionEditorColor(row, normalized);
   row.innerHTML = `
     <div class="row-index">${String(index + 1).padStart(2, "0")}</div>
-    <label>Bars<input type="number" min="1" max="64" value="${normalized.bars}" data-field="bars"></label>
+    <label>Bars<input type="number" min="-64" max="64" value="${normalized.bars}" data-field="bars"></label>
     <label>Key<select data-field="key">${KEY_NAMES.map((key) => optionHtml(key, key, key === normalized.key)).join("")}</select></label>
     <label>Mode<select data-field="mode">${Object.entries(MODES).map(([id, mode]) => optionHtml(id, mode.label, id === normalized.mode)).join("")}</select></label>
     <label>Meter<select data-field="meter">${Object.keys(METERS).map((meter) => optionHtml(meter, meter, meter === normalized.meter)).join("")}</select></label>
@@ -2653,13 +2920,26 @@ function renderSections() {
     <button class="icon-button" type="button" data-remove="${index}" title="Remove section">-</button>
   `;
   row.querySelectorAll("[data-field]").forEach((input) => {
-    input.addEventListener("change", () => {
+    const commitField = () => {
       const field = input.dataset.field;
-      markFormEdited();
+      if (field === "bars" && (input.value === "" || input.value === "-")) return false;
+      const nextValue = field === "bars" ? signedSectionBars(input.value, state.sections[index]?.bars) : input.value;
+      if (state.sections[index]?.[field] === nextValue) return false;
+      beginFormEdit();
       state.selectedSectionIndex = index;
-      state.sections[index][field] = field === "bars" ? clamp(parseInt(input.value, 10) || 1, 1, 64) : input.value;
+      state.sections[index][field] = nextValue;
       renderSections();
-    });
+      if (field === "bars" && sectionIsRetrograde(state.sections[index]) && els.statusLabel) {
+        els.statusLabel.textContent = negativeTimeLine("field", index, state.sections[index].bars);
+      }
+      return true;
+    };
+    input.addEventListener("change", commitField);
+    if (input.dataset.field === "bars") {
+      input.addEventListener("input", () => {
+        if (/^-?\d+$/.test(input.value) && parseInt(input.value, 10) !== 0) commitField();
+      });
+    }
   });
   row.querySelector("[data-remove]").addEventListener("click", () => {
     requestDeleteSection(index);
@@ -2692,10 +2972,10 @@ function updateFormSafety() {
 
 function estimateComplexity(sections, voices) {
   const normalized = sections.map(normalizeSection);
-  const totalBars = normalized.reduce((sum, section) => sum + section.bars, 0);
+  const totalBars = normalized.reduce((sum, section) => sum + sectionBarCount(section), 0);
   const totalPulses = normalized.reduce((sum, section) => {
     const meter = METERS[section.meter] || METERS["4/4"];
-    return sum + section.bars * meter.numerator;
+    return sum + sectionBarCount(section) * meter.numerator;
   }, 0);
   const voicePulses = totalPulses * clamp(voices, 2, 4);
   const level = complexityLevel({ sections: normalized.length, bars: totalBars, voicePulses });
@@ -2743,17 +3023,19 @@ function roleOptionsForSection(index) {
 }
 
 function normalizeSection(section, index = null) {
-  const requestedRole = SECTION_ROLES[section.role] ? section.role : "normal";
+  const safeSection = section || {};
+  const requestedRole = SECTION_ROLES[safeSection.role] ? safeSection.role : "normal";
   const role = index === 0 ? "normal" : requestedRole;
   const defaultTreatment = role === "development" ? "gentle" : "straight";
   const allowedTreatments = treatmentOptionsForRole(role).map(([id]) => id);
-  const treatment = allowedTreatments.includes(section.treatment) ? section.treatment : defaultTreatment;
+  const treatment = allowedTreatments.includes(safeSection.treatment) ? safeSection.treatment : defaultTreatment;
+  const bars = signedSectionBars(sectionSignedValue(safeSection), safeSection.bars);
   return {
-    bars: clamp(parseInt(section.bars, 10) || 1, 1, 64),
-    key: KEY_NAMES.includes(section.key) ? section.key : "C",
-    mode: MODES[section.mode] ? section.mode : "major",
-    meter: METERS[section.meter] ? section.meter : "4/4",
-    cadence: CADENCES[section.cadence] ? section.cadence : "authentic",
+    bars,
+    key: KEY_NAMES.includes(safeSection.key) ? safeSection.key : "C",
+    mode: MODES[safeSection.mode] ? safeSection.mode : "major",
+    meter: METERS[safeSection.meter] ? safeSection.meter : "4/4",
+    cadence: CADENCES[safeSection.cadence] ? safeSection.cadence : "authentic",
     role,
     treatment,
   };
@@ -2816,7 +3098,7 @@ async function randomiseForm(kind) {
       sections[sections.length - 1].cadence = isMinorMode(sections[0].mode) ? "minor_authentic" : "authentic";
     }
 
-    markFormEdited();
+    beginFormEdit();
     state.sections = sections;
     renderSections();
     els.seedLabel.textContent = `Dice: ${seed.slice(0, 8)}`;
@@ -3027,6 +3309,8 @@ function setGenerationControlsDisabled(disabled) {
     els.wildRollButton,
     els.addSectionButton,
     els.addSectionBottomButton,
+    els.undoFormButton,
+    els.redoFormButton,
     els.moveSectionLeftButton,
     els.moveSectionRightButton,
     els.copySectionButton,
@@ -3081,6 +3365,7 @@ function setGenerationControlsDisabled(disabled) {
   });
   if (els.generateButton) els.generateButton.disabled = disabled || state.sections.length === 0;
   if (!disabled) applyPitchBehaviourLock();
+  updateTimelineActions();
 }
 
 function updateGenerationAvailability() {
@@ -3684,9 +3969,9 @@ function isFugueStyle(settingsOrStyle) {
 
 function repairFugueSections(sections, activeVoices, subjectLength, settings) {
   const originalSectionCount = sections.length;
-  const repaired = sections.map((section) => ({ ...normalizeSection(section) }));
+  const repaired = sections.map((section, index) => ({ ...sectionGenerationShape(section, index) }));
   const notes = [];
-  const base = repaired[0] || normalizeSection(DEFAULT_SECTIONS[0]);
+  const base = repaired[0] || sectionGenerationShape(DEFAULT_SECTIONS[0], 0);
 
   if (!repaired.length) {
     repaired.push(base);
@@ -3694,10 +3979,10 @@ function repairFugueSections(sections, activeVoices, subjectLength, settings) {
   }
   while (repaired.length < 3) {
     if (repaired.length === 1) {
-      repaired.push(makeAutoMiddleFugueSection(base));
+      repaired.push(sectionGenerationShape(makeAutoMiddleFugueSection(base), repaired.length));
       notes.push("Added a middle episode section so the fugue has room to develop.");
     } else {
-      repaired.push(makeAutoFinalFugueSection(base));
+      repaired.push(sectionGenerationShape(makeAutoFinalFugueSection(base), repaired.length));
       notes.push("Added a final return section so the fugue can cadence clearly.");
     }
   }
@@ -3706,8 +3991,12 @@ function repairFugueSections(sections, activeVoices, subjectLength, settings) {
     const meter = METERS[section.meter] || METERS["4/4"];
     const minBars = fugueMinimumBars(index, repaired.length, meter, activeVoices.length, subjectLength, settings.dubMode);
     if (section.bars < minBars) {
-      notes.push(`Expanded section ${index + 1} from ${section.bars} to ${minBars} bars for subject entries and cadence room.`);
+      const direction = section.direction < 0 ? -1 : 1;
+      notes.push(`Expanded section ${index + 1} from ${sectionBarsLabel(section)} to ${direction < 0 ? "-" : ""}${minBars} bars for subject entries and cadence room.`);
       section.bars = minBars;
+      section.signedBars = direction * minBars;
+      section.direction = direction;
+      section.retrograde = direction < 0;
     }
   });
 
@@ -3977,6 +4266,8 @@ function planFugueForm(settings, activeVoices, material, repairSummary) {
       mode: section.mode,
       meter: section.meter,
       bars: section.bars,
+      signed_bars: section.signedBars,
+      direction: section.direction < 0 ? "retrograde" : "forward",
       treatment: section.treatment,
       entries,
     };
@@ -4074,7 +4365,7 @@ function buildPiece(settings, randomSource = null) {
   const phraseRng = random.stream("phrase");
   const refrainRng = random.stream("refrain");
   const dubRng = random.stream("dub");
-  settings.sections = settings.sections.map(normalizeSection);
+  settings.sections = settings.sections.map(sectionGenerationShape);
   if (!settings.sections.length) throw new Error("Add at least one form section before generating.");
   settings.rhythmMotion = clamp(Number(settings.rhythmMotion ?? DEFAULT_RHYTHM_MOTION), 0, 1);
   settings.pedalVoices = normalizePedalVoices(settings.pedalVoices, settings.voices, settings.dubMode);
@@ -4116,7 +4407,8 @@ function buildPiece(settings, randomSource = null) {
       : planRefrainSection(section, sectionIndex, steps, activeVoices, refrainState, refrainRng);
     const fugueSectionPlan = fugueSummary?.sections?.[sectionIndex] || null;
     sectionMeta.push({ ...section, startTick: currentTick, barTicks, numerator: meter.numerator, denominator: meter.denominator, refrainPlan: summarizeRefrainPlan(refrainPlan), fuguePlan: summarizeFugueSectionPlan(fugueSectionPlan), phrasePlan: summarizePhrasePlan(phrasePlan) });
-    reports.push(`${sectionIndex + 1}. ${section.bars} bars in ${section.key} ${mode.label}, ${section.meter}, ${CADENCES[section.cadence].label}, ${SECTION_ROLES[section.role]}${section.role === "normal" ? "" : `/${sectionTreatmentLabel(section.role, section.treatment)}`}`);
+    const directionNote = sectionIsRetrograde(section) ? " retrograde negative-time" : "";
+    reports.push(`${sectionIndex + 1}. ${sectionBarsLabel(section)}${directionNote} in ${section.key} ${mode.label}, ${section.meter}, ${CADENCES[section.cadence].label}, ${SECTION_ROLES[section.role]}${section.role === "normal" ? "" : `/${sectionTreatmentLabel(section.role, section.treatment)}`}`);
 
     const entries = planEntries(activeVoices, steps, meter, phraseRng, settings);
     const lastPitches = Object.fromEntries(activeVoices.map((voice) => [voice, null]));
@@ -5115,7 +5407,36 @@ function gridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, secti
   const events = structuralRhythmEnabled(settings)
     ? rhythmGridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section)
     : legacyGridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section);
-  return annotateDubGrooveIntent(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan);
+  const annotated = annotateDubGrooveIntent(events, voice, sectionStartTick, pulseTicks, settings, section, phrasePlan);
+  return retrogradeSectionEvents(annotated, sectionStartTick, pulseTicks, section);
+}
+
+function retrogradeSectionEvents(events, sectionStartTick, pulseTicks, section) {
+  if (!events.length || !sectionIsRetrograde(section)) return events;
+  const meter = METERS[section.meter] || METERS["4/4"];
+  const sectionTicks = sectionBarCount(section) * meter.numerator * pulseTicks;
+  const sectionEndTick = sectionStartTick + sectionTicks;
+  const mirrored = events.map((event) => {
+    const duration = Math.max(1, Math.round(event.duration || 1));
+    const gridDuration = Math.max(1, Math.round(event.gridDuration ?? duration));
+    const sourceTick = Math.round(event.tick ?? event.gridTick ?? sectionStartTick);
+    const sourceGridTick = Math.round(event.gridTick ?? sourceTick);
+    const tick = clamp(sectionEndTick - (sourceTick + duration), sectionStartTick, Math.max(sectionStartTick, sectionEndTick - 1));
+    const gridTick = clamp(sectionEndTick - (sourceGridTick + gridDuration), sectionStartTick, Math.max(sectionStartTick, sectionEndTick - 1));
+    const startStep = Math.max(0, Math.floor((gridTick - sectionStartTick) / pulseTicks + 0.001));
+    return {
+      ...event,
+      tick,
+      duration: Math.min(duration, Math.max(1, sectionEndTick - tick)),
+      gridTick,
+      gridDuration: Math.min(gridDuration, Math.max(1, sectionEndTick - gridTick)),
+      startStep,
+      endStep: startStep + Math.max(1, Math.ceil(gridDuration / pulseTicks)),
+      retrogradeSection: true,
+      sectionDirection: -1,
+    };
+  });
+  return trimVoiceEventsToSection(mirrored, sectionStartTick, sectionEndTick);
 }
 
 function legacyGridToEvents(grid, voice, sectionStartTick, pulseTicks, settings, section) {
@@ -6066,6 +6387,19 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
     refrain: stats.refrainSummary,
     fugue: stats.fugueSummary || null,
     rhythm: stats.rhythmSummary,
+    negative_time: {
+      enabled: sectionMeta.some(sectionIsRetrograde),
+      sections: sectionMeta
+        .map((section, index) => sectionIsRetrograde(section) ? {
+          section_index: index + 1,
+          signed_bars: section.signedBars,
+          bars: section.bars,
+          key: section.key,
+          meter: section.meter,
+        } : null)
+        .filter(Boolean),
+      note: sectionMeta.some(sectionIsRetrograde) ? negativeTimeLine(settings.seed, sectionMeta.length, sectionMeta.find(sectionIsRetrograde)?.signedBars) : null,
+    },
     fallback_safety: {
       mode: "validated_fallbacks_no_unchecked_parallel_perfects",
       ...stats.fallbackStats,
@@ -6221,6 +6555,8 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       rhythm_transform: event.rhythmTransform,
       rhythm_subdivisions: event.rhythmSubdivisions,
       rhythm_duration_units: event.rhythmDurationUnits,
+      retrograde_section: Boolean(event.retrogradeSection),
+      section_direction: event.sectionDirection || 1,
       groove_role: event.grooveRole,
       groove_offset_ticks: event.grooveOffsetTicks,
       groove_offset_ms_requested: Number((Number(event.grooveOffsetMsRequested) || 0).toFixed(4)),
@@ -6278,8 +6614,13 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push("");
   lines.push("Form");
   sectionMeta.forEach((section, index) => {
-    lines.push(`  ${index + 1}. ${section.bars} bars | ${section.key} ${MODES[section.mode].label} | ${section.meter} | ${CADENCES[section.cadence].label}`);
+    const direction = sectionIsRetrograde(section) ? " | retrograde negative-time" : "";
+    lines.push(`  ${index + 1}. ${sectionBarsLabel(section)} | ${section.key} ${MODES[section.mode].label} | ${section.meter} | ${CADENCES[section.cadence].label}${direction}`);
   });
+  const retrogradeSections = sectionMeta.filter(sectionIsRetrograde);
+  if (retrogradeSections.length) {
+    lines.push(`Gemma says: ${negativeTimeLine(settings.seed, retrogradeSections.length, retrogradeSections[0].signedBars).replace(/^Gemma says:\s*/, "")}`);
+  }
   lines.push("");
   lines.push(`Subject offsets: ${subject.join(" ")}`);
   if (stats.rhythmSummary) {
@@ -6406,6 +6747,15 @@ function dubRelaxLine(seed) {
     hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
   }
   return DUB_RELAX_LINES[Math.abs(hash) % DUB_RELAX_LINES.length];
+}
+
+function negativeTimeLine(seed, index = 0, bars = 0) {
+  const text = `${seed || "negative-time"}:${index}:${bars}`;
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return NEGATIVE_TIME_LINES[Math.abs(hash) % NEGATIVE_TIME_LINES.length];
 }
 
 function checkerReassurance(seed, index) {
@@ -6550,14 +6900,16 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
     sampleTicks.sort((a, b) => a - b);
     const uniqueSampleTicks = [...new Set(sampleTicks)];
 
-    const finalSnapshot = snapshotAtTick(byVoiceGrid, activeVoices, Math.max(section.startTick, sectionEnd - 1));
+    const retrogradeSection = sectionIsRetrograde(section);
+    const cadenceTick = retrogradeSection ? section.startTick : Math.max(section.startTick, sectionEnd - 1);
+    const finalSnapshot = snapshotAtTick(byVoiceGrid, activeVoices, cadenceTick);
     const tonicPc = noteToPc(section.key);
     const finalOffsets = finalSnapshot.map((note) => note ? mod((note.carrierMidi ?? note.midi) - tonicPc, 12) : null).filter((offset) => offset != null);
     const finalStable = mode.stable.map((offset) => mod(offset, 12));
     summary.cadenceChecks += 1;
-    if (!finalOffsets.includes(0)) pushWarning(`${section.key} ${mode.label} section does not end with a sounding tonic.`);
+    if (!finalOffsets.includes(0)) pushWarning(`${section.key} ${mode.label} section does not ${retrogradeSection ? "open with its mirrored tonic" : "end with a sounding tonic"}.`);
     const offCadence = finalOffsets.filter((offset) => !finalStable.includes(offset));
-    if (offCadence.length) pushWarning(`${section.key} ${mode.label} final sonority includes non-chord offsets ${[...new Set(offCadence)].join(", ")}.`);
+    if (offCadence.length) pushWarning(`${section.key} ${mode.label} ${retrogradeSection ? "mirrored cadence" : "final"} sonority includes non-chord offsets ${[...new Set(offCadence)].join(", ")}.`);
 
     let previousSnapshot = null;
     let previousTick = null;
@@ -6586,9 +6938,14 @@ function checkGeneratedPiece(settings, sectionMeta, events, midiBytes, totalTick
         const tendency = mode.tendencies?.[event.symbolicOffset];
         if (!tendency) return;
         summary.tendencyChecks += 1;
-        const next = voiceEvents[index + 1];
-        if (!next || next.tick >= sectionEnd) {
+        const next = retrogradeSection ? voiceEvents[index - 1] : voiceEvents[index + 1];
+        if (!next) {
+          if (retrogradeSection) return;
           pushWarning(`${voice} ${mode.label} tendency at ${describeTickLocation(event.tick, sectionMeta, settings)} has no following note before the section ends.`);
+          return;
+        }
+        if (next.tick >= sectionEnd) {
+          pushWarning(`${voice} ${mode.label} tendency at ${describeTickLocation(event.tick, sectionMeta, settings)} has no ${retrogradeSection ? "mirrored previous" : "following"} note before the section ${retrogradeSection ? "opens" : "ends"}.`);
           return;
         }
         const directionOk = tendency.direction === "up" ? next.midi > event.midi : next.midi < event.midi;
@@ -7303,8 +7660,7 @@ function isDubModeVisual() {
   return Boolean(els.dubModeInput?.checked);
 }
 
-function torusPalette(dubVisual = isDubModeVisual()) {
-  const light = updateVisualLightPalette(dubVisual);
+function torusPaletteFromLight(light) {
   return {
     torus: light.hex.torus,
     torusActive: light.hex.torusActive,
@@ -7313,6 +7669,10 @@ function torusPalette(dubVisual = isDubModeVisual()) {
     markerA: light.hex.markers[0],
     markerB: light.hex.markers[7],
   };
+}
+
+function torusPalette(dubVisual = isDubModeVisual(), options = {}) {
+  return torusPaletteFromLight(options.lightPalette || updateVisualLightPalette(dubVisual, options));
 }
 
 function currentVisualFundamentalHz() {
@@ -7343,30 +7703,49 @@ function buildVisualLightPalette(dubVisual = false) {
   const fifth = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * 3 / 2));
   const fourth = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * 4 / 3));
   const seventh = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * 7 / 4));
-  const lift = dubVisual ? 0.1 : 0.065;
+  const lift = dubVisual ? 0.018 : 0.065;
+  const paletteRgb = (rgb, options = {}) => spectralUiRgb(rgb, dubVisual, { lift, ...options });
   const markers = Array.from({ length: 12 }, (_, slot) => {
     const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * ratioFrequencyForVisualSlot(slot)));
-    return mixRgb(liftRgb(rgb, lift), [1, 1, 1], slot % 3 === 0 ? 0.08 : 0.02);
+    return paletteRgb(rgb, {
+      saturation: 1.7,
+      shadow: 0.18,
+      whiteMix: dubVisual ? (slot % 3 === 0 ? 0.018 : 0.006) : (slot % 3 === 0 ? 0.08 : 0.02),
+    });
   });
   const colors = {
-    torus: liftRgb(base, lift),
-    torusActive: mixRgb(liftRgb(fifth, lift), [1, 1, 1], 0.2),
-    negative: mixRgb(liftRgb(seventh, lift * 0.7), [1, 1, 1], 0.05),
-    web: mixRgb(liftRgb(fourth, lift), [1, 1, 1], 0.12),
-    fieldA: mixRgb(liftRgb(base, lift), [1, 1, 1], dubVisual ? 0.08 : 0.16),
-    fieldB: mixRgb(liftRgb(fifth, lift), [1, 1, 1], dubVisual ? 0.04 : 0.12),
-    haloA: mixRgb(liftRgb(base, lift), [1, 1, 1], 0.22),
-    haloB: mixRgb(liftRgb(fourth, lift), [1, 1, 1], 0.14),
-    haloC: mixRgb(liftRgb(seventh, lift), [1, 1, 1], 0.08),
+    torus: paletteRgb(base, { saturation: 1.78, shadow: 0.13, whiteMix: dubVisual ? 0.012 : 0 }),
+    torusActive: paletteRgb(fifth, { saturation: 1.82, shadow: 0.1, whiteMix: dubVisual ? 0.035 : 0.2 }),
+    negative: paletteRgb(seventh, { saturation: 1.56, shadow: 0.24, whiteMix: dubVisual ? 0.004 : 0.05 }),
+    web: paletteRgb(fourth, { saturation: 1.7, shadow: 0.16, whiteMix: dubVisual ? 0.018 : 0.12 }),
+    fieldA: paletteRgb(base, { saturation: 1.64, shadow: 0.2, whiteMix: dubVisual ? 0.01 : 0.16 }),
+    fieldB: paletteRgb(fifth, { saturation: 1.64, shadow: 0.22, whiteMix: dubVisual ? 0.006 : 0.12 }),
+    haloA: paletteRgb(base, { saturation: 1.62, shadow: 0.12, whiteMix: dubVisual ? 0.04 : 0.22 }),
+    haloB: paletteRgb(fourth, { saturation: 1.6, shadow: 0.15, whiteMix: dubVisual ? 0.026 : 0.14 }),
+    haloC: paletteRgb(seventh, { saturation: 1.58, shadow: 0.18, whiteMix: dubVisual ? 0.016 : 0.08 }),
     markers,
   };
   return { dubVisual: Boolean(dubVisual), fundamentalHz, baseNm, colors };
 }
 
-function updateVisualLightPalette(dubVisual = isDubModeVisual()) {
+function beginVisualLightGlide(now = runtimeNow(), durationMs = VISUAL_LIGHT_PITCH_GLIDE_MS) {
+  state.visualLightGlideUntil = Math.max(state.visualLightGlideUntil || 0, now + durationMs);
+}
+
+function visualLightGlideAlpha(current, target, now) {
+  if (!current || current.dubVisual !== target.dubVisual) return 1;
+  const previous = state.visualLightLastUpdatedAt || (now - 16.67);
+  const frameMs = clamp(now - previous, 0, VISUAL_LIGHT_MAX_FRAME_MS);
+  const glideMs = now <= (state.visualLightGlideUntil || 0) ? VISUAL_LIGHT_PITCH_GLIDE_MS : VISUAL_LIGHT_IDLE_GLIDE_MS;
+  const timeConstant = Math.max(1, glideMs / 3);
+  return clamp(1 - Math.exp(-frameMs / timeConstant), 0, 1);
+}
+
+function updateVisualLightPalette(dubVisual = isDubModeVisual(), options = {}) {
+  const now = Number.isFinite(options.now) ? options.now : runtimeNow();
   const target = buildVisualLightPalette(dubVisual);
   const current = state.visualLightPalette;
-  const alpha = !current || current.dubVisual !== target.dubVisual ? 1 : VISUAL_LIGHT_SMOOTHING;
+  const alpha = visualLightGlideAlpha(current, target, now);
   const colors = {};
   Object.entries(target.colors).forEach(([key, value]) => {
     colors[key] = Array.isArray(value[0])
@@ -7386,6 +7765,7 @@ function updateVisualLightPalette(dubVisual = isDubModeVisual()) {
     markers: palette.colors.markers.map(rgbToHex),
   };
   state.visualLightPalette = palette;
+  state.visualLightLastUpdatedAt = now;
   return palette;
 }
 
@@ -7461,6 +7841,11 @@ function shapeVisualSaturation(rgb, centerNm) {
 
 function liftRgb(rgb, amount) {
   return rgb.map((channel) => clamp(channel + (1 - channel) * amount, 0, 1));
+}
+
+function saturateRgb(rgb, amount) {
+  const luminance = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+  return rgb.map((channel) => clamp(luminance + (channel - luminance) * amount, 0, 1));
 }
 
 function mixRgb(a, b, amount) {
@@ -7678,13 +8063,13 @@ function refreshTorusTuning() {
   updateRatioConnectorGeometry();
 }
 
-function renderTorusFrame(width, height, phase) {
+function renderTorusFrame(width, height, phase, visualPalette = null) {
   if (!torusCore.ready) return;
   updateTorusSize(width, height);
   if (torusCore.lastOutputMode !== els.outputModeInput?.value) refreshTorusTuning();
 
   const now = Date.now();
-  const palette = torusPalette();
+  const palette = torusPalette(isDubModeVisual(), { lightPalette: visualPalette });
   const eco = visualEcoActive(now);
   const activeBoost = getGenerateEnvelope(now);
   const reducedIdle = state.reducedMotion && activeBoost <= 0.02;
@@ -7892,13 +8277,14 @@ function drawCore(timestamp = 0) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
   const dubVisual = isDubModeVisual();
-  const visualPalette = updateVisualLightPalette(dubVisual);
+  const paletteNow = Number.isFinite(timestamp) && timestamp > 0 ? timestamp : runtimeNow();
+  const visualPalette = updateVisualLightPalette(dubVisual, { now: paletteNow });
   ctx.fillStyle = dubVisual ? rgbaString(visualPalette.colors.torus, 0.16) : rgbaString(visualPalette.colors.haloB, 0.06);
   ctx.fillRect(0, 0, width, height);
   const cx = width / 2;
   const cy = height / 2;
   const phase = state.animationPhase;
-  renderTorusFrame(width, height, phase);
+  renderTorusFrame(width, height, phase, visualPalette);
 
   const voidGlow = state.negativeSpaceOpacity || 0;
   const halo = ctx.createRadialGradient(cx, cy, 8, cx, cy, Math.min(width, height) * (0.34 + voidGlow * 0.12));
