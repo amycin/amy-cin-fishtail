@@ -1725,13 +1725,15 @@ function runVelocityTests() {
             registerSpread: 0.82,
             voicingLift: 0.35,
             pressureDensity: 0.68,
-            wholeKeyboardSam: true,
+            keyboardBloom: true,
           },
         }, 0),
       ];
       state.selectedSectionIndex = 0;
       const savedExpressionSnapshot = formStateSnapshot("Expression Test");
       const loadedExpression = loadedFormSections(savedExpressionSnapshot).map((section, index) => normalizeSection(section, index))[0].expression;
+      const legacyBloomExpression = normalizeSectionExpression({ wholeKeyboardSam: true });
+      const directBloomExpression = normalizeSectionExpression({ keyboardBloom: true });
       const oldProjectExpression = loadedFormSections({ form: { sections: [{ bars: 2, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" }] } })
         .map((section, index) => normalizeSection(section, index))[0].expression;
 
@@ -1807,16 +1809,23 @@ function runVelocityTests() {
             && defaultExpression.registerSpread === 0.5
             && defaultExpression.voicingLift === 0
             && defaultExpression.pressureDensity === null
-            && defaultExpression.wholeKeyboardSam === false,
+            && defaultExpression.keyboardBloom === false,
         },
         {
           name: "save/load expression JSON",
           ok: savedExpressionSnapshot.form.sections[0].expression.velocityContour === "arch"
+            && savedExpressionSnapshot.form.sections[0].expression.keyboardBloom === true
+            && !("wholeKeyboardSam" in savedExpressionSnapshot.form.sections[0].expression)
             && loadedExpression.velocityContour === "arch"
             && loadedExpression.registerSpread === 0.82
             && loadedExpression.voicingLift === 0.35
             && loadedExpression.pressureDensity === 0.68
-            && loadedExpression.wholeKeyboardSam === true,
+            && loadedExpression.keyboardBloom === true,
+        },
+        {
+          name: "legacy bloom expression compatibility",
+          ok: legacyBloomExpression.keyboardBloom === true
+            && directBloomExpression.keyboardBloom === true,
         },
         {
           name: "old project expression compatibility",
@@ -1824,7 +1833,7 @@ function runVelocityTests() {
             && oldProjectExpression.registerSpread === 0.5
             && oldProjectExpression.voicingLift === 0
             && oldProjectExpression.pressureDensity === null
-            && oldProjectExpression.wholeKeyboardSam === false,
+            && oldProjectExpression.keyboardBloom === false,
         },
         {
           name: "velocity contour output stays MIDI safe",
@@ -2468,6 +2477,7 @@ function runFugueTests() {
   const audioEngineJs = fs.readFileSync(path.join(ROOT, "src", "audio-engine.js"), "utf8");
   const wavExportJs = fs.readFileSync(path.join(ROOT, "src", "wav-export.js"), "utf8");
   const pitchInputJs = fs.readFileSync(path.join(ROOT, "src", "pitch-input.js"), "utf8");
+  const readmeMd = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
   const styleOptionOk = indexHtml.includes('<option value="fishtail_fugue">Fishtail Fugue</option>');
   const tempoDefaultOk = indexHtml.includes('id="tempoInput" type="text" value="60.0000"')
     && indexHtml.includes('id="tempoDivisorLabel">n = 220</span>')
@@ -2564,7 +2574,9 @@ function runFugueTests() {
     && stylesCss.includes(".selected-section-inspector")
     && stylesCss.includes(".section-expression")
     && stylesCss.includes(".section-expression-grid")
-    && stylesCss.includes(".expression-pad")
+    && stylesCss.includes(".expression-keyboard")
+    && stylesCss.includes(".expression-bloom-check")
+    && stylesCss.includes(".expression-scope-note")
     && stylesCss.includes("body.dub-mode .section-expression")
     && stylesCss.includes(".timeline-item.is-detail-open .timeline-popover")
     && stylesCss.includes(".section-empty-state")
@@ -2581,9 +2593,18 @@ function runFugueTests() {
     && appJs.includes("function normalizeSectionExpression(")
     && appJs.includes("function sectionExpressionControlsHtml(")
     && appJs.includes("data-expression-field=\"velocityContour\"")
-    && appJs.includes("Full-keyboard spread with bass anchors, octave echoes, and high shimmer.")
+    && appJs.includes("data-expression-field=\"keyboardBloom\"")
+    && appJs.includes("Spread the section across the keyboard with bass anchors, octave echoes, and high shimmer.")
+    && appJs.includes("Velocity contour shapes MIDI in this build")
+    && appJs.includes("Expression Keyboard")
+    && appJs.includes("keyboard_bloom_sections")
     && appJs.includes("function sectionExpressionVelocityOffset(")
     && appJs.includes("section_expression")
+    && readmeMd.includes("Per-section Expression drawer")
+    && readmeMd.includes("Keyboard Bloom")
+    && !indexHtml.includes("Whole Keyboard Sam")
+    && !readmeMd.includes("Whole Keyboard Sam")
+    && !appJs.includes("Whole Keyboard Sam")
     && appJs.includes("timeline-resize-handle")
     && appJs.includes("timelineDetailIndex")
     && appJs.includes("function timelineGraphRgb()")
@@ -2636,7 +2657,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=73"')
+    && indexHtml.includes('href="styles.css?v=74"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
@@ -2652,7 +2673,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=8')
     && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=115')
+    && indexHtml.includes('src/app.js?v=116')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")

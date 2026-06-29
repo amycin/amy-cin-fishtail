@@ -49,6 +49,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 
 - Weighted random form generation with D4 and D20-style dice controls.
 - Section controls for bars, key, mode, time signature, and cadence.
+- Per-section Expression drawer with velocity contour, register width, voicing lift, pressure/density, and Keyboard Bloom. Velocity contour shapes MIDI velocities in this build; the other expression dimensions are shown inactive and saved/reportable for the next arranger pass.
 - Style switch for Imitation + Invention, Counterpoint, or Fishtail Fugue generation.
 - Reference-pitch menu, Pulse pitch / Fine pitch ear-tuning sliders, and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A3 = 220 Hz with A4 anchored at 440 Hz and `n = 220`, giving 60.0000 BPM.
 - Living Reference Input for capture-and-freeze monophonic pitch: press Listen, sing or play one sustained note through a mic/line-in/USB input exposed by the browser, then press Use this pitch to set the exact Fishtail reference locally. Audio is analysed on-device only and is not recorded, uploaded, or saved with device identity.

@@ -454,7 +454,7 @@ const SECTION_EXPRESSION_DEFAULTS = Object.freeze({
   registerSpread: 0.5,
   voicingLift: 0,
   pressureDensity: null,
-  wholeKeyboardSam: false,
+  keyboardBloom: false,
 });
 const SECTION_VELOCITY_CONTOURS = {
   natural: "Natural",
@@ -578,7 +578,7 @@ const state = {
   timelineDeletePress: null,
   timelineSuppressClickUntil: 0,
   timelineSuppressContextMenuUntil: 0,
-  sectionExpressionPadDrag: null,
+  sectionExpressionDrawerOpen: {},
   lastPiece: null,
   animationActive: false,
   animationPhase: 0,
@@ -3249,38 +3249,55 @@ function pressureDensityLabel(value) {
 function expressionSummaryLabel(expression) {
   const normalized = normalizeSectionExpression(expression);
   const contour = SECTION_VELOCITY_CONTOURS[normalized.velocityContour] || SECTION_VELOCITY_CONTOURS.natural;
-  const sam = normalized.wholeKeyboardSam ? " | Sam" : "";
-  return `${contour} | width ${percentLabel(normalized.registerSpread)} | lift ${voicingLiftLabel(normalized.voicingLift)} | pressure ${pressureDensityLabel(normalized.pressureDensity)}${sam}`;
+  const bloom = normalized.keyboardBloom ? " · Bloom saved" : "";
+  return `Expression · ${contour} · Width ${percentLabel(normalized.registerSpread)} · ${voicingLiftLabel(normalized.voicingLift)} · Pressure ${pressureDensityLabel(normalized.pressureDensity)}${bloom}`;
 }
 
-function sectionExpressionControlsHtml(expression) {
+function sectionExpressionDrawerIsOpen(index, expression) {
+  const key = String(index);
+  if (Object.prototype.hasOwnProperty.call(state.sectionExpressionDrawerOpen, key)) {
+    return Boolean(state.sectionExpressionDrawerOpen[key]);
+  }
+  return !sectionExpressionIsDefault(expression);
+}
+
+function expressionIconSvg() {
+  return '<svg class="expression-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 15c3.2-7.2 6.2-7.2 9 0s5.2 7.2 7 0"></path><path d="M4 9c2.4 3.2 4.6 3.2 6.6 0s4.4-3.2 7.4 0"></path></svg>';
+}
+
+function sectionExpressionControlsHtml(expression, index) {
   const normalized = normalizeSectionExpression(expression);
   const pressureAuto = normalized.pressureDensity == null;
   const pressureValue = pressureAuto ? 50 : Math.round(normalized.pressureDensity * 100);
+  const open = sectionExpressionDrawerIsOpen(index, normalized);
+  const active = !sectionExpressionIsDefault(normalized);
   return `
-    <div class="section-expression" data-expression-panel>
-      <div class="section-expression-head">
-        <span>Section Expression</span>
-        <span data-expression-summary>${escapeHtml(expressionSummaryLabel(normalized))}</span>
-      </div>
+    <details class="section-expression" data-expression-panel${open ? " open" : ""}>
+      <summary class="section-expression-summary">
+        <span class="expression-summary-title">${expressionIconSvg()}<span data-expression-summary>${escapeHtml(expressionSummaryLabel(normalized))}</span></span>
+        <span class="expression-active-badge"${active ? "" : " hidden"}>Active</span>
+      </summary>
       <div class="section-expression-grid">
         <label class="expression-field expression-field-select">Velocity contour<select data-expression-field="velocityContour">${Object.entries(SECTION_VELOCITY_CONTOURS).map(([id, label]) => optionHtml(id, label, id === normalized.velocityContour)).join("")}</select></label>
-        <label class="expression-field expression-field-range"><span><span>Register width</span><output data-expression-output="registerSpread">${percentLabel(normalized.registerSpread)}</output></span><input type="range" min="0" max="100" step="1" value="${percentRangeValue(normalized.registerSpread)}" data-reset-value="50" data-expression-field="registerSpread" aria-label="Register width"></label>
-        <label class="expression-field expression-field-range"><span><span>Voicing lift</span><output data-expression-output="voicingLift">${voicingLiftLabel(normalized.voicingLift)}</output></span><input type="range" min="-100" max="100" step="1" value="${signedPercentRangeValue(normalized.voicingLift)}" data-reset-value="0" data-expression-field="voicingLift" aria-label="Voicing lift"></label>
-        <div class="expression-field expression-pressure-field">
-          <label class="expression-field-range"><span><span>Pressure / Density</span><output data-expression-output="pressureDensity">${pressureDensityLabel(normalized.pressureDensity)}</output></span><input type="range" min="0" max="100" step="1" value="${pressureValue}" data-reset-value="50" data-expression-field="pressureDensity" aria-label="Pressure density"${pressureAuto ? " disabled" : ""}></label>
-          <label class="expression-auto-toggle"><input type="checkbox" data-expression-field="pressureAuto"${pressureAuto ? " checked" : ""}>Auto</label>
+        <label class="expression-field expression-field-range is-inactive"><span><span>Register width</span><output data-expression-output="registerSpread">${percentLabel(normalized.registerSpread)}</output></span><input type="range" min="0" max="100" step="1" value="${percentRangeValue(normalized.registerSpread)}" data-reset-value="50" data-expression-field="registerSpread" aria-label="Register width" disabled></label>
+        <label class="expression-field expression-field-range is-inactive"><span><span>Voicing lift</span><output data-expression-output="voicingLift">${voicingLiftLabel(normalized.voicingLift)}</output></span><input type="range" min="-100" max="100" step="1" value="${signedPercentRangeValue(normalized.voicingLift)}" data-reset-value="0" data-expression-field="voicingLift" aria-label="Voicing lift" disabled></label>
+        <div class="expression-field expression-pressure-field is-inactive">
+          <label class="expression-field-range"><span><span>Pressure / Density</span><output data-expression-output="pressureDensity">${pressureDensityLabel(normalized.pressureDensity)}</output></span><input type="range" min="0" max="100" step="1" value="${pressureValue}" data-reset-value="50" data-expression-field="pressureDensity" aria-label="Pressure density" disabled></label>
+          <label class="expression-auto-toggle"><input type="checkbox" data-expression-field="pressureAuto"${pressureAuto ? " checked" : ""} disabled>Auto</label>
         </div>
-        <label class="switch-label expression-sam-toggle">
-          <span><strong>Whole Keyboard Sam</strong><small>Full-keyboard spread with bass anchors, octave echoes, and high shimmer.</small></span>
-          <span class="switch-control"><input type="checkbox" data-expression-field="wholeKeyboardSam"${normalized.wholeKeyboardSam ? " checked" : ""}><span class="switch-track"></span></span>
+        <label class="expression-bloom-check is-inactive">
+          <input type="checkbox" data-expression-field="keyboardBloom"${normalized.keyboardBloom ? " checked" : ""} disabled>
+          <span><strong>Keyboard Bloom</strong><small>Spread the section across the keyboard with bass anchors, octave echoes, and high shimmer.</small></span>
         </label>
-        <div class="expression-pad" data-expression-pad role="group" tabindex="0" aria-label="Section expression gesture pad">
-          <span>Expression Pad</span>
+        <div class="expression-keyboard is-inactive${normalized.keyboardBloom ? " is-bloom" : ""}" data-expression-keyboard role="img" aria-label="Expression Keyboard preview">
+          <span class="expression-keyboard-title">Expression Keyboard</span>
+          <span class="expression-keyboard-low">Low</span>
+          <span class="expression-keyboard-high">High</span>
           <b aria-hidden="true"></b>
         </div>
+        <p class="expression-scope-note">Velocity contour shapes MIDI in this build. Width, lift, pressure, and Keyboard Bloom are saved for the next arranger pass.</p>
       </div>
-    </div>
+    </details>
   `;
 }
 
@@ -3291,18 +3308,17 @@ function updateSectionExpressionControlLabels(row) {
   const pressureInput = row.querySelector('[data-expression-field="pressureDensity"]');
   const pressureAutoInput = row.querySelector('[data-expression-field="pressureAuto"]');
   const contourInput = row.querySelector('[data-expression-field="velocityContour"]');
-  const samInput = row.querySelector('[data-expression-field="wholeKeyboardSam"]');
+  const bloomInput = row.querySelector('[data-expression-field="keyboardBloom"]');
   const registerSpread = clamp((parseFloat(registerInput?.value) || 0) / 100, 0, 1);
   const voicingLift = clamp((parseFloat(liftInput?.value) || 0) / 100, -1, 1);
   const pressureAuto = Boolean(pressureAutoInput?.checked);
   const pressureDensity = pressureAuto ? null : clamp((parseFloat(pressureInput?.value) || 0) / 100, 0, 1);
-  if (pressureInput) pressureInput.disabled = pressureAuto;
   const expression = normalizeSectionExpression({
     velocityContour: contourInput?.value,
     registerSpread,
     voicingLift,
     pressureDensity,
-    wholeKeyboardSam: Boolean(samInput?.checked),
+    keyboardBloom: Boolean(bloomInput?.checked),
   });
   const registerOutput = row.querySelector('[data-expression-output="registerSpread"]');
   const liftOutput = row.querySelector('[data-expression-output="voicingLift"]');
@@ -3312,10 +3328,16 @@ function updateSectionExpressionControlLabels(row) {
   if (liftOutput) liftOutput.textContent = voicingLiftLabel(expression.voicingLift);
   if (pressureOutput) pressureOutput.textContent = pressureDensityLabel(expression.pressureDensity);
   if (summary) summary.textContent = expressionSummaryLabel(expression);
-  const pad = row.querySelector("[data-expression-pad]");
-  if (pad) {
-    pad.style.setProperty("--expression-pad-y", `${100 - (expression.pressureDensity ?? 0.5) * 100}%`);
-    pad.style.setProperty("--expression-pad-x", `${expression.registerSpread * 100}%`);
+  const badge = row.querySelector(".expression-active-badge");
+  if (badge) badge.hidden = sectionExpressionIsDefault(expression);
+  const keyboard = row.querySelector("[data-expression-keyboard]");
+  if (keyboard) {
+    const width = clamp(expression.registerSpread * 90, 8, 96);
+    keyboard.style.setProperty("--expression-keyboard-pressure", String(0.14 + (expression.pressureDensity ?? 0.5) * 0.22));
+    keyboard.style.setProperty("--expression-keyboard-width", `${width}%`);
+    keyboard.style.setProperty("--expression-keyboard-band-left", `${50 - width / 2}%`);
+    keyboard.style.setProperty("--expression-keyboard-lift-x", `${(expression.voicingLift + 1) * 50}%`);
+    keyboard.classList.toggle("is-bloom", expression.keyboardBloom);
   }
 }
 
@@ -3335,68 +3357,22 @@ function commitSectionExpression(index, patch, options = {}) {
 }
 
 function bindSectionExpressionControls(row, index) {
+  const details = row.querySelector("[data-expression-panel]");
+  details?.addEventListener("toggle", () => {
+    state.sectionExpressionDrawerOpen[String(index)] = Boolean(details.open);
+  });
   row.querySelectorAll("[data-expression-field]").forEach((input) => {
+    if (input.disabled) return;
     input.addEventListener("input", () => updateSectionExpressionControlLabels(row));
     input.addEventListener("change", () => {
       updateSectionExpressionControlLabels(row);
-      const pressureAutoInput = row.querySelector('[data-expression-field="pressureAuto"]');
-      const pressureInput = row.querySelector('[data-expression-field="pressureDensity"]');
       const patch = {
         velocityContour: row.querySelector('[data-expression-field="velocityContour"]')?.value,
-        registerSpread: clamp((parseFloat(row.querySelector('[data-expression-field="registerSpread"]')?.value) || 0) / 100, 0, 1),
-        voicingLift: clamp((parseFloat(row.querySelector('[data-expression-field="voicingLift"]')?.value) || 0) / 100, -1, 1),
-        pressureDensity: pressureAutoInput?.checked ? null : clamp((parseFloat(pressureInput?.value) || 0) / 100, 0, 1),
-        wholeKeyboardSam: Boolean(row.querySelector('[data-expression-field="wholeKeyboardSam"]')?.checked),
       };
       commitSectionExpression(index, patch);
     });
   });
-  bindSectionExpressionPad(row, index);
   updateSectionExpressionControlLabels(row);
-}
-
-function bindSectionExpressionPad(row, index) {
-  const pad = row.querySelector("[data-expression-pad]");
-  if (!pad) return;
-  pad.addEventListener("pointerdown", (event) => {
-    if (event.button != null && event.button !== 0) return;
-    const expression = normalizeSectionExpression(state.sections[index]?.expression);
-    state.sectionExpressionPadDrag = {
-      index,
-      pointerId: event.pointerId,
-      startY: event.clientY || 0,
-      startValue: expression.pressureDensity ?? 0.5,
-      value: expression.pressureDensity ?? 0.5,
-      row,
-    };
-    pad.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-  });
-  pad.addEventListener("pointermove", (event) => {
-    const drag = state.sectionExpressionPadDrag;
-    if (!drag || drag.pointerId !== event.pointerId || drag.index !== index) return;
-    const height = Math.max(64, pad.getBoundingClientRect?.().height || 96);
-    const next = clamp(drag.startValue + (drag.startY - (event.clientY || 0)) / height, 0, 1);
-    drag.value = next;
-    const pressureAutoInput = row.querySelector('[data-expression-field="pressureAuto"]');
-    const pressureInput = row.querySelector('[data-expression-field="pressureDensity"]');
-    if (pressureAutoInput) pressureAutoInput.checked = false;
-    if (pressureInput) {
-      pressureInput.disabled = false;
-      pressureInput.value = percentRangeValue(next);
-    }
-    updateSectionExpressionControlLabels(row);
-    event.preventDefault();
-  });
-  const finishDrag = (event) => {
-    const drag = state.sectionExpressionPadDrag;
-    if (!drag || drag.pointerId !== event.pointerId || drag.index !== index) return;
-    state.sectionExpressionPadDrag = null;
-    pad.releasePointerCapture?.(event.pointerId);
-    commitSectionExpression(index, { pressureDensity: drag.value });
-  };
-  pad.addEventListener("pointerup", finishDrag);
-  pad.addEventListener("pointercancel", finishDrag);
 }
 
 function renderSections() {
@@ -3432,7 +3408,7 @@ function renderSections() {
     <label>Role<select data-field="role">${roleOptionsForSection(index).map(([id, label]) => optionHtml(id, label, id === normalized.role)).join("")}</select></label>
     <label>Treatment<select data-field="treatment">${treatmentOptionsForRole(normalized.role).map(([id, label]) => optionHtml(id, label, id === normalized.treatment)).join("")}</select></label>
     <button class="icon-button" type="button" data-remove="${index}" title="Remove section">-</button>
-    ${sectionExpressionControlsHtml(normalized.expression)}
+    ${sectionExpressionControlsHtml(normalized.expression, index)}
   `;
   row.querySelectorAll("[data-field]").forEach((input) => {
     const commitField = () => {
@@ -3555,7 +3531,7 @@ function normalizeSectionExpression(expression = null) {
     registerSpread,
     voicingLift,
     pressureDensity,
-    wholeKeyboardSam: Boolean(safe.wholeKeyboardSam),
+    keyboardBloom: Boolean(safe.keyboardBloom ?? safe.wholeKeyboardSam),
   };
 }
 
@@ -3565,7 +3541,7 @@ function sectionExpressionIsDefault(expression) {
     && normalized.registerSpread === SECTION_EXPRESSION_DEFAULTS.registerSpread
     && normalized.voicingLift === SECTION_EXPRESSION_DEFAULTS.voicingLift
     && normalized.pressureDensity == null
-    && normalized.wholeKeyboardSam === SECTION_EXPRESSION_DEFAULTS.wholeKeyboardSam;
+    && normalized.keyboardBloom === SECTION_EXPRESSION_DEFAULTS.keyboardBloom;
 }
 
 function normalizeSection(section, index = null) {
@@ -6454,7 +6430,7 @@ function sectionExpressionVelocitySummary(sectionMeta, refs = [], velocityActive
     if (expression.registerSpread !== SECTION_EXPRESSION_DEFAULTS.registerSpread) active.push("registerSpread");
     if (expression.voicingLift !== SECTION_EXPRESSION_DEFAULTS.voicingLift) active.push("voicingLift");
     if (expression.pressureDensity != null) active.push("pressureDensity");
-    if (expression.wholeKeyboardSam) active.push("wholeKeyboardSam");
+    if (expression.keyboardBloom) active.push("keyboardBloom");
     return {
       section: index + 1,
       active,
@@ -6478,10 +6454,10 @@ function sectionExpressionVelocitySummary(sectionMeta, refs = [], velocityActive
       voicing_lift: true,
       pressure_density: true,
     },
-    whole_keyboard_sam_sections: activeSections
-      .filter((section) => section.expression.wholeKeyboardSam)
+    keyboard_bloom_sections: activeSections
+      .filter((section) => section.expression.keyboardBloom)
       .map((section) => section.section),
-    whole_keyboard_sam_status: "saved_state_stub",
+    keyboard_bloom_status: "saved_for_arranger_pass",
     sections: activeSections.map((section) => ({
       section: section.section,
       active: section.active,
@@ -7246,10 +7222,10 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
       .map(([contour, count]) => `${SECTION_VELOCITY_CONTOURS[contour] || contour} x${count}`)
       .join(", ") || "Natural";
     const shaped = expression.velocity_active ? `${expression.velocity_events_shaped} velocity events shaped` : "velocity contours stored; fixed velocity is on";
-    const sam = expression.whole_keyboard_sam_sections?.length
-      ? ` Whole Keyboard Sam is saved for section ${expression.whole_keyboard_sam_sections.join(", ")} as a visible state stub.`
+    const bloom = expression.keyboard_bloom_sections?.length
+      ? ` Keyboard Bloom is saved for section ${expression.keyboard_bloom_sections.join(", ")} for the next arranger pass.`
       : "";
-    lines.push(`Section Expression: ${expression.active_sections} active section(s); contours ${contours}; ${shaped}. Register width, voicing lift, and pressure/density are saved for this pass.${sam}`);
+    lines.push(`Section Expression: ${expression.active_sections} active section(s); contours ${contours}; ${shaped}. Register width, voicing lift, pressure/density, and Keyboard Bloom are saved for the next arranger pass.${bloom}`);
   }
   if (settings.prepareProbeWav || settings.prepareTickerWav || settings.prepareCvWav) {
     const requested = [
@@ -7269,7 +7245,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
     const expression = normalizeSectionExpression(section.expression);
     const expressionNote = sectionExpressionIsDefault(expression)
       ? ""
-      : ` | expression ${SECTION_VELOCITY_CONTOURS[expression.velocityContour] || expression.velocityContour}, width ${percentLabel(expression.registerSpread)}, lift ${voicingLiftLabel(expression.voicingLift)}, pressure ${pressureDensityLabel(expression.pressureDensity)}${expression.wholeKeyboardSam ? ", Whole Keyboard Sam saved" : ""}`;
+      : ` | expression ${SECTION_VELOCITY_CONTOURS[expression.velocityContour] || expression.velocityContour}, width ${percentLabel(expression.registerSpread)}, lift ${voicingLiftLabel(expression.voicingLift)}, pressure ${pressureDensityLabel(expression.pressureDensity)}${expression.keyboardBloom ? ", Keyboard Bloom saved" : ""}`;
     lines.push(`  ${index + 1}. ${sectionBarsLabel(section)} | ${section.key} ${MODES[section.mode].label} | ${section.meter} | ${CADENCES[section.cadence].label}${direction}${expressionNote}`);
   });
   const retrogradeSections = sectionMeta.filter(sectionIsRetrograde);
