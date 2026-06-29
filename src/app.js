@@ -724,6 +724,7 @@ function bindElements() {
     "copySectionButton",
     "duplicateSectionButton",
     "pasteSectionButton",
+    "saveFormStateToolbarButton",
     "projectLoadMenu",
     "projectLoadMenuButton",
     "projectLoadMenuPanel",
@@ -884,6 +885,7 @@ function bindEvents() {
   els.duplicateSectionButton?.addEventListener("click", duplicateSelectedSection);
   els.pasteSectionButton?.addEventListener("click", pasteAfterSelectedSection);
   els.saveFormStateButton?.addEventListener("click", saveFormState);
+  els.saveFormStateToolbarButton?.addEventListener("click", saveFormState);
   els.loadFormStateButton?.addEventListener("click", loadFormState);
   els.projectLoadMenuButton?.addEventListener("click", toggleProjectLoadMenu);
   els.loadFormStateToolbarButton?.addEventListener("click", () => {
@@ -2866,6 +2868,7 @@ function updateTimelineActions() {
   if (els.pasteSectionButton) els.pasteSectionButton.disabled = busy || !state.sectionClipboard;
   if (els.clearFormStateButton) els.clearFormStateButton.disabled = busy;
   if (els.saveFormStateButton) els.saveFormStateButton.disabled = busy;
+  if (els.saveFormStateToolbarButton) els.saveFormStateToolbarButton.disabled = busy;
   if (els.loadFormStateButton) els.loadFormStateButton.disabled = busy;
   if (els.projectLoadMenuButton) els.projectLoadMenuButton.disabled = busy;
   if (els.loadFormStateToolbarButton) els.loadFormStateToolbarButton.disabled = busy;
@@ -3900,6 +3903,7 @@ function setGenerationControlsDisabled(disabled) {
     els.copySectionButton,
     els.duplicateSectionButton,
     els.pasteSectionButton,
+    els.saveFormStateToolbarButton,
     els.projectLoadMenuButton,
     els.loadFormStateToolbarButton,
     els.formStateNameInput,
