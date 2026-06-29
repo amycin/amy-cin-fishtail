@@ -3468,6 +3468,7 @@ pre {
 
   .instrument {
     min-height: 100vh;
+    padding-top: 14px;
     border: 0;
     border-radius: 0;
   }
@@ -3482,15 +3483,17 @@ pre {
 
   .floating-menu {
     top: 6px;
-    justify-content: flex-start;
-    width: calc(100% - 12px);
-    margin: 0 6px 6px;
+    display: flex;
+    justify-content: flex-end;
+    width: fit-content;
+    max-width: calc(100% - 12px);
+    margin: 0 6px 6px auto;
     padding: 6px;
     gap: 6px;
   }
 
   .floating-menu .menu-readouts {
-    display: contents;
+    display: flex;
   }
 
   .brand-title {
@@ -3691,6 +3694,16 @@ pre {
 }
 
 @media (max-width: 560px) {
+  .floating-menu {
+    justify-content: flex-start;
+    width: calc(100% - 12px);
+    margin-inline: 6px;
+  }
+
+  .floating-menu .menu-readouts {
+    display: contents;
+  }
+
   .app-surface-tabs {
     width: calc(100% - 16px);
   }

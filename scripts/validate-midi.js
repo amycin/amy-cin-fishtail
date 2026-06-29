@@ -2518,6 +2518,7 @@ function runFugueTests() {
     && stylesCss.includes(".resonance-aperture")
     && stylesCss.includes("@media (prefers-reduced-motion: reduce)")
     && stylesCss.includes("@media (max-width: 980px)")
+    && stylesCss.includes("padding-top: 14px;")
     && stylesCss.includes(".visual-panel .generator-core {\n  height: clamp(260px, 31vw, 480px);")
     && appJs.includes("function bindSurfaceTabs()")
     && appJs.includes("function setAppSurface(")
@@ -2660,7 +2661,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=75"')
+    && indexHtml.includes('href="styles.css?v=76"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
