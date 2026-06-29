@@ -569,7 +569,7 @@ h1 {
   text-transform: none;
 }
 
-.menu-dub-switch {
+.topbar-dub-switch {
   display: grid;
   flex: 0 0 auto;
   grid-template-columns: auto auto;
@@ -578,17 +578,17 @@ h1 {
   padding: 3px 7px;
 }
 
-.menu-dub-switch .switch-control {
+.topbar-dub-switch .switch-control {
   width: 42px;
   height: 22px;
 }
 
-.menu-dub-switch .switch-track::after {
+.topbar-dub-switch .switch-track::after {
   width: 14px;
   height: 14px;
 }
 
-.menu-dub-switch .switch-control input:checked + .switch-track::after {
+.topbar-dub-switch .switch-control input:checked + .switch-track::after {
   transform: translateX(20px);
 }
 
@@ -2439,16 +2439,16 @@ pre {
     padding-inline: 8px;
   }
 
-  .menu-dub-switch {
+  .topbar-dub-switch {
     gap: 7px;
     padding-inline: 7px;
   }
 
-  .menu-dub-switch > span:first-child {
+  .topbar-dub-switch > span:first-child {
     font-size: 0;
   }
 
-  .menu-dub-switch > span:first-child::after {
+  .topbar-dub-switch > span:first-child::after {
     content: "DUB";
     font-size: 0.78rem;
   }

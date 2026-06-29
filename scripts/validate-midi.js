@@ -2374,6 +2374,10 @@ function runFugueTests() {
     && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
   const velocitySwitchOk = indexHtml.includes('id="velocityModeInput" type="checkbox" checked')
     && indexHtml.includes("Gravity velocity");
+  const dubTopbarOk = indexHtml.indexOf('id="creditsButton"') < indexHtml.indexOf('id="dubModeInput"')
+    && indexHtml.includes("topbar-dub-switch")
+    && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="dubModeInput"')
+    && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="tempoDivisorLabel"');
   const panelOrderOk = indexHtml.indexOf('class="panel sound-time-panel"') < indexHtml.indexOf('class="panel voices-panel"')
     && indexHtml.indexOf("<h3>Pitch Behaviour</h3>") > indexHtml.indexOf('id="settingsModal"')
     && stylesCss.includes(".sound-time-panel {\n  grid-column: 1 / -1;\n  grid-row: 2;")
@@ -2447,7 +2451,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=64"')
+    && indexHtml.includes('href="styles.css?v=65"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
@@ -2463,7 +2467,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=8')
     && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=107')
+    && indexHtml.includes('src/app.js?v=108')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -2877,12 +2881,13 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && timelineUiOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk && audioSaveOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && dubTopbarOk && panelOrderOk && timelineUiOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk && audioSaveOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
   console.log(`${notesClosedOk ? "ok" : "failed"} notes default closed`);
   console.log(`${velocitySwitchOk ? "ok" : "failed"} velocity switch default`);
+  console.log(`${dubTopbarOk ? "ok" : "failed"} dub control is in the topbar`);
   console.log(`${panelOrderOk ? "ok" : "failed"} panel order puts pulse and pitch before structure`);
   console.log(`${timelineUiOk ? "ok" : "failed"} form timeline copy paste and drag affordance`);
   console.log(`${probePitchSliderOk ? "ok" : "failed"} probe pitch sliders and metronome boost`);

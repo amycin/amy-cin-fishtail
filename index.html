@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=64">
+    <link rel="stylesheet" href="styles.css?v=65">
   </head>
   <body>
     <main class="shell">
@@ -14,15 +14,7 @@
             <span>BPM</span>
             <input id="tempoInput" type="text" value="60.0000" readonly>
           </label>
-          <span class="menu-chip" id="tempoDivisorLabel">n = 216</span>
           <span class="menu-chip pitch-menu-chip" id="probePitchLabel">A3 216.00Hz</span>
-          <label class="switch-label dub-switch menu-dub-switch" title="Dub Gravity: grounded bass, offbeat skank, roomier rule gravity">
-            <span>Dub Armed</span>
-            <span class="switch-control">
-              <input id="dubModeInput" type="checkbox">
-              <span class="switch-track" aria-hidden="true"></span>
-            </span>
-          </label>
         </div>
         <button class="icon-button floating-settings-button" id="settingsButton" type="button" title="Settings" aria-label="Settings">⚙</button>
       </div>
@@ -37,6 +29,13 @@
             <a class="feedback-link help-link" href="docs/FISHTAIL_USER_GUIDE.html" target="_blank" rel="noopener">Guide</a>
             <button class="feedback-link help-link" id="helpButton" type="button">HELP!</button>
             <button class="feedback-link help-link" id="creditsButton" type="button">Credits</button>
+            <label class="switch-label dub-switch topbar-dub-switch" title="Dub Gravity: grounded bass, offbeat skank, roomier rule gravity">
+              <span>Dub Armed</span>
+              <span class="switch-control">
+                <input id="dubModeInput" type="checkbox">
+                <span class="switch-track" aria-hidden="true"></span>
+              </span>
+            </label>
           </div>
         </header>
 
@@ -145,6 +144,7 @@
               </label>
               <div class="tempo-field">
                 <span class="tempo-field-label" id="tempoFieldLabel">Tempo</span>
+                <span class="visually-hidden" id="tempoDivisorLabel">n = 216</span>
                 <input id="tempoDivisorInput" type="range" min="59" max="432" step="1" value="216" aria-labelledby="tempoFieldLabel tempoDivisorLabel">
               </div>
               <label title="Stroll to swagger: lengthens the first pulse of each accent group and lets the next pulse arrive late.">
@@ -622,6 +622,6 @@
     <script src="src/wav-export.js?v=8"></script>
     <script src="src/pitch-input.js?v=3"></script>
     <script src="src/random-router.js?v=1"></script>
-    <script src="src/app.js?v=107"></script>
+    <script src="src/app.js?v=108"></script>
   </body>
 </html>
