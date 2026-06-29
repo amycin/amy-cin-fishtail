@@ -2376,8 +2376,10 @@ function runFugueTests() {
     && indexHtml.includes("Gravity velocity");
   const dubTopbarOk = indexHtml.indexOf('id="creditsButton"') < indexHtml.indexOf('id="dubModeInput"')
     && indexHtml.includes("topbar-dub-switch")
+    && indexHtml.includes("<span>DUB</span>")
     && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="dubModeInput"')
-    && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="tempoDivisorLabel"');
+    && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="tempoDivisorLabel"')
+    && stylesCss.includes(".topbar-dub-switch .switch-track {\n  display: none;");
   const panelOrderOk = indexHtml.indexOf('class="panel sound-time-panel"') < indexHtml.indexOf('class="panel voices-panel"')
     && indexHtml.indexOf("<h3>Pitch Behaviour</h3>") > indexHtml.indexOf('id="settingsModal"')
     && stylesCss.includes(".sound-time-panel {\n  grid-column: 1 / -1;\n  grid-row: 2;")
@@ -2454,7 +2456,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=66"')
+    && indexHtml.includes('href="styles.css?v=67"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
