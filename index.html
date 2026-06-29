@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=76">
+    <title>Fishtail MIDI Generator</title>
+    <link rel="stylesheet" href="styles.css?v=77">
   </head>
   <body>
     <main class="shell">
@@ -25,29 +25,15 @@
       </div>
       <section class="instrument">
         <div class="art-layer" aria-hidden="true"></div>
-        <header class="topbar">
+        <header class="topbar" aria-label="Fishtail MIDI Generator menu bar">
           <div class="brand-block">
-            <h1 class="brand-title">amy_cin fishtail generator</h1>
+            <h1 class="brand-title">Fishtail MIDI Generator</h1>
           </div>
-          <div class="status-cluster">
-            <a class="feedback-link" href="mailto:amy_cin@icloud.com?subject=amy_cin%20fishtail%20generator%20feedback">Feedback</a>
-            <a class="feedback-link help-link" href="docs/FISHTAIL_USER_GUIDE.html" target="_blank" rel="noopener">Guide</a>
-            <button class="feedback-link help-link" id="helpButton" type="button">HELP!</button>
-            <button class="feedback-link help-link" id="creditsButton" type="button">Credits</button>
-            <label class="switch-label dub-switch topbar-dub-switch" title="Dub Gravity: grounded bass, offbeat skank, roomier rule gravity">
-              <span>DUB</span>
-              <span class="switch-control">
-                <input id="dubModeInput" type="checkbox">
-                <span class="switch-track" aria-hidden="true"></span>
-              </span>
-            </label>
-          </div>
+          <nav class="app-surface-tabs" role="tablist" aria-label="Fishtail surfaces">
+            <button class="app-surface-tab is-active" id="logicSurfaceTab" type="button" role="tab" aria-selected="true" aria-controls="logicSurface">Logic</button>
+            <button class="app-surface-tab" id="feelSurfaceTab" type="button" role="tab" aria-selected="false" aria-controls="feelSurface" tabindex="-1">Feel</button>
+          </nav>
         </header>
-
-        <nav class="app-surface-tabs" role="tablist" aria-label="Fishtail surfaces">
-          <button class="app-surface-tab is-active" id="logicSurfaceTab" type="button" role="tab" aria-selected="true" aria-controls="logicSurface">Logic</button>
-          <button class="app-surface-tab" id="feelSurfaceTab" type="button" role="tab" aria-selected="false" aria-controls="feelSurface" tabindex="-1">Feel</button>
-        </nav>
 
         <section class="control-grid app-surface-shell">
           <section class="app-surface feel-surface" id="feelSurface" role="tabpanel" aria-labelledby="feelSurfaceTab" hidden>
@@ -361,7 +347,7 @@
           <div class="help-card">
             <div class="help-head">
               <div>
-                <p class="eyebrow">amy_cin fishtail generator</p>
+                <p class="eyebrow">amy_cin Fishtail generator</p>
                 <h2 id="helpTitle">HELP!</h2>
               </div>
               <button class="icon-button" id="closeHelpButton" type="button" title="Close help" aria-label="Close help">x</button>
@@ -463,12 +449,32 @@
           <div class="help-card settings-card">
             <div class="help-head">
               <div>
-                <p class="eyebrow">amy_cin fishtail generator</p>
+                <p class="eyebrow">amy_cin Fishtail generator</p>
                 <h2 id="settingsTitle">Settings</h2>
               </div>
               <button class="icon-button" id="closeSettingsButton" type="button" title="Close settings" aria-label="Close settings">x</button>
             </div>
             <div class="help-body settings-body">
+              <section class="settings-app-menu">
+                <div class="settings-app-menu-head">
+                  <p class="eyebrow">amy_cin Fishtail generator</p>
+                  <h3>Fishtail MIDI Generator</h3>
+                </div>
+                <div class="settings-action-row" aria-label="Application menu">
+                  <a class="feedback-link settings-action-link" href="mailto:amy_cin@icloud.com?subject=Fishtail%20MIDI%20Generator%20feedback">Feedback</a>
+                  <a class="feedback-link settings-action-link" href="docs/FISHTAIL_USER_GUIDE.html" target="_blank" rel="noopener">Guide</a>
+                  <button class="feedback-link settings-action-link help-link" id="helpButton" type="button">HELP!</button>
+                  <button class="feedback-link settings-action-link help-link" id="creditsButton" type="button">Credits</button>
+                  <label class="switch-label dub-switch settings-dub-switch" title="Dub Gravity: grounded bass, offbeat skank, roomier rule gravity">
+                    <span>DUB</span>
+                    <span class="switch-control">
+                      <input id="dubModeInput" type="checkbox">
+                      <span class="switch-track" aria-hidden="true"></span>
+                    </span>
+                  </label>
+                </div>
+              </section>
+
               <section>
                 <h3>Session</h3>
                 <div class="settings-status-grid">
@@ -642,7 +648,7 @@
           <div class="help-card">
             <div class="help-head">
               <div>
-                <p class="eyebrow">amy_cin fishtail generator</p>
+                <p class="eyebrow">amy_cin Fishtail generator</p>
                 <h2 id="creditsTitle">Credits</h2>
               </div>
               <button class="icon-button" id="closeCreditsButton" type="button" title="Close credits" aria-label="Close credits">x</button>
@@ -650,7 +656,7 @@
             <div class="help-body">
               <section>
                 <h3>Original Project</h3>
-                <p><strong>amy_cin fishtail generator v0</strong> is original implementation code written for Amy McBride's Fishtail project.</p>
+                <p><strong>amy_cin Fishtail generator v0</strong> is original implementation code written for Amy McBride's Fishtail project.</p>
                 <p>No third-party counterpoint-generator source code has been copied into this project.</p>
                 <p>Copyright (c) 2026 Amy McBride. All rights reserved.</p>
               </section>
@@ -704,6 +710,6 @@
     <script src="src/wav-export.js?v=8"></script>
     <script src="src/pitch-input.js?v=3"></script>
     <script src="src/random-router.js?v=1"></script>
-    <script src="src/app.js?v=117"></script>
+    <script src="src/app.js?v=118"></script>
   </body>
 </html>

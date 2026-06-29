@@ -2495,12 +2495,23 @@ function runFugueTests() {
     && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
   const velocitySwitchOk = indexHtml.includes('id="velocityModeInput" type="checkbox" checked')
     && indexHtml.includes("Gravity velocity");
-  const dubTopbarOk = indexHtml.indexOf('id="creditsButton"') < indexHtml.indexOf('id="dubModeInput"')
-    && indexHtml.includes("topbar-dub-switch")
+  const settingsMenuOk = indexHtml.includes("<title>Fishtail MIDI Generator</title>")
+    && indexHtml.includes('<h1 class="brand-title">Fishtail MIDI Generator</h1>')
+    && indexHtml.includes("settings-app-menu")
+    && indexHtml.includes("amy_cin Fishtail generator")
+    && indexHtml.indexOf('id="settingsModal"') < indexHtml.indexOf('id="helpButton"')
+    && indexHtml.indexOf('id="settingsModal"') < indexHtml.indexOf('id="creditsButton"')
+    && indexHtml.indexOf('id="settingsModal"') < indexHtml.indexOf('id="dubModeInput"')
+    && indexHtml.includes("settings-dub-switch")
     && indexHtml.includes("<span>DUB</span>")
+    && !indexHtml.slice(indexHtml.indexOf('<header class="topbar"'), indexHtml.indexOf('<section class="control-grid app-surface-shell">')).includes('id="dubModeInput"')
+    && !indexHtml.slice(indexHtml.indexOf('<header class="topbar"'), indexHtml.indexOf('<section class="control-grid app-surface-shell">')).includes('id="helpButton"')
+    && !indexHtml.slice(indexHtml.indexOf('<header class="topbar"'), indexHtml.indexOf('<section class="control-grid app-surface-shell">')).includes('id="creditsButton"')
     && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="dubModeInput"')
     && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="tempoDivisorLabel"')
-    && stylesCss.includes(".topbar-dub-switch .switch-track {\n  display: none;");
+    && stylesCss.includes(".settings-dub-switch .switch-track {\n  display: none;")
+    && stylesCss.includes(".settings-app-menu")
+    && appJs.includes("function focusVisibleControl(");
   const surfaceShellOk = indexHtml.includes('class="app-surface-tab is-active" id="logicSurfaceTab" type="button" role="tab" aria-selected="true" aria-controls="logicSurface"')
     && indexHtml.includes('class="app-surface-tab" id="feelSurfaceTab" type="button" role="tab" aria-selected="false" aria-controls="feelSurface" tabindex="-1"')
     && indexHtml.includes('class="app-surface logic-surface is-active" id="logicSurface" role="tabpanel" aria-labelledby="logicSurfaceTab"')
@@ -2661,7 +2672,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=76"')
+    && indexHtml.includes('href="styles.css?v=77"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
@@ -2677,7 +2688,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=8')
     && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=117')
+    && indexHtml.includes('src/app.js?v=118')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -3102,13 +3113,13 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && dubTopbarOk && surfaceShellOk && timelineUiOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk && audioSaveOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && settingsMenuOk && surfaceShellOk && timelineUiOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk && audioSaveOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
   console.log(`${notesClosedOk ? "ok" : "failed"} notes default closed`);
   console.log(`${velocitySwitchOk ? "ok" : "failed"} velocity switch default`);
-  console.log(`${dubTopbarOk ? "ok" : "failed"} dub control is in the topbar`);
+  console.log(`${settingsMenuOk ? "ok" : "failed"} app menu lives in settings`);
   console.log(`${surfaceShellOk ? "ok" : "failed"} two-surface app shell`);
   console.log(`${timelineUiOk ? "ok" : "failed"} form timeline copy paste and drag affordance`);
   console.log(`${probePitchSliderOk ? "ok" : "failed"} probe pitch sliders and metronome boost`);

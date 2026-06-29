@@ -570,11 +570,12 @@ body.dub-mode .dice {
 }
 
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(170px, auto) minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(255, 248, 220, 0.82), rgba(255, 231, 178, 0.4));
 }
@@ -582,13 +583,14 @@ body.dub-mode .dice {
 .app-surface-tabs {
   display: inline-flex;
   align-items: center;
+  justify-self: end;
   gap: 6px;
-  margin: 12px 14px 0;
-  padding: 5px;
+  margin: 0;
+  padding: 4px;
   border: 1px solid rgba(188, 80, 45, 0.18);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: linear-gradient(180deg, var(--glass-strong), rgba(255, 239, 196, 0.56));
-  box-shadow: var(--shadow-soft), var(--shadow-inset);
+  box-shadow: 0 8px 22px rgba(126, 52, 25, 0.1), var(--shadow-inset);
   backdrop-filter: blur(18px) saturate(1.12);
 }
 
@@ -642,15 +644,15 @@ body.dub-mode .dice {
 
 .brand-block {
   flex: 0 1 auto;
-  min-width: min(220px, 100%);
+  min-width: 0;
 }
 
 .brand-title {
   margin: 0;
   color: #b84a2a;
-  font-size: 0.82rem;
-  font-weight: 780;
-  line-height: 1.2;
+  font-size: 0.84rem;
+  font-weight: 820;
+  line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -754,7 +756,7 @@ input[type="number"] {
   font-variant-numeric: tabular-nums;
 }
 
-.topbar-dub-switch {
+.settings-dub-switch {
   display: inline-flex;
   flex: 0 0 auto;
   position: relative;
@@ -769,7 +771,7 @@ input[type="number"] {
   transition: transform 120ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
-.topbar-dub-switch .switch-control {
+.settings-dub-switch .switch-control {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -779,20 +781,20 @@ input[type="number"] {
   clip-path: none;
 }
 
-.topbar-dub-switch .switch-track {
+.settings-dub-switch .switch-track {
   display: none;
 }
 
-.topbar-dub-switch:active {
+.settings-dub-switch:active {
   transform: translateY(1px) scale(0.985);
 }
 
-.dub-switch.topbar-dub-switch {
+.dub-switch.settings-dub-switch {
   height: var(--top-control-height);
   min-height: var(--top-control-height);
 }
 
-.topbar-dub-switch:focus-within {
+.settings-dub-switch:focus-within {
   outline: 2px solid rgba(38, 179, 193, 0.62);
   outline-offset: 3px;
 }
@@ -3214,6 +3216,47 @@ button.primary-button.is-generating {
   min-height: 42px;
 }
 
+.settings-app-menu {
+  display: grid;
+  gap: 12px;
+  border-color: rgba(41, 169, 199, 0.22);
+  background:
+    linear-gradient(135deg, rgba(255, 252, 239, 0.78), rgba(255, 239, 196, 0.5)),
+    rgba(255, 248, 226, 0.5);
+}
+
+.settings-app-menu-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 14px;
+}
+
+.settings-app-menu-head .eyebrow {
+  margin: 0;
+}
+
+.settings-app-menu-head h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.settings-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-action-link,
+.settings-dub-switch {
+  min-width: 76px;
+}
+
 .settings-status-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3479,6 +3522,7 @@ pre {
 
   .topbar {
     display: grid;
+    grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
   }
 
   .floating-menu {
@@ -3510,7 +3554,7 @@ pre {
     padding-inline: 8px;
   }
 
-  .topbar-dub-switch {
+  .settings-dub-switch {
     padding-inline: 7px;
   }
 
@@ -3694,6 +3738,15 @@ pre {
 }
 
 @media (max-width: 560px) {
+  .topbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .brand-title {
+    text-align: left;
+  }
+
   .floating-menu {
     justify-content: flex-start;
     width: calc(100% - 12px);
@@ -3705,6 +3758,7 @@ pre {
   }
 
   .app-surface-tabs {
+    justify-self: stretch;
     width: calc(100% - 16px);
   }
 

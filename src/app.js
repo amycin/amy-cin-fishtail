@@ -6956,7 +6956,7 @@ function checkSweetness(settings, sectionMeta, events, stats, audit) {
 
 function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
   return {
-    title: "amy_cin fishtail generator v0",
+    title: "Fishtail MIDI Generator",
     seed: settings.seed,
     randomness: randomnessManifest(),
     timing_model: {
@@ -7363,7 +7363,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push("  Flat sixth falls to fifth.");
   lines.push("");
   lines.push("Credits");
-  lines.push("  Generator code: original amy_cin fishtail generator implementation for Amy McBride.");
+  lines.push("  Generator code: original amy_cin Fishtail generator implementation for Amy McBride.");
   lines.push("  Copyright (c) 2026 Amy McBride. All rights reserved.");
   lines.push("  Artwork by Ocular Debris.");
   lines.push("  This version was vibe coded with Codex, collaborating as Lambda Echo.");
@@ -8342,9 +8342,17 @@ function openHelp() {
   els.closeHelpButton.focus();
 }
 
+function focusVisibleControl(control, fallback = els.settingsButton) {
+  if (control && !control.closest?.("[hidden]")) {
+    control.focus();
+    return;
+  }
+  fallback?.focus();
+}
+
 function closeHelp() {
   els.helpModal.hidden = true;
-  els.helpButton.focus();
+  focusVisibleControl(els.helpButton);
 }
 
 function openSettings() {
@@ -8368,7 +8376,7 @@ function openCredits() {
 
 function closeCredits() {
   els.creditsModal.hidden = true;
-  els.creditsButton.focus();
+  focusVisibleControl(els.creditsButton);
 }
 
 function saveMidiPiece(piece) {

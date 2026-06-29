@@ -1,6 +1,6 @@
-# amy_cin fishtail generator
+# Fishtail MIDI Generator
 
-A local, browser-based MIDI invention and counterpoint generator for Amy's Fishtail gravity-counterpoint idea.
+A local, browser-based MIDI invention and counterpoint generator for Amy's Fishtail gravity-counterpoint idea. The project identity and original implementation lineage are credited as `amy_cin Fishtail generator`.
 
 The current build is a static web app. It generates ordinary `.mid` files plus a JSON manifest and text report, and can optionally prepare browser-rendered WAV reference stems and analogue CV packages. It does not need live MIDI, and generated pieces/settings are created locally. The WebGL torus visual loads Three.js from a public CDN unless that dependency is vendored locally later.
 
