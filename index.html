@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=40">
+    <link rel="stylesheet" href="styles.css?v=56">
   </head>
   <body>
     <main class="shell">
@@ -27,102 +27,15 @@
         </header>
 
         <section class="control-grid">
-          <section class="panel form-panel">
-            <div class="panel-head">
-              <h2>Form</h2>
-              <button class="icon-button" id="addSectionButton" type="button" title="Add section">+</button>
-            </div>
-            <div class="section-table" id="sectionTable"></div>
-            <p class="form-safety" id="formSafetyLabel" hidden></p>
-            <div class="dice-row">
-              <button class="dice dice-d4" id="gentleRollButton" type="button" title="Gentle weighted random form">
-                <span>D4</span>
-              </button>
-              <button class="dice dice-d20" id="wildRollButton" type="button" title="Wide weighted random form">
-                <span>D20</span>
-              </button>
-              <label class="slider-label">
-                Calm
-                <input id="strangenessInput" type="range" min="0" max="100" value="16">
-                Varied
-              </label>
-            </div>
-          </section>
-
-          <section class="panel voices-panel">
-            <div class="panel-head">
-              <h2>Voices</h2>
-            </div>
-            <div class="field-grid">
-              <label>
-                Style
-                <select id="styleInput">
-                  <option value="invention" selected>Imitation + Invention</option>
-                  <option value="counterpoint">Counterpoint</option>
-                  <option value="fishtail_fugue">Fishtail Fugue</option>
-                </select>
-              </label>
-              <label>
-                Voices
-                <select id="voicesInput">
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4" selected>4</option>
-                </select>
-              </label>
-              <div class="pedal-field" aria-label="Pedal voice controls">
-                <span>Pedal voices</span>
-                <label><input id="pedalBassInput" type="checkbox"> Bass</label>
-                <label><input id="pedalTenorInput" type="checkbox"> Tenor</label>
-                <label><input id="pedalAltoInput" type="checkbox"> Alto</label>
-                <label><input id="pedalSopranoInput" type="checkbox"> Soprano</label>
+          <div class="visual-pitch-stack">
+            <section class="panel action-panel visual-panel" aria-label="Visual">
+              <div class="generator-core" aria-hidden="true">
+                <div class="torus-host" id="torusHost"></div>
+                <canvas id="coreCanvas" width="360" height="220"></canvas>
               </div>
-              <label>
-                Tempo
-                <span class="tempo-readout">
-                  <input id="tempoInput" type="text" value="60.0000" readonly>
-                  <span class="unit-chip">BPM</span>
-                </span>
-              </label>
-              <label class="tempo-slider-field">
-                Tempo divisor <span id="tempoDivisorLabel">n = 216</span>
-                <input id="tempoDivisorInput" type="range" min="59" max="432" step="1" value="216">
-              </label>
-              <label class="switch-label" title="Include tempo and time signatures">
-                <span>Tempo data</span>
-                <span class="switch-control">
-                  <input id="embedTempoInput" type="checkbox" checked>
-                  <span class="switch-track" aria-hidden="true"></span>
-                </span>
-              </label>
-              <label class="switch-label" title="Shape note velocity gently; turn off for fixed velocity 100">
-                <span>Gravity velocity</span>
-                <span class="switch-control">
-                  <input id="velocityModeInput" type="checkbox" checked>
-                  <span class="switch-track" aria-hidden="true"></span>
-                </span>
-              </label>
-              <label class="switch-label dub-switch" title="Dub Gravity: grounded bass, offbeat skank, roomier rule gravity">
-                <span>DUB</span>
-                <span class="switch-control">
-                  <input id="dubModeInput" type="checkbox">
-                  <span class="switch-track" aria-hidden="true"></span>
-                </span>
-              </label>
-              <label>
-                Breathing
-                <input id="breathingInput" type="range" min="0" max="100" value="74">
-              </label>
-              <label>
-                Density
-                <input id="densityInput" type="range" min="0" max="100" value="26">
-              </label>
-              <label>
-                Rhythm motion
-                <input id="rhythmMotionInput" type="range" min="0" max="100" value="18">
-              </label>
-            </div>
-          </section>
+            </section>
+
+          </div>
 
           <section class="panel sound-time-panel">
             <div class="panel-head">
@@ -130,6 +43,100 @@
               <span id="tempoLatticeStatusLabel">Straight time</span>
             </div>
             <div class="field-grid sound-grid">
+              <label class="probe-pitch-field">
+                Pulse pitch <span id="probePitchLabel">A3 = 216.00 Hz</span>
+                <input id="probePitchInput" type="range" min="0" max="83" step="1" value="45">
+              </label>
+              <label class="probe-pitch-field">
+                Fine pitch <span id="probeFineLabel">+0.0 ct</span>
+                <input id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0">
+              </label>
+              <details class="living-reference-drawer">
+                <summary id="livingReferenceTitle">
+                  <span>Living Reference</span>
+                  <span id="referenceInputStatus" aria-live="polite">Permission needed</span>
+                </summary>
+                <div class="living-reference" aria-labelledby="livingReferenceTitle">
+                  <div class="living-controls">
+                    <button id="referenceListenButton" type="button">Listen for pitch</button>
+                    <button id="referenceStopButton" type="button" disabled>Stop listening</button>
+                    <button id="referenceUsePitchButton" type="button" disabled>Use stable pitch</button>
+                    <button id="referenceCaptureAnywayButton" type="button" disabled>Capture anyway</button>
+                  </div>
+                  <div class="living-selects">
+                    <label>
+                      Audio input
+                      <select id="referenceDeviceInput">
+                        <option value="">Default input</option>
+                      </select>
+                    </label>
+                    <label>
+                      Pitch range
+                      <select id="referenceRangeInput">
+                        <option value="general" selected>General 40-1500 Hz</option>
+                        <option value="bass">Bass 25-400 Hz</option>
+                        <option value="voice">Voice 55-1000 Hz</option>
+                        <option value="high">High 100-2000 Hz</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="living-meters">
+                    <div class="meter-row" aria-label="Input level">
+                      <span id="referenceInputLevelLabel">Level -inf dB</span>
+                      <span class="meter-track"><span id="referenceInputLevelBar" class="meter-fill"></span></span>
+                    </div>
+                    <div class="meter-row" aria-label="Pitch confidence">
+                      <span id="referenceConfidenceLabel">Confidence 0%</span>
+                      <span class="meter-track"><span id="referenceConfidenceBar" class="meter-fill confidence-fill"></span></span>
+                    </div>
+                  </div>
+                  <div class="living-readouts">
+                    <span id="referenceDetectedHzLabel">-- Hz</span>
+                    <span id="referenceDetectedNoteLabel">--</span>
+                    <span id="referenceDetectedCentsLabel">-- cents</span>
+                    <span id="referenceStabilityLabel">Play or sing one sustained note.</span>
+                  </div>
+                  <p class="privacy-note">Audio is analysed on this device. It is not recorded or uploaded. Chords and noisy attacks may not produce a stable fundamental.</p>
+                </div>
+              </details>
+              <button class="switch-label switch-button" id="probeInput" type="button" role="switch" aria-checked="false" title="Turn on the live Teardrop reference pulse">
+                <span>Pulse sound</span>
+                <span class="switch-control" aria-hidden="true">
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
+              </button>
+              <label>
+                Pulse level
+                <input id="probeLevelInput" type="range" min="0" max="100" value="45">
+              </label>
+              <button class="switch-label switch-button" id="metronomeInput" type="button" role="switch" aria-checked="false" title="Live pink-noise tempo preview">
+                <span>Metronome</span>
+                <span class="switch-control" aria-hidden="true">
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
+              </button>
+              <label>
+                Metronome level
+                <input id="metronomeLevelInput" type="range" min="0" max="100" value="88">
+              </label>
+              <div class="tempo-field">
+                <span class="tempo-field-label" id="tempoFieldLabel">Tempo</span>
+                <input id="tempoDivisorInput" type="range" min="59" max="432" step="1" value="216" aria-labelledby="tempoFieldLabel tempoDivisorLabel">
+                <span class="tempo-readout">
+                  <input id="tempoInput" type="text" value="60.0000" readonly>
+                  <span class="unit-chip">BPM</span>
+                </span>
+              </div>
+              <label class="switch-label" title="Include tempo and time signatures">
+                <span>Tempo data</span>
+                <span class="switch-control">
+                  <input id="embedTempoInput" type="checkbox" checked>
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
+              </label>
+              <div class="tempo-divisor-field">
+                Tempo divisor <span id="tempoDivisorLabel">n = 216</span>
+              </div>
               <label class="switch-label" title="Use pulse-level tempo events in the conductor track">
                 <span>Tempo lattice</span>
                 <span class="switch-control">
@@ -152,164 +159,103 @@
               <label title="Choose how irrational swing timing is corrected for MIDI-safe endpoints.">
                 Irrational feel
                 <select id="irrationalFeelInput">
-                  <option value="lattice_safe" selected>Lattice Safe</option>
+                  <option value="lattice_safe">Lattice Safe</option>
                   <option value="hybrid_drift">Hybrid Drift</option>
-                  <option value="living_drift">Living Drift</option>
+                  <option value="living_drift" selected>Living Drift</option>
                 </select>
               </label>
-              <label class="probe-pitch-field">
-                Pulse pitch <span id="probePitchLabel">A3 = 216.00 Hz</span>
-                <input id="probePitchInput" type="range" min="0" max="83" step="1" value="45">
+              <label class="switch-label dub-switch" title="Dub Gravity: grounded bass, offbeat skank, roomier rule gravity">
+                <span>Dub Armed</span>
+                <span class="switch-control">
+                  <input id="dubModeInput" type="checkbox">
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
               </label>
-              <label class="probe-pitch-field">
-                Fine pitch <span id="probeFineLabel">+0.0 ct</span>
-                <input id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0">
-              </label>
-              <div class="living-reference" aria-labelledby="livingReferenceTitle">
-                <div class="living-reference-head">
-                  <h3 id="livingReferenceTitle">Living Reference</h3>
-                  <span id="referenceInputStatus" aria-live="polite">Permission needed</span>
-                </div>
-                <div class="living-controls">
-                  <button id="referenceListenButton" type="button">Listen for pitch</button>
-                  <button id="referenceStopButton" type="button" disabled>Stop listening</button>
-                  <button id="referenceUsePitchButton" type="button" disabled>Use stable pitch</button>
-                  <button id="referenceCaptureAnywayButton" type="button" disabled>Capture anyway</button>
-                </div>
-                <div class="living-selects">
+              <input id="prepareProbeWavInput" type="checkbox" hidden>
+              <input id="prepareTickerWavInput" type="checkbox" hidden>
+              <details class="cv-drawer">
+                <summary>CV</summary>
+                <div class="cv-settings" aria-label="Analogue CV settings">
+                  <label class="check-row">
+                    <input id="prepareCvWavInput" type="checkbox">
+                    Prepare analogue CV ZIP
+                  </label>
                   <label>
-                    Audio input
-                    <select id="referenceDeviceInput">
-                      <option value="">Default input</option>
+                    CV voices
+                    <select id="cvVoiceModeInput">
+                      <option value="bass" selected>Bass</option>
+                      <option value="tenor">Tenor</option>
+                      <option value="alto">Alto</option>
+                      <option value="soprano">Soprano</option>
+                      <option value="all">All voices</option>
                     </select>
                   </label>
                   <label>
-                    Pitch range
-                    <select id="referenceRangeInput">
-                      <option value="general" selected>General 40-1500 Hz</option>
-                      <option value="bass">Bass 25-400 Hz</option>
-                      <option value="voice">Voice 55-1000 Hz</option>
-                      <option value="high">High 100-2000 Hz</option>
+                    CV duration
+                    <select id="cvDurationInput">
+                      <option value="first60" selected>First 60 seconds</option>
+                      <option value="full">Whole short piece</option>
                     </select>
                   </label>
+                  <label>
+                    CV pulse clock
+                    <select id="cvClockModeInput">
+                      <option value="pulse" selected>Musical pulses</option>
+                      <option value="bar">Bar starts</option>
+                      <option value="ppqn24">24 PPQN</option>
+                    </select>
+                  </label>
+                  <label>
+                    Full-scale volts
+                    <input id="cvFullScaleInput" type="number" min="1" max="10" step="0.1" value="5.0">
+                  </label>
+                  <label>
+                    Zero offset
+                    <input id="cvZeroOffsetInput" type="number" min="-5" max="5" step="0.01" value="0.00">
+                  </label>
+                  <label>
+                    Gate volts
+                    <input id="cvGateVoltsInput" type="number" min="0.5" max="10" step="0.1" value="5.0">
+                  </label>
+                  <label>
+                    Gate polarity
+                    <select id="cvGatePolarityInput">
+                      <option value="positive" selected>Positive</option>
+                      <option value="inverted">Inverted</option>
+                    </select>
+                  </label>
+                  <label>
+                    Retrigger gap ms
+                    <input id="cvRetriggerMsInput" type="number" min="0" max="5" step="0.1" value="2.0">
+                  </label>
                 </div>
-                <div class="living-meters">
-                  <div class="meter-row" aria-label="Input level">
-                    <span id="referenceInputLevelLabel">Level -inf dB</span>
-                    <span class="meter-track"><span id="referenceInputLevelBar" class="meter-fill"></span></span>
-                  </div>
-                  <div class="meter-row" aria-label="Pitch confidence">
-                    <span id="referenceConfidenceLabel">Confidence 0%</span>
-                    <span class="meter-track"><span id="referenceConfidenceBar" class="meter-fill confidence-fill"></span></span>
-                  </div>
-                </div>
-                <div class="living-readouts">
-                  <span id="referenceDetectedHzLabel">-- Hz</span>
-                  <span id="referenceDetectedNoteLabel">--</span>
-                  <span id="referenceDetectedCentsLabel">-- cents</span>
-                  <span id="referenceStabilityLabel">Play or sing one sustained note.</span>
-                </div>
-                <p class="privacy-note">Audio is analysed on this device. It is not recorded or uploaded. Chords and noisy attacks may not produce a stable fundamental.</p>
-              </div>
-              <button class="switch-label switch-button" id="probeInput" type="button" role="switch" aria-checked="false" title="Turn on the live Teardrop reference pulse">
-                <span>Pulse sound</span>
-                <span class="switch-control" aria-hidden="true">
-                  <span class="switch-track" aria-hidden="true"></span>
-                </span>
-              </button>
-              <label>
-                Pulse level
-                <input id="probeLevelInput" type="range" min="0" max="100" value="45">
-              </label>
-              <button class="switch-label switch-button" id="metronomeInput" type="button" role="switch" aria-checked="false" title="Live pink-noise tempo preview">
-                <span>Metronome</span>
-                <span class="switch-control" aria-hidden="true">
-                  <span class="switch-track" aria-hidden="true"></span>
-                </span>
-              </button>
-              <label>
-                Metronome level
-                <input id="metronomeLevelInput" type="range" min="0" max="100" value="88">
-              </label>
-              <label class="check-row">
-                <input id="prepareProbeWavInput" type="checkbox">
-                Prepare pulse WAV
-              </label>
-              <label class="check-row">
-                <input id="prepareTickerWavInput" type="checkbox">
-                Prepare ticker WAV
-              </label>
-              <label class="check-row">
-                <input id="prepareCvWavInput" type="checkbox">
-                Prepare analogue CV ZIP
-              </label>
-              <div class="cv-settings" aria-label="Analogue CV settings">
-                <h3>Analogue CV</h3>
-                <label>
-                  CV voices
-                  <select id="cvVoiceModeInput">
-                    <option value="bass" selected>Bass</option>
-                    <option value="tenor">Tenor</option>
-                    <option value="alto">Alto</option>
-                    <option value="soprano">Soprano</option>
-                    <option value="all">All voices</option>
-                  </select>
-                </label>
-                <label>
-                  CV duration
-                  <select id="cvDurationInput">
-                    <option value="first60" selected>First 60 seconds</option>
-                    <option value="full">Whole short piece</option>
-                  </select>
-                </label>
-                <label>
-                  CV pulse clock
-                  <select id="cvClockModeInput">
-                    <option value="pulse" selected>Musical pulses</option>
-                    <option value="bar">Bar starts</option>
-                    <option value="ppqn24">24 PPQN</option>
-                  </select>
-                </label>
-                <label>
-                  Full-scale volts
-                  <input id="cvFullScaleInput" type="number" min="1" max="10" step="0.1" value="5.0">
-                </label>
-                <label>
-                  Zero offset
-                  <input id="cvZeroOffsetInput" type="number" min="-5" max="5" step="0.01" value="0.00">
-                </label>
-                <label>
-                  Gate volts
-                  <input id="cvGateVoltsInput" type="number" min="0.5" max="10" step="0.1" value="5.0">
-                </label>
-                <label>
-                  Gate polarity
-                  <select id="cvGatePolarityInput">
-                    <option value="positive" selected>Positive</option>
-                    <option value="inverted">Inverted</option>
-                  </select>
-                </label>
-                <label>
-                  Retrigger gap ms
-                  <input id="cvRetriggerMsInput" type="number" min="0" max="5" step="0.1" value="2.0">
-                </label>
-              </div>
-              <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | meter 4/4 from form 1 | feel Lattice Safe | first share 0.500</output>
+              </details>
+              <output class="tempo-lattice-readout" id="tempoLatticeReadout">60.0000 BPM | meter 5/4 from form 1 | feel Living Drift | first share 0.333</output>
             </div>
           </section>
 
-          <section class="panel pitch-panel">
-            <div class="panel-head">
-              <h2>Pitch</h2>
-            </div>
+          <details class="panel pitch-panel pitch-drawer">
+            <summary>
+              <span>Pitch Behaviour</span>
+              <span class="pitch-lock-note" id="pitchLockNote">Reference locked</span>
+            </summary>
             <div class="field-grid">
-              <label>
-                Reference pitch
-                <select id="referenceNoteInput"></select>
+              <label class="switch-label reference-unlock-toggle">
+                <span>Unlock reference</span>
+                <span class="switch-control">
+                  <input id="referenceUnlockInput" type="checkbox" aria-describedby="referenceUnlockWarning">
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
               </label>
-              <label>
+              <p class="reference-warning" id="referenceUnlockWarning" hidden>Changing Reference pitch or Hz overrides the top fundamental and recalculates tempo, pulse pitch, and visual colour.</p>
+              <label class="locked-field">
+                Reference pitch
+                <input id="referenceNoteDisplayInput" type="text" value="A3" readonly aria-readonly="true">
+                <select id="referenceNoteInput" class="state-only-input" hidden disabled aria-hidden="true" tabindex="-1"></select>
+              </label>
+              <label class="locked-field">
                 Reference Hz
-                <input id="referenceFreqInput" type="number" min="20" max="2000" step="0.01" value="216.00">
+                <input id="referenceFreqInput" type="number" min="20" max="2000" step="any" inputmode="decimal" value="216.00" readonly>
               </label>
               <label>
                 Map
@@ -339,23 +285,111 @@
                 Link root to reference
               </label>
             </div>
+          </details>
+
+          <section class="panel voices-panel">
+            <div class="panel-head">
+              <h2>Structure</h2>
+            </div>
+            <div class="field-grid">
+              <label>
+                Style
+                <select id="styleInput">
+                  <option value="invention" selected>Imitation + Invention</option>
+                  <option value="counterpoint">Counterpoint</option>
+                  <option value="fishtail_fugue">Fishtail Fugue</option>
+                </select>
+              </label>
+              <label>
+                Voices
+                <select id="voicesInput">
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4" selected>4</option>
+                </select>
+              </label>
+              <div class="pedal-field" aria-label="Pedal voice controls">
+                <span>Pedal voices</span>
+                <label><input id="pedalBassInput" type="checkbox"> Bass</label>
+                <label><input id="pedalTenorInput" type="checkbox"> Tenor</label>
+                <label><input id="pedalAltoInput" type="checkbox"> Alto</label>
+                <label><input id="pedalSopranoInput" type="checkbox"> Soprano</label>
+              </div>
+              <label class="switch-label" title="Shape note velocity gently; turn off for fixed velocity 100">
+                <span>Gravity velocity</span>
+                <span class="switch-control">
+                  <input id="velocityModeInput" type="checkbox" checked>
+                  <span class="switch-track" aria-hidden="true"></span>
+                </span>
+              </label>
+              <label>
+                Breathing
+                <input id="breathingInput" type="range" min="0" max="100" value="74">
+              </label>
+              <label>
+                Density
+                <input id="densityInput" type="range" min="0" max="100" value="26">
+              </label>
+              <label>
+                Rhythm motion
+                <input id="rhythmMotionInput" type="range" min="0" max="100" value="18">
+              </label>
+            </div>
+            <div class="dice-row">
+              <button class="dice dice-d4" id="gentleRollButton" type="button" title="Gentle weighted random form">
+                <span>D4</span>
+              </button>
+              <button class="dice dice-d20" id="wildRollButton" type="button" title="Wide weighted random form">
+                <span>D20</span>
+              </button>
+              <label class="slider-label">
+                Calm
+                <input id="strangenessInput" type="range" min="0" max="100" value="16">
+                Varied
+              </label>
+            </div>
           </section>
 
-          <section class="panel action-panel">
-            <div class="generator-core" aria-hidden="true">
-              <div class="torus-host" id="torusHost"></div>
-              <canvas id="coreCanvas" width="360" height="220"></canvas>
+          <section class="panel form-panel">
+            <div class="panel-head">
+              <h2>Form</h2>
+              <button class="icon-button" id="addSectionButton" type="button" title="Add section">+</button>
+            </div>
+            <div class="form-timeline-shell" aria-label="Form timeline">
+              <div class="timeline-toolbar">
+                <div class="timeline-actions" aria-label="Selected section actions">
+                  <button id="moveSectionLeftButton" type="button">Move Left</button>
+                  <button id="moveSectionRightButton" type="button">Move Right</button>
+                  <button id="copySectionButton" type="button">Copy</button>
+                  <button id="duplicateSectionButton" type="button">Duplicate</button>
+                  <button id="pasteSectionButton" type="button">Paste After</button>
+                  <button id="saveFormStateButton" type="button">Save State</button>
+                  <button id="clearFormStateButton" type="button">Clean State</button>
+                </div>
+              </div>
+              <div class="section-timeline" id="sectionTimeline" role="list" aria-label="Form sections"></div>
+            </div>
+            <div class="section-table" id="sectionTable"></div>
+            <div class="form-add-footer">
+              <button class="add-section-wide" id="addSectionBottomButton" type="button">Add section</button>
+            </div>
+            <p class="form-safety" id="formSafetyLabel" hidden></p>
+          </section>
+
+          <section class="panel export-panel">
+            <div class="panel-head">
+              <h2>Generate</h2>
             </div>
             <div class="action-buttons">
               <button class="primary-button" id="generateButton" type="button">Generate + Save MIDI</button>
-              <button id="downloadMidiButton" type="button" disabled>Save MIDI Again</button>
-              <button id="downloadJsonButton" type="button" disabled>Save Project JSON</button>
               <button id="downloadProbeWavButton" type="button" disabled>Save Pulse WAV</button>
               <button id="downloadTickerWavButton" type="button" disabled>Save Ticker WAV</button>
+              <button id="downloadMidiButton" type="button" disabled>Save MIDI Again</button>
+              <button id="downloadJsonButton" type="button" disabled>Save Project JSON</button>
               <button id="downloadCvWavButton" type="button" disabled>Save CV ZIP</button>
-              <button id="toggleNotesButton" type="button">Show Notes</button>
+              <button class="notes-toggle-button" id="toggleNotesButton" type="button">Show Notes</button>
             </div>
-            <p class="download-help">Generate + Save MIDI is the main button. Tempo data writes the conductor track; Tempo lattice can add pulse-level timing sway. Optional WAV and CV stems can be prepared after generation, or rendered from their save buttons once a piece exists. Large audio exports show a size estimate before rendering.</p>
+            <p class="download-help">Generate + Save MIDI is the final step. The pulse and ticker save buttons render the reference pulse or ticker for the generated song, then save the WAV. Large audio exports show a size estimate before rendering.</p>
           </section>
         </section>
 
@@ -408,7 +442,7 @@
                 <p><strong>Living Reference</strong> listens only after you press Listen for pitch. Play or sing one sustained monophonic note, then press Use stable pitch to freeze the recent pitch centre as Fishtail's exact reference. Capture anyway is there when the source is intentionally moving. The input is analysed locally through a silent graph; it is not monitored, recorded, uploaded, or saved with device identity.</p>
                 <p><strong>Metronome</strong> starts a louder pink-noise ticker using the preview meter, meter accents, and the rational swing / irrational swing controls. When Preview meter says Follow section 1, it takes the time signature from the first Form row. Rational swing moves from stroll to swagger; irrational swing adds stumble, with Lattice Safe, Hybrid Drift, and Living Drift feel modes. Swing starts straight by default; DUB mode sets a gentle strolling swing. <strong>Tempo lattice</strong> writes the same pulse timing into the MIDI conductor track as Set Tempo events, while the notes themselves stay on their formal grid.</p>
                 <p>Plain Equal Temperament MIDI exports ordinary note numbers, so exact captured acoustic tuning depends on the receiving synth. Amy Dub Intonation, Bend MIDI, project JSON, Pulse WAV, and Fishtail's tempo/reference metadata preserve the captured relationship more directly.</p>
-                <p>Prepare pulse WAV and Prepare ticker WAV render optional mono 48 kHz / 24-bit stems after MIDI generation. Pulse WAV is a short first-two-bars reference tone; ticker WAV stays whole-piece and peak-normalized to -6 dBFS for DAW-friendly alignment. Prepare analogue CV ZIP renders the selected voice set as clock, 1V/oct pitch, gate, and calibration WAV files. Fishtail shows estimated file size and temporary render memory before audio export. The CV controls set voice package, first-60s / whole-short-piece duration, musical pulse / bar / 24 PPQN clock, full-scale volts, zero offset, gate polarity, and retrigger gap. Browser CV export defaults to one voice and the first 60 seconds for iPad memory safety. Pitch CV needs a DC-coupled interface or DAW CV utility; ordinary phone and headphone outputs usually will not preserve DC pitch voltage.</p>
+                <p>Save Pulse WAV and Save Ticker WAV render optional mono 48 kHz / 24-bit stems for the generated song. Pulse WAV is a short first-two-bars reference tone; ticker WAV stays whole-piece and peak-normalized to -6 dBFS for DAW-friendly alignment. Prepare analogue CV ZIP renders the selected voice set as clock, 1V/oct pitch, gate, and calibration WAV files. Fishtail shows estimated file size and temporary render memory before audio export. The CV controls set voice package, first-60s / whole-short-piece duration, musical pulse / bar / 24 PPQN clock, full-scale volts, zero offset, gate polarity, and retrigger gap. Browser CV export defaults to one voice and the first 60 seconds for iPad memory safety. Pitch CV needs a DC-coupled interface or DAW CV utility; ordinary phone and headphone outputs usually will not preserve DC pitch voltage.</p>
               </section>
 
               <section>
@@ -530,11 +564,11 @@
       </section>
     </main>
 
-    <script src="src/tempo-lattice.js?v=3"></script>
+    <script src="src/tempo-lattice.js?v=4"></script>
     <script src="src/audio-engine.js?v=7"></script>
     <script src="src/wav-export.js?v=7"></script>
     <script src="src/pitch-input.js?v=3"></script>
     <script src="src/random-router.js?v=1"></script>
-    <script src="src/app.js?v=81"></script>
+    <script src="src/app.js?v=97"></script>
   </body>
 </html>

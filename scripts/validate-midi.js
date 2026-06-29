@@ -323,7 +323,6 @@ function runStabilityTests() {
       const adaptiveVisual = (() => {
         const now = Date.now() + 1000;
         state.visualEcoUntil = 0;
-        state.visualGlitchUntil = 0;
         state.visualEcoCooldownUntil = 0;
         state.visualStressScore = 0;
         state.reducedMotion = false;
@@ -337,7 +336,8 @@ function runStabilityTests() {
         monitorVisualLoad(118, 32, now + 80);
         return {
           active: visualEcoActive(now + 120),
-          glitch: visualGlitchEnvelope(now + 120) > 0.1,
+          noBadGlitch: typeof visualGlitchEnvelope === "undefined"
+            && !Object.prototype.hasOwnProperty.call(state, "visualGlitchUntil"),
           delay: currentCoreFrameDelay(now + 120),
           dpr: currentVisualPixelRatio(now + 120),
         };
@@ -346,7 +346,6 @@ function runStabilityTests() {
       const highRefreshVisual = (() => {
         const now = Date.now() + 20000;
         state.visualEcoUntil = 0;
-        state.visualGlitchUntil = 0;
         state.visualEcoCooldownUntil = 0;
         state.visualHighRefreshCapable = true;
         state.reducedMotion = false;
@@ -417,6 +416,7 @@ function runStabilityTests() {
           tempoLatticeEnabled: true,
           rationalSwing: 1,
           irrationalSwing: 0.6,
+          irrationalFeelMode: "lattice_safe",
           seed: "timeline-audit",
         });
         const perMeter = Object.entries(METERS).every(([meterId, meter]) => {
@@ -458,6 +458,7 @@ function runStabilityTests() {
           tempoLatticeEnabled: true,
           rationalSwing: 0.5,
           irrationalSwing: 0.6,
+          irrationalFeelMode: "lattice_safe",
           tempoLatticeLaw: FishtailTempoLattice.DEFAULT_LAW,
           seed: "safe-fingerprint",
         }, { ppq: PPQ, meters: METERS });
@@ -469,6 +470,7 @@ function runStabilityTests() {
           tempoLatticeEnabled: true,
           rationalSwing: 0,
           irrationalSwing: 1,
+          irrationalFeelMode: "lattice_safe",
           tempoLatticeLaw: FishtailTempoLattice.NATURAL_SPREAD_LAW,
           seed: "two-pulse-natural",
         }, { ppq: PPQ, meters: METERS });
@@ -477,6 +479,7 @@ function runStabilityTests() {
           tempoLatticeEnabled: true,
           rationalSwing: 0,
           irrationalSwing: 1,
+          irrationalFeelMode: "lattice_safe",
           tempoLatticeLaw: FishtailTempoLattice.DEFAULT_LAW,
           seed: "two-pulse-natural",
         }, { ppq: PPQ, meters: METERS });
@@ -813,9 +816,9 @@ function runStabilityTests() {
             && disposeSummary.markers === 0,
         },
         {
-          name: "visual adaptive eco glitch lowers render load",
+          name: "visual adaptive eco lowers render load without bad glitch",
           ok: adaptiveVisual.active
-            && adaptiveVisual.glitch
+            && adaptiveVisual.noBadGlitch
             && adaptiveVisual.delay === CORE_ECO_IDLE_FRAME_MS
             && adaptiveVisual.dpr === 1,
         },
@@ -2305,40 +2308,93 @@ function runRefrainAndSuspensionTests() {
 function runFugueTests() {
   const indexHtml = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   const stylesCss = fs.readFileSync(path.join(ROOT, "styles.css"), "utf8");
+  const appJs = fs.readFileSync(path.join(ROOT, "src", "app.js"), "utf8");
+  const audioEngineJs = fs.readFileSync(path.join(ROOT, "src", "audio-engine.js"), "utf8");
+  const wavExportJs = fs.readFileSync(path.join(ROOT, "src", "wav-export.js"), "utf8");
+  const pitchInputJs = fs.readFileSync(path.join(ROOT, "src", "pitch-input.js"), "utf8");
   const styleOptionOk = indexHtml.includes('<option value="fishtail_fugue">Fishtail Fugue</option>');
   const tempoDefaultOk = indexHtml.includes('id="tempoInput" type="text" value="60.0000"')
     && indexHtml.includes('id="tempoDivisorLabel">n = 216</span>')
     && indexHtml.includes('id="tempoDivisorInput" type="range" min="59" max="432" step="1" value="216"')
-    && indexHtml.includes('id="referenceFreqInput" type="number" min="20" max="2000" step="0.01" value="216.00"')
+    && indexHtml.includes('meter 5/4 from form 1')
+    && indexHtml.includes('first share 0.333')
+    && indexHtml.includes('id="referenceFreqInput" type="number" min="20" max="2000" step="any" inputmode="decimal" value="216.00" readonly')
     && stylesCss.includes("#tempoDivisorInput")
     && stylesCss.includes("direction: rtl");
   const variedLabelOk = indexHtml.includes("Varied") && !indexHtml.includes("Strange");
-  const notesClosedOk = indexHtml.includes('<button id="toggleNotesButton" type="button">Show Notes</button>')
+  const notesClosedOk = indexHtml.includes('<button class="notes-toggle-button" id="toggleNotesButton" type="button">Show Notes</button>')
     && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
   const velocitySwitchOk = indexHtml.includes('id="velocityModeInput" type="checkbox" checked')
     && indexHtml.includes("Gravity velocity");
-  const panelOrderOk = indexHtml.indexOf('class="panel sound-time-panel"') > indexHtml.indexOf('class="panel voices-panel"')
-    && indexHtml.indexOf('class="panel pitch-panel"') > indexHtml.indexOf('class="panel sound-time-panel"')
-    && stylesCss.includes(".pitch-panel {\n  grid-column: 2;\n  grid-row: 3;")
-    && stylesCss.includes(".sound-time-panel {\n  grid-column: 2;\n  grid-row: 2;");
+  const panelOrderOk = indexHtml.indexOf('class="panel sound-time-panel"') < indexHtml.indexOf('class="panel pitch-panel pitch-drawer"')
+    && indexHtml.indexOf('class="panel pitch-panel pitch-drawer"') < indexHtml.indexOf('class="panel voices-panel"')
+    && stylesCss.includes(".pitch-panel {\n  grid-column: 1 / -1;\n  grid-row: 2;")
+    && stylesCss.includes(".sound-time-panel {\n  grid-column: 1;\n  grid-row: 1;");
+  const timelineUiOk = indexHtml.includes('class="form-timeline-shell"')
+    && indexHtml.includes('id="sectionTimeline" role="list"')
+    && !indexHtml.includes('id="timelineStatus"')
+    && indexHtml.includes('id="moveSectionLeftButton"')
+    && indexHtml.includes('id="copySectionButton"')
+    && indexHtml.includes('id="duplicateSectionButton"')
+    && indexHtml.includes('id="pasteSectionButton"')
+    && indexHtml.includes('id="saveFormStateButton"')
+    && indexHtml.includes('id="clearFormStateButton"')
+    && stylesCss.includes(".section-timeline")
+    && stylesCss.includes("flex-wrap: wrap")
+    && stylesCss.includes("overflow: visible")
+    && stylesCss.includes(".timeline-drag-handle")
+    && stylesCss.includes(".timeline-resize-handle")
+    && stylesCss.includes(".timeline-popover")
+    && stylesCss.includes(".timeline-item.is-detail-open .timeline-popover")
+    && stylesCss.includes(".section-empty-state")
+    && stylesCss.includes("--section-editor-rgb")
+    && stylesCss.includes("min-height: min(100svh, 780px)")
+    && stylesCss.includes("touch-action: none")
+    && stylesCss.includes("--timeline-rgb")
+    && stylesCss.includes("--timeline-graph-rgb")
+    && appJs.includes("TIMELINE_HOVER_DETAIL_MS")
+    && appJs.includes("timeline-popover-delete")
+    && appJs.includes("timeline-resize-handle")
+    && appJs.includes("timelineDetailIndex")
+    && appJs.includes("function timelineGraphRgb()")
+    && appJs.includes('els.sectionTimeline.style.setProperty("--timeline-graph-rgb"')
+    && appJs.includes("const DEFAULT_FORM_TEMPLATE_C = [")
+    && appJs.includes("mode: \"ionian\", meter: \"5/4\"")
+    && appJs.includes("function defaultSectionsForReferencePc(")
+    && appJs.includes("formFollowsReference")
+    && appJs.includes("syncDefaultFormToReference()")
+    && appJs.includes("function moveSection(")
+    && appJs.includes("function pasteAfterSelectedSection()")
+    && appJs.includes("function saveFormState()")
+    && appJs.includes("function clearFormState()")
+    && appJs.includes("function requestDeleteSection(")
+    && appJs.includes("function beginTimelineResize(")
+    && appJs.includes("function resetRangeControl(")
+    && appJs.includes("version: \"form_state_v1\"")
+    && appJs.includes("function sectionVisualRgb(")
+    && appJs.includes("visualTeardropRgbForWavelength(foldedLightWavelengthNm(frequency))")
+    && appJs.includes("renderSectionTimeline();\n  requestCoreFrame(true);")
+    && appJs.includes("const normalized = state.sections[index];")
+    && appJs.includes("state.sections.splice(index + 1")
+    && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=40"')
-    && indexHtml.includes('src/tempo-lattice.js?v=3')
+    && indexHtml.includes('href="styles.css?v=56"')
+    && indexHtml.includes('src/tempo-lattice.js?v=4')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
     && indexHtml.includes('id="rationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="irrationalSwingInput" type="range" min="0" max="100" value="0"')
     && indexHtml.includes('id="irrationalFeelInput"')
-    && indexHtml.includes('<option value="lattice_safe" selected>Lattice Safe</option>')
+    && indexHtml.includes('<option value="lattice_safe">Lattice Safe</option>')
     && indexHtml.includes('<option value="hybrid_drift">Hybrid Drift</option>')
-    && indexHtml.includes('<option value="living_drift">Living Drift</option>')
+    && indexHtml.includes('<option value="living_drift" selected>Living Drift</option>')
     && indexHtml.includes("Stroll to swagger")
     && indexHtml.includes("Stumble")
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
     && indexHtml.includes('src/audio-engine.js?v=7')
     && indexHtml.includes('src/wav-export.js?v=7')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=81')
+    && indexHtml.includes('src/app.js?v=97')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -2348,16 +2404,17 @@ function runFugueTests() {
     && indexHtml.includes("ticker WAV stays whole-piece and peak-normalized to -6 dBFS")
     && indexHtml.includes("Pulse pitch")
     && indexHtml.includes("Pulse sound")
-    && indexHtml.includes("Prepare pulse WAV")
+    && indexHtml.includes('id="prepareProbeWavInput" type="checkbox" hidden')
+    && indexHtml.includes('id="prepareTickerWavInput" type="checkbox" hidden')
     && indexHtml.includes("Save Pulse WAV")
     && indexHtml.includes("mono 48 kHz / 24-bit stems")
     && indexHtml.includes("Pulse WAV is a short first-two-bars reference tone")
-    && indexHtml.includes("rendered from their save buttons once a piece exists")
+    && indexHtml.includes("pulse and ticker save buttons render")
     && indexHtml.includes("Large audio exports show a size estimate before rendering")
     && indexHtml.includes("Browser CV export defaults to one voice and the first 60 seconds")
-    && indexHtml.includes("meter 4/4 from form 1")
-    && indexHtml.includes("feel Lattice Safe")
-    && indexHtml.includes("first share 0.500")
+    && indexHtml.includes("meter 5/4 from form 1")
+    && indexHtml.includes("feel Living Drift")
+    && indexHtml.includes("first share 0.333")
     && stylesCss.includes(".probe-pitch-field")
     && stylesCss.includes(".living-reference")
     && stylesCss.includes("grid-column: 1 / -1")
@@ -2379,10 +2436,6 @@ function runFugueTests() {
     && indexHtml.includes("Browser CV export defaults to one voice and the first 60 seconds")
     && indexHtml.includes("DC-coupled interface")
     && indexHtml.includes("analogue CV export direction");
-  const appJs = fs.readFileSync(path.join(ROOT, "src", "app.js"), "utf8");
-  const audioEngineJs = fs.readFileSync(path.join(ROOT, "src", "audio-engine.js"), "utf8");
-  const wavExportJs = fs.readFileSync(path.join(ROOT, "src", "wav-export.js"), "utf8");
-  const pitchInputJs = fs.readFileSync(path.join(ROOT, "src", "pitch-input.js"), "utf8");
   const inputRaceOk = appJs.includes("requestRevision")
     && appJs.includes("staleRequest")
     && appJs.includes("hiddenPage")
@@ -2417,8 +2470,10 @@ function runFugueTests() {
     && wavExportJs.includes("estimateCvRenderBytes")
     && wavExportJs.includes("indexTempoTimeline")
     && wavExportJs.includes("calibration/cv-calibration-one-octave.wav");
-  const audioSaveOk = appJs.includes("Render + Save Pulse WAV")
-    && appJs.includes("Render + Save Ticker WAV")
+  const audioSaveOk = appJs.includes('readyText: "Save Pulse WAV"')
+    && appJs.includes('renderText: "Save Pulse WAV"')
+    && appJs.includes('readyText: "Save Ticker WAV"')
+    && appJs.includes('renderText: "Save Ticker WAV"')
     && appJs.includes("Render + Save CV ZIP")
     && appJs.includes("confirmAudioExportEstimate")
     && appJs.includes("Audio export estimate")
@@ -2686,13 +2741,14 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk && audioSaveOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && panelOrderOk && timelineUiOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk && audioSaveOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
   console.log(`${notesClosedOk ? "ok" : "failed"} notes default closed`);
   console.log(`${velocitySwitchOk ? "ok" : "failed"} velocity switch default`);
-  console.log(`${panelOrderOk ? "ok" : "failed"} panel order puts probe before pitch`);
+  console.log(`${panelOrderOk ? "ok" : "failed"} panel order puts pulse and pitch before structure`);
+  console.log(`${timelineUiOk ? "ok" : "failed"} form timeline copy paste and drag affordance`);
   console.log(`${probePitchSliderOk ? "ok" : "failed"} probe pitch sliders and metronome boost`);
   console.log(`${cvExportOk ? "ok" : "failed"} analogue CV export controls`);
   console.log(`${inputRaceOk ? "ok" : "failed"} living reference race guards`);

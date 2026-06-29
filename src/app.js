@@ -31,8 +31,20 @@ const VISUAL_STRESS_FRAME_MS = 82;
 const VISUAL_STRESS_DRAW_MS = 28;
 const VISUAL_STRESS_TRIGGER = 4.6;
 const VISUAL_ECO_MS = 9000;
-const VISUAL_GLITCH_MS = 1900;
 const VISUAL_ECO_COOLDOWN_MS = 3500;
+const SOUND_SPEED_AIR_MPS = 343.2;
+const LIGHT_FOLD_MIN_NM = 380;
+const LIGHT_FOLD_MAX_NM = 760;
+const VISUAL_LIGHT_BAND_VOICES = 11;
+const VISUAL_LIGHT_BAND_DELTA = 1 / 12;
+const VISUAL_LIGHT_TEARDROP_Q = 2;
+const VISUAL_LIGHT_TEARDROP_P = 2;
+const VISUAL_LIGHT_SMOOTHING = 0.085;
+const TIMELINE_HOVER_DETAIL_MS = 1500;
+const TIMELINE_LONG_PRESS_DELETE_MS = 680;
+const TIMELINE_LONG_PRESS_MOVE_CANCEL_PX = 9;
+const TIMELINE_RESIZE_MIN_BARS = 1;
+const TIMELINE_RESIZE_MAX_BARS = 64;
 const DUB_RELAX_LINES = [
   "Relax: Dub Gravity is active, the bass is holding the room.",
   "Take it easy: the checker found the groove and left the shimmer in.",
@@ -200,12 +212,12 @@ const DUB_MIN_NOTE_TICKS = 24;
 const ENTROPY_TIMEOUT_MS = 2000;
 const ENTROPY_MAX_BYTES = 4096;
 const COMPLEXITY_WARN = {
-  sections: 10,
+  sections: 24,
   bars: 128,
   voicePulses: 3200,
 };
 const COMPLEXITY_EXPANSIVE = {
-  sections: 18,
+  sections: 36,
   bars: 256,
   voicePulses: 7600,
 };
@@ -422,14 +434,56 @@ const SECTION_TREATMENTS = {
   dubby: "Dubby",
 };
 
-const DEFAULT_SECTIONS = [
-  { bars: 6, key: "F", mode: "mixolydian", meter: "3/4", cadence: "plagal", role: "normal", treatment: "straight" },
-  { bars: 8, key: "D", mode: "gravity_melodic_minor", meter: "6/8", cadence: "authentic", role: "normal", treatment: "straight" },
-  { bars: 24, key: "F", mode: "mixolydian", meter: "3/4", cadence: "dub_suspension", role: "normal", treatment: "straight" },
+const DEFAULT_FORM_TEMPLATE_C = [
+  { bars: 4, key: "C", mode: "ionian", meter: "5/4", cadence: "plagal", role: "normal", treatment: "straight" },
+  { bars: 4, key: "C", mode: "ionian", meter: "3/4", cadence: "plagal", role: "normal", treatment: "straight" },
+  { bars: 4, key: "C", mode: "mixolydian", meter: "7/8", cadence: "dub_suspension", role: "normal", treatment: "straight" },
+  { bars: 4, key: "F", mode: "lydian", meter: "9/8", cadence: "modal", role: "normal", treatment: "straight" },
+  { bars: 3, key: "F", mode: "mixolydian", meter: "4/4", cadence: "plagal", role: "normal", treatment: "straight" },
+  { bars: 4, key: "C", mode: "mixolydian", meter: "7/8", cadence: "dub_suspension", role: "normal", treatment: "straight" },
+  { bars: 2, key: "C", mode: "ionian", meter: "5/4", cadence: "plagal", role: "normal", treatment: "straight" },
+  { bars: 4, key: "Ab", mode: "lydian", meter: "6/8", cadence: "modal", role: "development", treatment: "gentle" },
+  { bars: 4, key: "F", mode: "dorian", meter: "7/8", cadence: "modal", role: "development", treatment: "gentle" },
+  { bars: 4, key: "Ab", mode: "mixolydian", meter: "9/8", cadence: "dub_suspension", role: "development", treatment: "gentle" },
+  { bars: 2, key: "Eb", mode: "lydian", meter: "5/4", cadence: "modal", role: "development", treatment: "gentle" },
+  { bars: 3, key: "F", mode: "ionian", meter: "4/4", cadence: "authentic", role: "development", treatment: "gentle" },
+  { bars: 4, key: "Ab", mode: "dorian", meter: "7/8", cadence: "modal", role: "development", treatment: "gentle" },
+  { bars: 4, key: "C", mode: "ionian", meter: "3/4", cadence: "plagal", role: "refrain", treatment: "straight" },
+  { bars: 4, key: "C", mode: "mixolydian", meter: "7/8", cadence: "dub_suspension", role: "refrain", treatment: "straight" },
+  { bars: 4, key: "F", mode: "lydian", meter: "9/8", cadence: "plagal", role: "refrain", treatment: "straight" },
+  { bars: 4, key: "Ab", mode: "lydian", meter: "5/4", cadence: "modal", role: "refrain", treatment: "straight" },
+  { bars: 4, key: "C", mode: "ionian", meter: "4/4", cadence: "plagal", role: "refrain", treatment: "straight" },
 ];
+const DEFAULT_FORM_SOURCE_PC = noteToPc("C");
+const DEFAULT_FORM_REFERENCE_PC = mod(noteToPc(DEFAULT_REFERENCE_NOTE), 12);
+
+function keyNameForPc(pc) {
+  return KEY_NAMES[mod(pc, 12)] || "C";
+}
+
+function defaultSectionsForReferencePc(referencePc = DEFAULT_FORM_SOURCE_PC) {
+  const shift = mod(referencePc - DEFAULT_FORM_SOURCE_PC, 12);
+  return DEFAULT_FORM_TEMPLATE_C.map((section, index) => normalizeSection({
+    ...section,
+    key: keyNameForPc(noteToPc(section.key) + shift),
+  }, index));
+}
+
+const DEFAULT_SECTIONS = defaultSectionsForReferencePc(DEFAULT_FORM_REFERENCE_PC);
 
 const state = {
   sections: structuredClone(DEFAULT_SECTIONS),
+  selectedSectionIndex: 0,
+  timelineDetailIndex: null,
+  formFollowsReference: true,
+  formReferencePc: DEFAULT_FORM_REFERENCE_PC,
+  sectionClipboard: null,
+  timelineDrag: null,
+  timelineResize: null,
+  timelinePopoverTimer: null,
+  timelineDeletePress: null,
+  timelineSuppressClickUntil: 0,
+  timelineSuppressContextMenuUntil: 0,
   lastPiece: null,
   animationActive: false,
   animationPhase: 0,
@@ -447,7 +501,6 @@ const state = {
   motionTiltX: 0,
   motionTiltY: 0,
   motionLastAt: 0,
-  bootGlitchUntil: Date.now() + 2400,
   audioContext: null,
   audio: {
     context: null,
@@ -501,7 +554,6 @@ const state = {
   reducedMotion: false,
   visualStressScore: 0,
   visualEcoUntil: 0,
-  visualGlitchUntil: 0,
   visualEcoCooldownUntil: 0,
   visualHighRefreshCapable: false,
   visualRefreshEstimate: 60,
@@ -513,6 +565,7 @@ const state = {
   visualResizeObserver: null,
   visualIntersectionObserver: null,
   reducedMotionQuery: null,
+  visualLightPalette: null,
 };
 
 window.fishtailApp = { state, version: "v0" };
@@ -540,6 +593,7 @@ const els = {};
 document.addEventListener("DOMContentLoaded", () => {
   bindElements();
   hydrateSelects();
+  applyPitchBehaviourLock();
   updateTuningRootReference(false);
   updateBendControls();
   applyPedalDefaults(true);
@@ -559,8 +613,18 @@ document.addEventListener("DOMContentLoaded", () => {
 function bindElements() {
   for (const id of [
     "sectionTable",
+    "sectionTimeline",
+    "timelineStatus",
     "formSafetyLabel",
     "addSectionButton",
+    "addSectionBottomButton",
+    "moveSectionLeftButton",
+    "moveSectionRightButton",
+    "copySectionButton",
+    "duplicateSectionButton",
+    "pasteSectionButton",
+    "saveFormStateButton",
+    "clearFormStateButton",
     "gentleRollButton",
     "wildRollButton",
     "strangenessInput",
@@ -586,6 +650,10 @@ function bindElements() {
     "referenceStopButton",
     "referenceUsePitchButton",
     "referenceCaptureAnywayButton",
+    "referenceUnlockInput",
+    "pitchLockNote",
+    "referenceUnlockWarning",
+    "referenceNoteDisplayInput",
     "referenceDeviceInput",
     "referenceRangeInput",
     "referenceInputStatus",
@@ -667,6 +735,7 @@ function hydrateSelects() {
     if (note === DEFAULT_REFERENCE_NOTE) option.selected = true;
     els.referenceNoteInput.append(option);
   }
+  syncReferencePitchDisplay();
   if (els.metronomeMeterInput) {
     const follow = document.createElement("option");
     follow.value = "section-1";
@@ -684,18 +753,15 @@ function hydrateSelects() {
 
 function bindEvents() {
   document.addEventListener("pointerdown", requestMotionPermissionOnce, { once: true, passive: true });
-  els.addSectionButton.addEventListener("click", () => {
-    state.sections.push({
-      bars: 8,
-      key: "C",
-      mode: "major",
-      meter: "4/4",
-      cadence: "authentic",
-      role: "normal",
-      treatment: "straight",
-    });
-    renderSections();
-  });
+  els.addSectionButton.addEventListener("click", addSection);
+  els.addSectionBottomButton?.addEventListener("click", addSection);
+  els.moveSectionLeftButton?.addEventListener("click", () => moveSelectedSection(-1));
+  els.moveSectionRightButton?.addEventListener("click", () => moveSelectedSection(1));
+  els.copySectionButton?.addEventListener("click", copySelectedSection);
+  els.duplicateSectionButton?.addEventListener("click", duplicateSelectedSection);
+  els.pasteSectionButton?.addEventListener("click", pasteAfterSelectedSection);
+  els.saveFormStateButton?.addEventListener("click", saveFormState);
+  els.clearFormStateButton?.addEventListener("click", clearFormState);
   els.gentleRollButton.addEventListener("click", () => randomiseForm("gentle"));
   els.wildRollButton.addEventListener("click", () => randomiseForm("wild"));
   els.voicesInput.addEventListener("change", () => {
@@ -706,6 +772,7 @@ function bindEvents() {
   els.outputModeInput.addEventListener("change", () => {
     updateBendControls();
     refreshTorusTuning();
+    applyVisualPitchColorChange();
   });
   els.referenceNoteInput.addEventListener("change", () => {
     updateReferenceFrequencyFromAnchor();
@@ -713,6 +780,10 @@ function bindEvents() {
   });
   els.referenceFreqInput.addEventListener("input", () => {
     updateReferenceAnchorFromFrequency();
+    applyReferencePitchChange();
+  });
+  els.referenceUnlockInput?.addEventListener("change", () => {
+    applyPitchBehaviourLock();
     applyReferencePitchChange();
   });
   els.probePitchInput?.addEventListener("input", () => {
@@ -731,11 +802,18 @@ function bindEvents() {
     updateSoundTimeControls();
     updateLiveAudioFromControls();
   });
-  els.rootNoteInput.addEventListener("change", () => updateTuningRootReference(true));
+  els.rootNoteInput.addEventListener("change", () => {
+    updateTuningRootReference(true);
+    applyVisualPitchColorChange();
+  });
   els.rootFreqInput.addEventListener("input", () => {
     if (els.linkRootInput) els.linkRootInput.checked = false;
+    applyVisualPitchColorChange();
   });
-  els.linkRootInput?.addEventListener("change", () => updateTuningRootReference(true));
+  els.linkRootInput?.addEventListener("change", () => {
+    updateTuningRootReference(true);
+    applyVisualPitchColorChange();
+  });
   els.dubModeInput.addEventListener("change", () => {
     updateDubModeUi();
     applyPedalDefaults(false);
@@ -797,6 +875,226 @@ function bindEvents() {
     if (state.inputReference.stream) populateReferenceInputDevices(state.inputReference.selectedDeviceId);
   });
   bindSoundTimeEvents();
+  bindRangeResetEvents();
+}
+
+function addSection() {
+  markFormEdited();
+  state.sections.push({
+    bars: 4,
+    key: keyNameForPc(selectedReferenceMidi()),
+    mode: "ionian",
+    meter: "4/4",
+    cadence: "plagal",
+    role: "normal",
+    treatment: "straight",
+  });
+  state.selectedSectionIndex = state.sections.length - 1;
+  state.timelineDetailIndex = state.selectedSectionIndex;
+  renderSections();
+  if (els.statusLabel) els.statusLabel.textContent = "Section added";
+}
+
+function clampSelectedSectionIndex() {
+  if (!state.sections.length) {
+    state.selectedSectionIndex = -1;
+    return -1;
+  }
+  const last = state.sections.length - 1;
+  state.selectedSectionIndex = clamp(parseInt(state.selectedSectionIndex, 10) || 0, 0, last);
+  return state.selectedSectionIndex;
+}
+
+function sectionClone(section, index = null) {
+  return { ...normalizeSection(section, index) };
+}
+
+function markFormEdited() {
+  state.formFollowsReference = false;
+}
+
+function syncDefaultFormToReference() {
+  if (!state.formFollowsReference) return false;
+  const referencePc = mod(selectedReferenceMidi(), 12);
+  if (state.formReferencePc === referencePc) return false;
+  state.sections = defaultSectionsForReferencePc(referencePc);
+  state.formReferencePc = referencePc;
+  state.selectedSectionIndex = clamp(state.selectedSectionIndex, 0, state.sections.length - 1);
+  state.timelineDetailIndex = null;
+  if (els.sectionTable) renderSections();
+  return true;
+}
+
+function selectSection(index, options = {}) {
+  if (!state.sections.length) {
+    state.selectedSectionIndex = -1;
+    state.timelineDetailIndex = null;
+    updateSectionSelectionUi();
+    return;
+  }
+  state.selectedSectionIndex = clamp(parseInt(index, 10) || 0, 0, state.sections.length - 1);
+  if (options.reveal === true) {
+    state.timelineDetailIndex = state.selectedSectionIndex;
+  } else if (options.keepDetail !== true) {
+    state.timelineDetailIndex = null;
+  }
+  if (options.render === false) {
+    updateSectionSelectionUi();
+    return;
+  }
+  renderSections();
+}
+
+function moveSection(fromIndex, toIndex) {
+  const count = state.sections.length;
+  if (count < 2) return false;
+  const from = clamp(parseInt(fromIndex, 10) || 0, 0, count - 1);
+  const to = clamp(parseInt(toIndex, 10) || 0, 0, count - 1);
+  if (from === to) return false;
+  markFormEdited();
+  const [section] = state.sections.splice(from, 1);
+  state.sections.splice(to, 0, sectionClone(section, to));
+  state.selectedSectionIndex = to;
+  state.timelineDetailIndex = to;
+  renderSections();
+  return true;
+}
+
+function moveSelectedSection(direction) {
+  const from = clampSelectedSectionIndex();
+  if (from < 0) return;
+  moveSection(from, from + direction);
+}
+
+function copySelectedSection() {
+  const index = clampSelectedSectionIndex();
+  if (index < 0) return;
+  state.sectionClipboard = sectionClone(state.sections[index], index);
+  updateTimelineActions();
+}
+
+function duplicateSelectedSection() {
+  const index = clampSelectedSectionIndex();
+  if (index < 0) return;
+  markFormEdited();
+  const duplicate = sectionClone(state.sections[index], index + 1);
+  state.sections.splice(index + 1, 0, duplicate);
+  state.selectedSectionIndex = index + 1;
+  state.timelineDetailIndex = state.selectedSectionIndex;
+  renderSections();
+}
+
+function pasteAfterSelectedSection() {
+  if (!state.sectionClipboard) return;
+  const index = clampSelectedSectionIndex();
+  const insertIndex = index < 0 ? 0 : index + 1;
+  markFormEdited();
+  state.sections.splice(insertIndex, 0, sectionClone(state.sectionClipboard, insertIndex));
+  state.selectedSectionIndex = insertIndex;
+  state.timelineDetailIndex = state.selectedSectionIndex;
+  renderSections();
+}
+
+function formStateSnapshot() {
+  const sections = state.sections.map(normalizeSection);
+  const selectedIndex = clampSelectedSectionIndex();
+  const tempoDivisor = clamp(parseInt(els.tempoDivisorInput?.value, 10) || DEFAULT_TEMPO_DIVISOR, 1, 100000);
+  return {
+    title: "amy_cin fishtail form state",
+    version: "form_state_v1",
+    saved_at: new Date().toISOString(),
+    selected_section_index: selectedIndex,
+    selected_section_number: selectedIndex >= 0 ? selectedIndex + 1 : null,
+    form_follows_reference: Boolean(state.formFollowsReference),
+    form_reference_pc: state.formReferencePc,
+    form: {
+      sections,
+      timeline: sectionMetaFromSections(sections).map((section, index) => ({
+        section: index + 1,
+        bars: section.bars,
+        key: section.key,
+        mode: section.mode,
+        meter: section.meter,
+        cadence: section.cadence,
+        role: section.role,
+        treatment: section.treatment,
+        start_tick: section.startTick,
+        bar_ticks: section.barTicks,
+      })),
+    },
+    pulse_time: {
+      reference_note: els.referenceNoteInput?.value || DEFAULT_REFERENCE_NOTE,
+      reference_hz: currentReferenceHz(),
+      tempo_divisor: tempoDivisor,
+      tempo_bpm: currentTempoBpm(),
+      tempo_lattice: Boolean(els.tempoLatticeInput?.checked),
+      rational_swing: percentInput(els.rationalSwingInput, 0),
+      irrational_swing: percentInput(els.irrationalSwingInput, 0),
+      irrational_feel: currentIrrationalFeelMode(),
+    },
+    structure: {
+      style: els.styleInput?.value || "counterpoint",
+      voices: clamp(parseInt(els.voicesInput?.value, 10) || 4, 2, 4),
+      pedal_voices: readPedalVoices(clamp(parseInt(els.voicesInput?.value, 10) || 4, 2, 4)),
+      gravity_velocity: Boolean(els.velocityModeInput?.checked),
+      dub_armed: Boolean(els.dubModeInput?.checked),
+      breathing: percentInput(els.breathingInput, 0.74),
+      density: percentInput(els.densityInput, 0.26),
+      rhythm_motion: percentInput(els.rhythmMotionInput, DEFAULT_RHYTHM_MOTION),
+      strangeness: percentInput(els.strangenessInput, 0.16),
+    },
+    pitch: {
+      map: els.resolutionInput?.value || "literal",
+      output: els.outputModeInput?.value || "equal",
+      root_note: els.rootNoteInput?.value || "A",
+      root_hz: clamp(parseFloat(els.rootFreqInput?.value) || 432, 20, 2000),
+      link_root_to_reference: Boolean(els.linkRootInput?.checked),
+    },
+  };
+}
+
+function clearFormState() {
+  if (state.generating) return;
+  markFormEdited();
+  clearTimelinePopoverTimer();
+  clearTimelineDeletePress();
+  state.sections = [];
+  state.selectedSectionIndex = -1;
+  state.timelineDetailIndex = null;
+  renderSections();
+  if (els.statusLabel) els.statusLabel.textContent = "Blank form";
+}
+
+function bindRangeResetEvents() {
+  document.addEventListener("dblclick", (event) => {
+    const input = event.target?.closest?.('input[type="range"]');
+    if (!input || input.disabled) return;
+    event.preventDefault();
+    resetRangeControl(input);
+  });
+}
+
+function resetRangeControl(input) {
+  const min = Number.isFinite(parseFloat(input.min)) ? parseFloat(input.min) : 0;
+  const max = Number.isFinite(parseFloat(input.max)) ? parseFloat(input.max) : 100;
+  const step = Number.isFinite(parseFloat(input.step)) ? parseFloat(input.step) : 1;
+  const authored = input.dataset.resetValue || input.defaultValue;
+  const fallback = min < 0 && max > 0 ? 0 : min;
+  const raw = authored === "" ? fallback : parseFloat(authored);
+  const snapped = Math.round((clamp(Number.isFinite(raw) ? raw : fallback, min, max) - min) / step) * step + min;
+  input.value = String(clamp(Number(snapped.toFixed(6)), min, max));
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+async function saveFormState() {
+  const snapshot = formStateSnapshot();
+  const stamp = snapshot.saved_at.replace(/[:.]/g, "-");
+  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+  const savedVia = await saveBlobFromButton(blob, `amy-cin-fishtail-form-state-${stamp}.json`);
+  if (els.statusLabel) {
+    els.statusLabel.textContent = savedVia === "share" ? "Form state share opened" : "Form state save requested";
+  }
 }
 
 function bindSoundTimeEvents() {
@@ -807,6 +1105,7 @@ function bindSoundTimeEvents() {
     els.irrationalFeelInput,
     els.probePitchInput,
     els.probeFineInput,
+    els.referenceUnlockInput,
     els.metronomeMeterInput,
     els.probeLevelInput,
     els.metronomeLevelInput,
@@ -1476,7 +1775,6 @@ function visualIsActive(now = Date.now()) {
   return Boolean(
     state.animationActive
     || state.animationTailUntil > now
-    || state.bootGlitchUntil > now
     || Math.abs(state.motionTiltX) > 0.01
     || Math.abs(state.motionTiltY) > 0.01
   );
@@ -1517,10 +1815,6 @@ function visualEcoActive(now = Date.now()) {
   return state.visualEcoUntil > now;
 }
 
-function visualGlitchEnvelope(now = Date.now()) {
-  return clamp((state.visualGlitchUntil - now) / VISUAL_GLITCH_MS, 0, 1);
-}
-
 function currentVisualPixelRatio(now = Date.now()) {
   const deviceRatio = window.devicePixelRatio || 1;
   return Math.min(deviceRatio, visualEcoActive(now) ? 1 : 2);
@@ -1547,7 +1841,6 @@ function monitorVisualLoad(frameMs, drawCostMs, now = Date.now()) {
 function activateVisualEco(now = Date.now()) {
   if (now < state.visualEcoCooldownUntil && !visualEcoActive(now)) return;
   state.visualEcoUntil = Math.max(state.visualEcoUntil, now + VISUAL_ECO_MS);
-  state.visualGlitchUntil = Math.max(state.visualGlitchUntil, now + VISUAL_GLITCH_MS);
   state.visualEcoCooldownUntil = now + VISUAL_ECO_MS + VISUAL_ECO_COOLDOWN_MS;
   state.visualStressScore = Math.min(state.visualStressScore, VISUAL_STRESS_TRIGGER * 0.65);
 }
@@ -1604,6 +1897,50 @@ function updateBendControls() {
   if (showTuningRoot) updateTuningRootReference(true);
 }
 
+function applyPitchBehaviourLock() {
+  const unlocked = referenceOverrideUnlocked();
+  if (els.referenceNoteInput) {
+    els.referenceNoteInput.disabled = !unlocked;
+    els.referenceNoteInput.hidden = !unlocked;
+    els.referenceNoteInput.setAttribute("aria-hidden", String(!unlocked));
+    if (unlocked) {
+      els.referenceNoteInput.removeAttribute("tabindex");
+    } else {
+      els.referenceNoteInput.setAttribute("tabindex", "-1");
+    }
+  }
+  if (els.referenceNoteDisplayInput) {
+    els.referenceNoteDisplayInput.hidden = unlocked;
+    els.referenceNoteDisplayInput.readOnly = true;
+    els.referenceNoteDisplayInput.setAttribute("aria-readonly", "true");
+    syncReferencePitchDisplay();
+  }
+  if (els.referenceFreqInput) {
+    els.referenceFreqInput.readOnly = !unlocked;
+    if (unlocked) {
+      els.referenceFreqInput.removeAttribute("aria-readonly");
+    } else {
+      els.referenceFreqInput.setAttribute("aria-readonly", "true");
+    }
+  }
+  const noteField = els.referenceNoteDisplayInput?.closest("label") || els.referenceNoteInput?.closest("label");
+  const frequencyField = els.referenceFreqInput?.closest("label");
+  noteField?.classList.toggle("locked-field", !unlocked);
+  frequencyField?.classList.toggle("locked-field", !unlocked);
+  if (els.pitchLockNote) els.pitchLockNote.textContent = unlocked ? "Reference unlocked" : "Reference locked";
+  if (els.referenceUnlockWarning) els.referenceUnlockWarning.hidden = !unlocked;
+}
+
+function syncReferencePitchDisplay() {
+  if (els.referenceNoteDisplayInput && els.referenceNoteInput) {
+    els.referenceNoteDisplayInput.value = els.referenceNoteInput.value || DEFAULT_REFERENCE_NOTE;
+  }
+}
+
+function referenceOverrideUnlocked() {
+  return Boolean(els.referenceUnlockInput?.checked);
+}
+
 function isTuningRootVisible() {
   return els.outputModeInput?.value === "bend" || els.outputModeInput?.value === "retuner";
 }
@@ -1620,6 +1957,7 @@ function updateDubModeUi() {
   }
   if (els.tempoLatticeReadout) updateSoundTimeControls();
   if (els.referenceFreqInput) updateLiveAudioFromControls();
+  applyVisualPitchColorChange();
 }
 
 function applyDubSwingPreset(enabled) {
@@ -1745,6 +2083,11 @@ function previewTempoTimeline(seed = "preview") {
 
 function updateSoundTimeControls() {
   if (!els.tempoLatticeReadout) return;
+  if (!state.sections.length) {
+    els.tempoLatticeStatusLabel.textContent = "Blank form";
+    els.tempoLatticeReadout.textContent = `${currentTempoBpm().toFixed(4)} BPM | add a form section`;
+    return;
+  }
   const timeline = previewTempoTimeline("preview");
   const swing = FishtailTempoLattice.rationalSwingAmount(percentInput(els.rationalSwingInput, 0));
   const minBpm = timeline.minInstantaneousBpm.toFixed(2);
@@ -1786,14 +2129,23 @@ function updateReferenceFrequencyFromFineCents(fineCents) {
 }
 
 function applyReferencePitchChange() {
+  syncReferencePitchDisplay();
   updateTempoControls();
   if (isTuningRootVisible()) updateTuningRootReference(true);
+  syncDefaultFormToReference();
   updateSoundTimeControls();
   updateLiveAudioFromControls();
+  applyVisualPitchColorChange();
+}
+
+function applyVisualPitchColorChange() {
+  updateVisualLightPalette(isDubModeVisual());
+  renderSectionTimeline();
+  requestCoreFrame(true);
 }
 
 function currentReferenceHz() {
-  const displayed = clamp(parseFloat(els.referenceFreqInput.value) || DEFAULT_REFERENCE_HZ, 20, 2000);
+  const displayed = clamp(parseFloat(els.referenceFreqInput?.value) || DEFAULT_REFERENCE_HZ, 20, 2000);
   if (state.referenceExactHz && Math.abs(displayed - state.referenceExactHz) < 0.01) {
     return clamp(state.referenceExactHz, 20, 2000);
   }
@@ -1801,7 +2153,7 @@ function currentReferenceHz() {
 }
 
 function selectedReferenceMidi() {
-  return noteNameToMidi(els.referenceNoteInput.value || DEFAULT_REFERENCE_NOTE);
+  return noteNameToMidi(els.referenceNoteInput?.value || DEFAULT_REFERENCE_NOTE);
 }
 
 function referenceBaseHzForMidi(midi) {
@@ -1843,41 +2195,479 @@ function syncProbePitchControls() {
   }
 }
 
-function renderSections() {
-  els.sectionTable.innerHTML = "";
-  state.sections.forEach((section, index) => {
-    const normalized = normalizeSection(section, index);
-    state.sections[index] = normalized;
-    const row = document.createElement("div");
-    row.className = "section-row";
-    row.innerHTML = `
-      <div class="row-index">${String(index + 1).padStart(2, "0")}</div>
-      <label>Bars<input type="number" min="1" max="64" value="${normalized.bars}" data-field="bars"></label>
-      <label>Key<select data-field="key">${KEY_NAMES.map((key) => optionHtml(key, key, key === normalized.key)).join("")}</select></label>
-      <label>Mode<select data-field="mode">${Object.entries(MODES).map(([id, mode]) => optionHtml(id, mode.label, id === normalized.mode)).join("")}</select></label>
-      <label>Meter<select data-field="meter">${Object.keys(METERS).map((meter) => optionHtml(meter, meter, meter === normalized.meter)).join("")}</select></label>
-      <label>Cadence<select data-field="cadence">${Object.entries(CADENCES).map(([id, cadence]) => optionHtml(id, cadence.label, id === normalized.cadence)).join("")}</select></label>
-      <label>Role<select data-field="role">${roleOptionsForSection(index).map(([id, label]) => optionHtml(id, label, id === normalized.role)).join("")}</select></label>
-      <label>Treatment<select data-field="treatment">${treatmentOptionsForRole(normalized.role).map(([id, label]) => optionHtml(id, label, id === normalized.treatment)).join("")}</select></label>
-      <button class="icon-button" type="button" data-remove="${index}" title="Remove section">-</button>
-    `;
-    row.querySelectorAll("[data-field]").forEach((input) => {
-      input.addEventListener("change", () => {
-        const field = input.dataset.field;
-        state.sections[index][field] = field === "bars" ? clamp(parseInt(input.value, 10) || 1, 1, 64) : input.value;
-        renderSections();
-      });
-    });
-    row.querySelector("[data-remove]").addEventListener("click", () => {
-      if (state.sections.length > 1) {
-        state.sections.splice(index, 1);
-        renderSections();
-      }
-    });
-    els.sectionTable.append(row);
+function rgbCssComponents(rgb) {
+  return rgb.map((channel) => Math.round(clamp(Number(channel) || 0, 0, 1) * 255)).join(", ");
+}
+
+function sectionVisualRgb(section) {
+  const referencePc = mod(selectedReferenceMidi(), 12);
+  const sectionPc = noteToPc(section.key || "C");
+  const slot = mod(sectionPc - referencePc, 12);
+  const frequency = currentReferenceHz() * ratioFrequencyForVisualSlot(slot);
+  const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(frequency));
+  return mixRgb(liftRgb(rgb, isDubModeVisual() ? 0.1 : 0.065), [1, 1, 1], 0.08);
+}
+
+function timelineGraphRgb() {
+  const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(currentReferenceHz()));
+  return mixRgb(liftRgb(rgb, isDubModeVisual() ? 0.1 : 0.065), [1, 1, 1], 0.12);
+}
+
+function timelineSectionLabel(section, index) {
+  const mode = MODES[section.mode]?.label || section.mode;
+  const role = SECTION_ROLES[section.role] || "Fishtail";
+  const treatment = sectionTreatmentLabel(section.role, section.treatment);
+  return `Section ${index + 1}, ${section.bars} bars, ${section.key} ${mode}, ${section.meter}, ${role}, ${treatment}`;
+}
+
+function timelinePopoverHtml(section) {
+  const mode = MODES[section.mode]?.label || section.mode;
+  const cadence = CADENCES[section.cadence]?.label || section.cadence;
+  const role = SECTION_ROLES[section.role] || "Fishtail";
+  const treatment = sectionTreatmentLabel(section.role, section.treatment);
+  return `
+    <div class="timeline-popover-title">${escapeHtml(section.key)} ${escapeHtml(mode)}</div>
+    <div class="timeline-popover-line">${escapeHtml(section.bars)} bars · ${escapeHtml(section.meter)} · ${escapeHtml(cadence)}</div>
+    <div class="timeline-popover-line">${escapeHtml(role)} · ${escapeHtml(treatment)}</div>
+    <button class="timeline-popover-delete" type="button" data-delete-section>Delete</button>
+  `;
+}
+
+function updateTimelineActions() {
+  const index = clampSelectedSectionIndex();
+  const hasSections = state.sections.length > 0;
+  const busy = Boolean(state.generating || state.randomising);
+  const selected = hasSections ? normalizeSection(state.sections[index], index) : null;
+  if (els.moveSectionLeftButton) els.moveSectionLeftButton.disabled = busy || !hasSections || index <= 0;
+  if (els.moveSectionRightButton) els.moveSectionRightButton.disabled = busy || !hasSections || index >= state.sections.length - 1;
+  if (els.copySectionButton) els.copySectionButton.disabled = busy || !hasSections;
+  if (els.duplicateSectionButton) els.duplicateSectionButton.disabled = busy || !hasSections;
+  if (els.pasteSectionButton) els.pasteSectionButton.disabled = busy || !state.sectionClipboard;
+  if (els.clearFormStateButton) els.clearFormStateButton.disabled = busy;
+  if (els.saveFormStateButton) els.saveFormStateButton.disabled = busy;
+  if (!els.timelineStatus) return;
+  if (!selected) {
+    els.timelineStatus.textContent = "Select a section";
+    return;
+  }
+  const mode = MODES[selected.mode]?.label || selected.mode;
+  const copied = state.sectionClipboard ? " · clipboard ready" : "";
+  els.timelineStatus.textContent = `${String(index + 1).padStart(2, "0")} of ${state.sections.length} · ${selected.bars} bars · ${selected.key} ${mode} · ${selected.meter}${copied}`;
+}
+
+function updateSectionSelectionUi() {
+  const selectedIndex = clampSelectedSectionIndex();
+  els.sectionTimeline?.querySelectorAll("[data-timeline-index]").forEach((item) => {
+    const selected = Number(item.dataset.timelineIndex) === selectedIndex;
+    const detailOpen = Number(item.dataset.timelineIndex) === state.timelineDetailIndex;
+    item.classList.toggle("is-selected", selected);
+    item.classList.toggle("is-detail-open", detailOpen);
+    item.querySelector(".timeline-block")?.setAttribute("aria-pressed", String(selected));
   });
+  els.sectionTable?.querySelectorAll("[data-section-index]").forEach((row) => {
+    row.classList.toggle("is-selected", Number(row.dataset.sectionIndex) === selectedIndex);
+  });
+  updateTimelineActions();
+}
+
+function clearTimelinePopoverTimer() {
+  if (state.timelinePopoverTimer) clearTimeout(state.timelinePopoverTimer);
+  state.timelinePopoverTimer = null;
+}
+
+function showTimelinePopover(index, options = {}) {
+  if (!state.sections.length) return;
+  clearTimelinePopoverTimer();
+  const safeIndex = clamp(parseInt(index, 10) || 0, 0, state.sections.length - 1);
+  if (options.select) state.selectedSectionIndex = safeIndex;
+  state.timelineDetailIndex = safeIndex;
+  updateSectionSelectionUi();
+}
+
+function scheduleTimelinePopover(index) {
+  clearTimelinePopoverTimer();
+  state.timelinePopoverTimer = setTimeout(() => {
+    showTimelinePopover(index, { select: false });
+  }, TIMELINE_HOVER_DETAIL_MS);
+}
+
+function hideTimelinePopover(index = null) {
+  clearTimelinePopoverTimer();
+  if (index !== null && state.timelineDetailIndex !== index) return;
+  state.timelineDetailIndex = null;
+  updateSectionSelectionUi();
+}
+
+function clearTimelineDeletePress() {
+  if (state.timelineDeletePress?.timer) clearTimeout(state.timelineDeletePress.timer);
+  state.timelineDeletePress = null;
+}
+
+function beginTimelineDeletePress(event) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  const block = event.currentTarget;
+  const index = clamp(parseInt(block.dataset.selectSection, 10) || 0, 0, Math.max(0, state.sections.length - 1));
+  clearTimelineDeletePress();
+  const press = {
+    index,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    timer: null,
+  };
+  press.timer = setTimeout(() => {
+    if (state.timelineDeletePress !== press) return;
+    state.timelineSuppressClickUntil = Date.now() + 520;
+    state.timelineSuppressContextMenuUntil = Date.now() + 700;
+    showTimelinePopover(index, { select: true });
+    clearTimelineDeletePress();
+  }, TIMELINE_LONG_PRESS_DELETE_MS);
+  state.timelineDeletePress = press;
+  block.setPointerCapture?.(event.pointerId);
+}
+
+function updateTimelineDeletePress(event) {
+  const press = state.timelineDeletePress;
+  if (!press || press.pointerId !== event.pointerId) return;
+  const moved = Math.hypot(event.clientX - press.startX, event.clientY - press.startY);
+  if (moved > TIMELINE_LONG_PRESS_MOVE_CANCEL_PX) clearTimelineDeletePress();
+}
+
+function finishTimelineDeletePress(event) {
+  const press = state.timelineDeletePress;
+  if (!press || press.pointerId !== event.pointerId) return;
+  clearTimelineDeletePress();
+}
+
+function updateSectionBarsFromTimeline(index, bars) {
+  if (!state.sections.length) return;
+  const safeIndex = clamp(parseInt(index, 10) || 0, 0, state.sections.length - 1);
+  const safeBars = clamp(parseInt(bars, 10) || 1, TIMELINE_RESIZE_MIN_BARS, TIMELINE_RESIZE_MAX_BARS);
+  const normalized = normalizeSection({ ...state.sections[safeIndex], bars: safeBars }, safeIndex);
+  state.sections[safeIndex] = normalized;
+  state.selectedSectionIndex = safeIndex;
+  markFormEdited();
+
+  const item = els.sectionTimeline?.querySelector(`[data-timeline-index="${safeIndex}"]`);
+  if (item) {
+    item.style.setProperty("--section-bars", String(normalized.bars));
+    item.querySelector(".timeline-block")?.setAttribute("aria-label", timelineSectionLabel(normalized, safeIndex));
+    const popover = item.querySelector(".timeline-popover");
+  if (popover) {
+      popover.setAttribute("aria-label", timelineSectionLabel(normalized, safeIndex));
+      popover.innerHTML = timelinePopoverHtml(normalized);
+      popover.querySelector("[data-delete-section]")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        requestDeleteSection(safeIndex, event.currentTarget);
+      });
+    }
+  }
+
+  const selectedRow = els.sectionTable?.querySelector(`[data-section-index="${safeIndex}"]`);
+  const barsInput = selectedRow?.querySelector('[data-field="bars"]');
+  if (barsInput) barsInput.value = String(normalized.bars);
+  updateSectionSelectionUi();
   updateFormSafety();
   updateSoundTimeControls();
+}
+
+function clearTimelineResizeListeners() {
+  document.removeEventListener("pointermove", updateTimelineResize);
+  document.removeEventListener("pointerup", finishTimelineResize);
+  document.removeEventListener("pointercancel", cancelTimelineResize);
+  state.timelineResize = null;
+}
+
+function beginTimelineResize(event) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  clearTimelinePopoverTimer();
+  clearTimelineDeletePress();
+  const handle = event.currentTarget;
+  const index = clamp(parseInt(handle.dataset.resizeSection, 10) || 0, 0, Math.max(0, state.sections.length - 1));
+  const section = normalizeSection(state.sections[index], index);
+  const item = handle.closest?.("[data-timeline-index]");
+  const blockWidth = item?.querySelector?.(".timeline-block")?.getBoundingClientRect?.().width || 72;
+  state.timelineResize = {
+    index,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    initialBars: section.bars,
+    lastBars: section.bars,
+    pxPerBar: clamp(blockWidth / Math.max(1, section.bars), 8, 28),
+  };
+  state.selectedSectionIndex = index;
+  state.timelineDetailIndex = index;
+  updateSectionSelectionUi();
+  handle.setPointerCapture?.(event.pointerId);
+  document.addEventListener("pointermove", updateTimelineResize, { passive: false });
+  document.addEventListener("pointerup", finishTimelineResize, { passive: true });
+  document.addEventListener("pointercancel", cancelTimelineResize, { passive: true });
+}
+
+function updateTimelineResize(event) {
+  const resize = state.timelineResize;
+  if (!resize || resize.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  const deltaBars = Math.round((event.clientX - resize.startX) / resize.pxPerBar);
+  const nextBars = clamp(resize.initialBars + deltaBars, TIMELINE_RESIZE_MIN_BARS, TIMELINE_RESIZE_MAX_BARS);
+  if (nextBars === resize.lastBars) return;
+  resize.lastBars = nextBars;
+  updateSectionBarsFromTimeline(resize.index, nextBars);
+}
+
+function finishTimelineResize(event) {
+  const resize = state.timelineResize;
+  if (!resize || resize.pointerId !== event.pointerId) return;
+  const index = resize.index;
+  clearTimelineResizeListeners();
+  selectSection(index);
+}
+
+function cancelTimelineResize() {
+  clearTimelineResizeListeners();
+  renderSections();
+}
+
+function requestDeleteSection(index, control = null) {
+  if (!state.sections.length) return false;
+  const safeIndex = clamp(parseInt(index, 10) || 0, 0, state.sections.length - 1);
+  if (control && control.dataset.deleteArmed !== "true") {
+    control.dataset.deleteArmed = "true";
+    control.classList.add("is-armed");
+    control.textContent = "Delete?";
+    const armedIndex = safeIndex;
+    setTimeout(() => {
+      if (!control.isConnected || control.dataset.deleteArmed !== "true") return;
+      if (state.sections[armedIndex]) {
+        control.dataset.deleteArmed = "false";
+        control.classList.remove("is-armed");
+        control.textContent = "Delete";
+      }
+    }, 2400);
+    return false;
+  }
+  markFormEdited();
+  state.sections.splice(safeIndex, 1);
+  if (state.sections.length) {
+    state.selectedSectionIndex = clamp(safeIndex, 0, state.sections.length - 1);
+    state.timelineDetailIndex = null;
+  } else {
+    state.selectedSectionIndex = -1;
+    state.timelineDetailIndex = null;
+  }
+  renderSections();
+  if (els.statusLabel) els.statusLabel.textContent = "Section deleted";
+  return true;
+}
+
+function renderSectionTimeline() {
+  if (!els.sectionTimeline) return;
+  clearTimelinePopoverTimer();
+  const selectedIndex = clampSelectedSectionIndex();
+  const graphRgb = timelineGraphRgb();
+  els.sectionTimeline.style.setProperty("--timeline-graph-rgb", rgbCssComponents(graphRgb));
+  els.sectionTimeline.style.setProperty("--timeline-graph-soft-rgb", rgbCssComponents(mixRgb(graphRgb, [1, 1, 1], 0.72)));
+  const fragment = document.createDocumentFragment();
+  state.sections.forEach((section, index) => {
+    const normalized = normalizeSection(section, index);
+    const item = document.createElement("div");
+    item.className = `timeline-item${index === selectedIndex ? " is-selected" : ""}${index === state.timelineDetailIndex ? " is-detail-open" : ""}`;
+    item.dataset.timelineIndex = String(index);
+    const sectionRgb = sectionVisualRgb(normalized);
+    item.style.setProperty("--section-bars", String(normalized.bars));
+    item.style.setProperty("--timeline-rgb", rgbCssComponents(sectionRgb));
+    item.style.setProperty("--timeline-soft-rgb", rgbCssComponents(mixRgb(sectionRgb, [1, 1, 1], 0.54)));
+    item.style.setProperty("--timeline-ink-rgb", rgbCssComponents(mixRgb(sectionRgb, [0.18, 0.09, 0.14], 0.78)));
+    item.setAttribute("role", "listitem");
+
+    const block = document.createElement("button");
+    block.className = "timeline-block";
+    block.type = "button";
+    block.dataset.selectSection = String(index);
+    block.setAttribute("aria-pressed", String(index === selectedIndex));
+    block.setAttribute("aria-label", timelineSectionLabel(normalized, index));
+    block.addEventListener("click", () => {
+      if (Date.now() < state.timelineSuppressClickUntil) return;
+      selectSection(index);
+    });
+    block.addEventListener("pointerdown", beginTimelineDeletePress);
+    block.addEventListener("pointermove", updateTimelineDeletePress);
+    block.addEventListener("pointerup", finishTimelineDeletePress);
+    block.addEventListener("pointercancel", finishTimelineDeletePress);
+
+    const popover = document.createElement("div");
+    popover.className = "timeline-popover";
+    popover.setAttribute("role", "dialog");
+    popover.setAttribute("aria-label", timelineSectionLabel(normalized, index));
+    popover.innerHTML = timelinePopoverHtml(normalized);
+    popover.querySelector("[data-delete-section]")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      requestDeleteSection(index, event.currentTarget);
+    });
+
+    const resizeHandle = document.createElement("button");
+    resizeHandle.className = "timeline-resize-handle";
+    resizeHandle.type = "button";
+    resizeHandle.dataset.resizeSection = String(index);
+    resizeHandle.setAttribute("aria-label", `Resize section ${index + 1} bars`);
+    resizeHandle.textContent = "↔";
+    resizeHandle.addEventListener("pointerdown", beginTimelineResize);
+    resizeHandle.addEventListener("click", (event) => event.stopPropagation());
+    resizeHandle.addEventListener("contextmenu", (event) => event.preventDefault());
+
+    const handle = document.createElement("button");
+    handle.className = "timeline-drag-handle";
+    handle.type = "button";
+    handle.dataset.dragSection = String(index);
+    handle.setAttribute("aria-label", `Drag section ${index + 1}`);
+    handle.textContent = "|||";
+    handle.addEventListener("pointerdown", beginTimelineDrag);
+
+    item.addEventListener("mouseenter", () => scheduleTimelinePopover(index));
+    item.addEventListener("mouseleave", () => hideTimelinePopover(index));
+    item.addEventListener("focusin", () => showTimelinePopover(index, { select: false }));
+    item.addEventListener("focusout", (event) => {
+      if (!item.contains(event.relatedTarget)) hideTimelinePopover(index);
+    });
+    item.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      if (Date.now() < state.timelineSuppressContextMenuUntil) return;
+      showTimelinePopover(index, { select: true });
+    });
+
+    item.append(block, resizeHandle, popover, handle);
+    fragment.append(item);
+  });
+  els.sectionTimeline.replaceChildren(fragment);
+  updateTimelineActions();
+}
+
+function beginTimelineDrag(event) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  clearTimelinePopoverTimer();
+  clearTimelineDeletePress();
+  if (state.timelineResize) clearTimelineResizeListeners();
+  const handle = event.currentTarget;
+  const from = clamp(parseInt(handle.dataset.dragSection, 10) || 0, 0, Math.max(0, state.sections.length - 1));
+  selectSection(from, { render: false });
+  state.timelineDrag = {
+    from,
+    over: from,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+  };
+  handle.setPointerCapture?.(event.pointerId);
+  document.addEventListener("pointermove", updateTimelineDrag, { passive: false });
+  document.addEventListener("pointerup", finishTimelineDrag, { passive: true });
+  document.addEventListener("pointercancel", cancelTimelineDrag, { passive: true });
+}
+
+function timelineIndexAtPoint(x, y) {
+  const element = document.elementFromPoint(x, y);
+  const item = element?.closest?.("[data-timeline-index]");
+  if (!item || !els.sectionTimeline?.contains(item)) return null;
+  return clamp(parseInt(item.dataset.timelineIndex, 10) || 0, 0, Math.max(0, state.sections.length - 1));
+}
+
+function markTimelineDropTarget(index) {
+  els.sectionTimeline?.querySelectorAll(".is-drop-target").forEach((item) => item.classList.remove("is-drop-target"));
+  const target = els.sectionTimeline?.querySelector(`[data-timeline-index="${index}"]`);
+  target?.classList.add("is-drop-target");
+}
+
+function updateTimelineDrag(event) {
+  const drag = state.timelineDrag;
+  if (!drag) return;
+  const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+  if (moved > 6) drag.active = true;
+  if (!drag.active) return;
+  event.preventDefault();
+  const over = timelineIndexAtPoint(event.clientX, event.clientY);
+  if (over === null || over === drag.over) return;
+  drag.over = over;
+  markTimelineDropTarget(over);
+}
+
+function clearTimelineDragListeners() {
+  document.removeEventListener("pointermove", updateTimelineDrag);
+  document.removeEventListener("pointerup", finishTimelineDrag);
+  document.removeEventListener("pointercancel", cancelTimelineDrag);
+  els.sectionTimeline?.querySelectorAll(".is-drop-target").forEach((item) => item.classList.remove("is-drop-target"));
+}
+
+function finishTimelineDrag() {
+  const drag = state.timelineDrag;
+  state.timelineDrag = null;
+  clearTimelineDragListeners();
+  if (!drag) return;
+  if (drag.active && drag.from !== drag.over) {
+    moveSection(drag.from, drag.over);
+    return;
+  }
+  selectSection(drag.from);
+}
+
+function cancelTimelineDrag() {
+  state.timelineDrag = null;
+  clearTimelineDragListeners();
+  renderSectionTimeline();
+}
+
+function renderSections() {
+  clampSelectedSectionIndex();
+  state.sections = state.sections.map((section, index) => normalizeSection(section, index));
+  renderSectionTimeline();
+  els.sectionTable.innerHTML = "";
+  const index = clampSelectedSectionIndex();
+  if (index < 0) {
+    const empty = document.createElement("div");
+    empty.className = "section-empty-state";
+    empty.textContent = "Blank form";
+    els.sectionTable.append(empty);
+    updateFormSafety();
+    updateSoundTimeControls();
+    updateGenerationAvailability();
+    return;
+  }
+  const normalized = state.sections[index];
+  const row = document.createElement("div");
+  row.className = "section-row is-selected";
+  row.dataset.sectionIndex = String(index);
+  const editorRgb = sectionVisualRgb(normalized);
+  row.style.setProperty("--section-editor-rgb", rgbCssComponents(editorRgb));
+  row.style.setProperty("--section-editor-soft-rgb", rgbCssComponents(mixRgb(editorRgb, [1, 1, 1], 0.68)));
+  row.style.setProperty("--section-editor-ink-rgb", rgbCssComponents(mixRgb(editorRgb, [0.18, 0.09, 0.14], 0.82)));
+  row.innerHTML = `
+    <div class="row-index">${String(index + 1).padStart(2, "0")}</div>
+    <label>Bars<input type="number" min="1" max="64" value="${normalized.bars}" data-field="bars"></label>
+    <label>Key<select data-field="key">${KEY_NAMES.map((key) => optionHtml(key, key, key === normalized.key)).join("")}</select></label>
+    <label>Mode<select data-field="mode">${Object.entries(MODES).map(([id, mode]) => optionHtml(id, mode.label, id === normalized.mode)).join("")}</select></label>
+    <label>Meter<select data-field="meter">${Object.keys(METERS).map((meter) => optionHtml(meter, meter, meter === normalized.meter)).join("")}</select></label>
+    <label>Cadence<select data-field="cadence">${Object.entries(CADENCES).map(([id, cadence]) => optionHtml(id, cadence.label, id === normalized.cadence)).join("")}</select></label>
+    <label>Role<select data-field="role">${roleOptionsForSection(index).map(([id, label]) => optionHtml(id, label, id === normalized.role)).join("")}</select></label>
+    <label>Treatment<select data-field="treatment">${treatmentOptionsForRole(normalized.role).map(([id, label]) => optionHtml(id, label, id === normalized.treatment)).join("")}</select></label>
+    <button class="icon-button" type="button" data-remove="${index}" title="Remove section">-</button>
+  `;
+  row.querySelectorAll("[data-field]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const field = input.dataset.field;
+      markFormEdited();
+      state.selectedSectionIndex = index;
+      state.sections[index][field] = field === "bars" ? clamp(parseInt(input.value, 10) || 1, 1, 64) : input.value;
+      renderSections();
+    });
+  });
+  row.querySelector("[data-remove]").addEventListener("click", () => {
+    requestDeleteSection(index);
+  });
+  els.sectionTable.append(row);
+  updateFormSafety();
+  updateSoundTimeControls();
+  updateGenerationAvailability();
 }
 
 function updateFormSafety() {
@@ -2026,6 +2816,7 @@ async function randomiseForm(kind) {
       sections[sections.length - 1].cadence = isMinorMode(sections[0].mode) ? "minor_authentic" : "authentic";
     }
 
+    markFormEdited();
     state.sections = sections;
     renderSections();
     els.seedLabel.textContent = `Dice: ${seed.slice(0, 8)}`;
@@ -2235,6 +3026,14 @@ function setGenerationControlsDisabled(disabled) {
     els.gentleRollButton,
     els.wildRollButton,
     els.addSectionButton,
+    els.addSectionBottomButton,
+    els.moveSectionLeftButton,
+    els.moveSectionRightButton,
+    els.copySectionButton,
+    els.duplicateSectionButton,
+    els.pasteSectionButton,
+    els.saveFormStateButton,
+    els.clearFormStateButton,
     els.styleInput,
     els.voicesInput,
     els.tempoInput,
@@ -2280,10 +3079,24 @@ function setGenerationControlsDisabled(disabled) {
   ].filter(Boolean).forEach((node) => {
     node.disabled = disabled;
   });
+  if (els.generateButton) els.generateButton.disabled = disabled || state.sections.length === 0;
+  if (!disabled) applyPitchBehaviourLock();
+}
+
+function updateGenerationAvailability() {
+  if (els.generateButton && !state.generating && !state.randomising) {
+    els.generateButton.disabled = state.sections.length === 0;
+  }
 }
 
 async function generatePiece() {
   if (state.generating) return;
+  if (!state.sections.length) {
+    els.statusLabel.textContent = "Add a form section first";
+    els.pieceLengthLabel.textContent = "Blank form";
+    updateGenerationAvailability();
+    return;
+  }
   const seed = await makeSystemSeed();
   const random = makeRandomRouter(seed);
   const settings = readSettings(seed);
@@ -2371,8 +3184,8 @@ function readSettings(seed) {
     probeLevel: percentInput(els.probeLevelInput, 0.45),
     metronomeEnabled: switchControlIsOn(els.metronomeInput),
     metronomeLevel: percentInput(els.metronomeLevelInput, 0.88),
-    prepareProbeWav: Boolean(els.prepareProbeWavInput?.checked),
-    prepareTickerWav: Boolean(els.prepareTickerWavInput?.checked),
+    prepareProbeWav: false,
+    prepareTickerWav: false,
     prepareCvWav: Boolean(els.prepareCvWavInput?.checked),
     audioExportConfirmed: false,
     cvVoiceMode: els.cvVoiceModeInput?.value || "bass",
@@ -3262,6 +4075,7 @@ function buildPiece(settings, randomSource = null) {
   const refrainRng = random.stream("refrain");
   const dubRng = random.stream("dub");
   settings.sections = settings.sections.map(normalizeSection);
+  if (!settings.sections.length) throw new Error("Add at least one form section before generating.");
   settings.rhythmMotion = clamp(Number(settings.rhythmMotion ?? DEFAULT_RHYTHM_MOTION), 0, 1);
   settings.pedalVoices = normalizePedalVoices(settings.pedalVoices, settings.voices, settings.dubMode);
   const activeVoices = activeVoiceLayout(settings.voices);
@@ -6103,7 +6917,7 @@ function audioExportDescriptor(kind) {
     return {
       label: "Pulse WAV",
       readyText: "Save Pulse WAV",
-      renderText: "Render + Save Pulse WAV",
+      renderText: "Save Pulse WAV",
       renderingText: "Rendering Pulse WAV",
       renderer: FishtailWavExport.renderProbeWav,
     };
@@ -6112,7 +6926,7 @@ function audioExportDescriptor(kind) {
     return {
       label: "Ticker WAV",
       readyText: "Save Ticker WAV",
-      renderText: "Render + Save Ticker WAV",
+      renderText: "Save Ticker WAV",
       renderingText: "Rendering Ticker WAV",
       renderer: FishtailWavExport.renderTickerWav,
     };
@@ -6490,24 +7304,181 @@ function isDubModeVisual() {
 }
 
 function torusPalette(dubVisual = isDubModeVisual()) {
-  if (dubVisual) {
-    return {
-      torus: 0x36ff78,
-      torusActive: 0xc7ff6a,
-      negative: 0x00ffc8,
-      web: 0x78ff9a,
-      markerA: 0x39ff88,
-      markerB: 0xb7ff4d,
-    };
-  }
+  const light = updateVisualLightPalette(dubVisual);
   return {
-    torus: 0x29a9c7,
-    torusActive: 0xc7357f,
-    negative: 0xc7357f,
-    web: 0xc7357f,
-    markerA: 0x35a2b8,
-    markerB: 0xd72e7f,
+    torus: light.hex.torus,
+    torusActive: light.hex.torusActive,
+    negative: light.hex.negative,
+    web: light.hex.web,
+    markerA: light.hex.markers[0],
+    markerB: light.hex.markers[7],
   };
+}
+
+function currentVisualFundamentalHz() {
+  const rootVisible = isTuningRootVisible();
+  const rawRootHz = rootVisible ? parseFloat(els.rootFreqInput?.value) : NaN;
+  const fallback = currentReferenceHz();
+  return clamp(Number.isFinite(rawRootHz) ? rawRootHz : fallback, 20, 2000);
+}
+
+function foldedLightWavelengthNm(frequencyHz) {
+  const frequency = clamp(Number(frequencyHz) || DEFAULT_REFERENCE_HZ, 20, 20000);
+  const soundWavelengthNm = (SOUND_SPEED_AIR_MPS / frequency) * 1e9;
+  const octave = Math.floor(Math.log2(soundWavelengthNm / LIGHT_FOLD_MIN_NM));
+  const divisor = 2 ** Math.max(0, octave);
+  return clamp(soundWavelengthNm / divisor, LIGHT_FOLD_MIN_NM, LIGHT_FOLD_MAX_NM);
+}
+
+function ratioFrequencyForVisualSlot(slot) {
+  const normalized = mod(slot, 12);
+  if ((els.outputModeInput?.value || "equal") === "equal") return 2 ** (normalized / 12);
+  return AMY_DUB_RATIOS[normalized]?.[1] || 2 ** (normalized / 12);
+}
+
+function buildVisualLightPalette(dubVisual = false) {
+  const fundamentalHz = currentVisualFundamentalHz();
+  const baseNm = foldedLightWavelengthNm(fundamentalHz);
+  const base = visualTeardropRgbForWavelength(baseNm);
+  const fifth = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * 3 / 2));
+  const fourth = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * 4 / 3));
+  const seventh = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * 7 / 4));
+  const lift = dubVisual ? 0.1 : 0.065;
+  const markers = Array.from({ length: 12 }, (_, slot) => {
+    const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * ratioFrequencyForVisualSlot(slot)));
+    return mixRgb(liftRgb(rgb, lift), [1, 1, 1], slot % 3 === 0 ? 0.08 : 0.02);
+  });
+  const colors = {
+    torus: liftRgb(base, lift),
+    torusActive: mixRgb(liftRgb(fifth, lift), [1, 1, 1], 0.2),
+    negative: mixRgb(liftRgb(seventh, lift * 0.7), [1, 1, 1], 0.05),
+    web: mixRgb(liftRgb(fourth, lift), [1, 1, 1], 0.12),
+    fieldA: mixRgb(liftRgb(base, lift), [1, 1, 1], dubVisual ? 0.08 : 0.16),
+    fieldB: mixRgb(liftRgb(fifth, lift), [1, 1, 1], dubVisual ? 0.04 : 0.12),
+    haloA: mixRgb(liftRgb(base, lift), [1, 1, 1], 0.22),
+    haloB: mixRgb(liftRgb(fourth, lift), [1, 1, 1], 0.14),
+    haloC: mixRgb(liftRgb(seventh, lift), [1, 1, 1], 0.08),
+    markers,
+  };
+  return { dubVisual: Boolean(dubVisual), fundamentalHz, baseNm, colors };
+}
+
+function updateVisualLightPalette(dubVisual = isDubModeVisual()) {
+  const target = buildVisualLightPalette(dubVisual);
+  const current = state.visualLightPalette;
+  const alpha = !current || current.dubVisual !== target.dubVisual ? 1 : VISUAL_LIGHT_SMOOTHING;
+  const colors = {};
+  Object.entries(target.colors).forEach(([key, value]) => {
+    colors[key] = Array.isArray(value[0])
+      ? value.map((rgb, index) => smoothRgb(current?.colors?.[key]?.[index], rgb, alpha))
+      : smoothRgb(current?.colors?.[key], value, alpha);
+  });
+  const palette = {
+    ...target,
+    baseNm: current && current.dubVisual === target.dubVisual ? mix(current.baseNm, target.baseNm, alpha) : target.baseNm,
+    colors,
+  };
+  palette.hex = {
+    torus: rgbToHex(palette.colors.torus),
+    torusActive: rgbToHex(palette.colors.torusActive),
+    negative: rgbToHex(palette.colors.negative),
+    web: rgbToHex(palette.colors.web),
+    markers: palette.colors.markers.map(rgbToHex),
+  };
+  state.visualLightPalette = palette;
+  return palette;
+}
+
+function visualRgbForWavelength(wavelengthNm) {
+  const wavelength = clamp(wavelengthNm, LIGHT_FOLD_MIN_NM, LIGHT_FOLD_MAX_NM);
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  if (wavelength < 440) {
+    red = -(wavelength - 440) / (440 - 380);
+    blue = 1;
+  } else if (wavelength < 490) {
+    green = (wavelength - 440) / (490 - 440);
+    blue = 1;
+  } else if (wavelength < 510) {
+    green = 1;
+    blue = -(wavelength - 510) / (510 - 490);
+  } else if (wavelength < 580) {
+    red = (wavelength - 510) / (580 - 510);
+    green = 1;
+  } else if (wavelength < 645) {
+    red = 1;
+    green = -(wavelength - 645) / (645 - 580);
+  } else {
+    red = 1;
+  }
+
+  const edge = wavelength < 420
+    ? 0.36 + 0.64 * ((wavelength - 380) / (420 - 380))
+    : wavelength > 700
+      ? 0.36 + 0.64 * ((760 - wavelength) / (760 - 700))
+      : 1;
+  const gamma = 0.82;
+  return [red, green, blue].map((channel) => (channel <= 0 ? 0 : (channel * edge) ** gamma));
+}
+
+function visualTeardropRgbForWavelength(wavelengthNm) {
+  const center = clamp(wavelengthNm, LIGHT_FOLD_MIN_NM, LIGHT_FOLD_MAX_NM);
+  const pairCount = Math.max(1, Math.floor((VISUAL_LIGHT_BAND_VOICES - 1) / 2));
+  const samples = [];
+  for (let i = -pairCount; i <= pairCount; i += 1) {
+    const x = i / (pairCount + 1);
+    const shifted = center * (2 ** (x * VISUAL_LIGHT_BAND_DELTA));
+    const lobe = Math.max(0, 1 - Math.abs(x) ** VISUAL_LIGHT_TEARDROP_Q) ** VISUAL_LIGHT_TEARDROP_P;
+    const edge = visualBandEdgeWeight(shifted);
+    samples.push({
+      rgb: visualRgbForWavelength(shifted),
+      weight: lobe * edge,
+    });
+  }
+  const weightSum = samples.reduce((sum, sample) => sum + sample.weight, 0) || 1;
+  const rgb = samples.reduce((sum, sample) => {
+    sum[0] += sample.rgb[0] * sample.weight;
+    sum[1] += sample.rgb[1] * sample.weight;
+    sum[2] += sample.rgb[2] * sample.weight;
+    return sum;
+  }, [0, 0, 0]).map((channel) => channel / weightSum);
+  return shapeVisualSaturation(rgb, center);
+}
+
+function visualBandEdgeWeight(wavelengthNm) {
+  const fade = 42;
+  return smoothstep(LIGHT_FOLD_MIN_NM, LIGHT_FOLD_MIN_NM + fade, wavelengthNm)
+    * (1 - smoothstep(LIGHT_FOLD_MAX_NM - fade, LIGHT_FOLD_MAX_NM, wavelengthNm));
+}
+
+function shapeVisualSaturation(rgb, centerNm) {
+  const edgeSoftening = 1 - visualBandEdgeWeight(centerNm);
+  const whiteMix = 0.035 + edgeSoftening * 0.14;
+  const blackMix = edgeSoftening * 0.025;
+  return mixRgb(mixRgb(rgb, [1, 1, 1], whiteMix), [0, 0, 0], blackMix);
+}
+
+function liftRgb(rgb, amount) {
+  return rgb.map((channel) => clamp(channel + (1 - channel) * amount, 0, 1));
+}
+
+function mixRgb(a, b, amount) {
+  return a.map((channel, index) => mix(channel, b[index], amount));
+}
+
+function smoothRgb(current, target, alpha) {
+  if (!current) return [...target];
+  return target.map((channel, index) => mix(current[index], channel, alpha));
+}
+
+function rgbToHex(rgb) {
+  return rgb.reduce((hex, channel) => (hex << 8) + clamp(Math.round(channel * 255), 0, 255), 0);
+}
+
+function rgbaString(rgb, alpha) {
+  const [red, green, blue] = rgb.map((channel) => clamp(Math.round(channel * 255), 0, 255));
+  return `rgba(${red}, ${green}, ${blue}, ${clamp(alpha, 0, 1).toFixed(3)})`;
 }
 
 function makeWormholeLineGeometry(THREE, uSegments, vSegments) {
@@ -6627,7 +7598,6 @@ async function initTorusCore() {
     torusCore.group = group;
     torusCore.ready = true;
     torusCore.loading = false;
-    state.bootGlitchUntil = Date.now() + 1800;
     refreshTorusTuning();
     requestCoreFrame(true);
   } catch (error) {
@@ -6717,10 +7687,7 @@ function renderTorusFrame(width, height, phase) {
   const palette = torusPalette();
   const eco = visualEcoActive(now);
   const activeBoost = getGenerateEnvelope(now);
-  const bootGlitch = Math.max(0, (state.bootGlitchUntil - now) / 2400);
-  const stressGlitch = visualGlitchEnvelope(now);
-  const glitch = Math.max(bootGlitch, stressGlitch);
-  const reducedIdle = state.reducedMotion && activeBoost <= 0.02 && glitch <= 0.02;
+  const reducedIdle = state.reducedMotion && activeBoost <= 0.02;
   const motionAge = now - state.motionLastAt;
   const motionPresence = reducedIdle ? 0 : clamp(1 - motionAge / 3200, 0, 1);
   const tiltEase = reducedIdle ? 0.02 : 0.045;
@@ -6730,18 +7697,17 @@ function renderTorusFrame(width, height, phase) {
   const wormholePhase = reducedIdle ? 0 : wormholeLoopPhase(now);
   const negativeSpaceOpacity = smoothstep(0.25, 0.75, wormholePhase);
   const focusZoom = smoothstep(0.18, 0.82, wormholePhase);
-  const idleLevel = Math.max(0, 1 - Math.max(activeBoost, glitch));
+  const idleLevel = Math.max(0, 1 - activeBoost);
   const idleBreath = idleLevel * (0.5 + Math.sin(time * 0.36) * 0.5);
-  const pulse = activeBoost * (0.5 + Math.sin(time * 1.75) * 0.5) + glitch * (0.45 + Math.sin(time * 5.8) * 0.18) + idleBreath * 0.18;
-  const twitch = glitch ? Math.sin(time * 19.5) * glitch * (stressGlitch > 0 ? 0.028 : 0.012) : 0;
+  const pulse = activeBoost * (0.5 + Math.sin(time * 1.75) * 0.5) + idleBreath * 0.18;
 
   state.wormholePhase = wormholePhase;
   state.negativeSpaceOpacity = negativeSpaceOpacity;
   state.focusZoom = focusZoom;
-  state.animationVisualLevel = Math.max(activeBoost, glitch, negativeSpaceOpacity * 0.35);
+  state.animationVisualLevel = Math.max(activeBoost, negativeSpaceOpacity * 0.35);
   updateWormholeGeometry(torusCore.torus, wormholePhase, time, false);
   if (torusCore.negativeWire) {
-    torusCore.negativeWire.visible = !eco || activeBoost > 0.18 || glitch > 0.2 || negativeSpaceOpacity > 0.68;
+    torusCore.negativeWire.visible = !eco || activeBoost > 0.18 || negativeSpaceOpacity > 0.68;
     if (torusCore.negativeWire.visible) updateWormholeGeometry(torusCore.negativeWire, wormholePhase, time, true);
   }
   updateFocusCamera(focusZoom, activeBoost);
@@ -6751,22 +7717,22 @@ function renderTorusFrame(width, height, phase) {
     0.68 - wormholePhase * 0.08 + pulse * 0.025,
     0.92 + wormholePhase * 0.18,
   );
-  torusCore.group.rotation.x = 0.11 + idleLevel * Math.sin(time * 0.28) * 0.032 + activeBoost * Math.sin(time * 0.56) * 0.035 + state.motionTiltY * 0.1 + twitch;
-  torusCore.group.rotation.y = idleLevel * Math.sin(time * 0.22) * 0.05 + activeBoost * Math.sin(time * 0.48) * 0.055 + state.motionTiltX * 0.13 + twitch * 0.8;
-  torusCore.group.rotation.z = idleLevel * Math.sin(time * 0.18) * 0.04 + activeBoost * Math.sin(time * 0.72) * 0.065 + state.motionTiltX * 0.05 + twitch * 1.6;
-  torusCore.torus.rotation.z = idleLevel * Math.sin(time * 0.34) * 0.08 + activeBoost * Math.sin(time * 0.95) * 0.14 + glitch * Math.sin(time * 8.2) * 0.035;
-  torusCore.torus.material.opacity = 0.26 + idleBreath * 0.07 + negativeSpaceOpacity * 0.08 + activeBoost * 0.22 + glitch * 0.16;
-  torusCore.torus.material.color.setHex((activeBoost > 0.28 || glitch > 0.08) ? palette.torusActive : palette.torus);
+  torusCore.group.rotation.x = 0.11 + idleLevel * Math.sin(time * 0.28) * 0.032 + activeBoost * Math.sin(time * 0.56) * 0.035 + state.motionTiltY * 0.1;
+  torusCore.group.rotation.y = idleLevel * Math.sin(time * 0.22) * 0.05 + activeBoost * Math.sin(time * 0.48) * 0.055 + state.motionTiltX * 0.13;
+  torusCore.group.rotation.z = idleLevel * Math.sin(time * 0.18) * 0.04 + activeBoost * Math.sin(time * 0.72) * 0.065 + state.motionTiltX * 0.05;
+  torusCore.torus.rotation.z = idleLevel * Math.sin(time * 0.34) * 0.08 + activeBoost * Math.sin(time * 0.95) * 0.14;
+  torusCore.torus.material.opacity = 0.26 + idleBreath * 0.07 + negativeSpaceOpacity * 0.08 + activeBoost * 0.22;
+  torusCore.torus.material.color.setHex(activeBoost > 0.28 ? palette.torusActive : palette.torus);
   if (torusCore.negativeWire) {
     torusCore.negativeWire.rotation.copy(torusCore.torus.rotation);
-    torusCore.negativeWire.material.opacity = eco && !torusCore.negativeWire.visible ? 0 : negativeSpaceOpacity * 0.22 + activeBoost * 0.08 + glitch * 0.06;
+    torusCore.negativeWire.material.opacity = eco && !torusCore.negativeWire.visible ? 0 : negativeSpaceOpacity * 0.22 + activeBoost * 0.08;
     torusCore.negativeWire.material.color.setHex(palette.negative);
   }
   const scaffoldFocus = 1 - focusZoom * 0.46;
   torusCore.ratioLoop.visible = true;
-  torusCore.ratioWeb.visible = !eco || activeBoost > 0.42 || glitch > 0.3;
-  torusCore.ratioLoop.material.opacity = (0.34 + activeBoost * 0.24 + glitch * 0.18 + negativeSpaceOpacity * 0.08) * scaffoldFocus * (eco ? 0.45 : 1);
-  torusCore.ratioWeb.material.opacity = torusCore.ratioWeb.visible ? (0.26 + activeBoost * 0.26 + glitch * 0.18 + negativeSpaceOpacity * 0.08) * scaffoldFocus : 0;
+  torusCore.ratioWeb.visible = !eco || activeBoost > 0.42;
+  torusCore.ratioLoop.material.opacity = (0.34 + activeBoost * 0.24 + negativeSpaceOpacity * 0.08) * scaffoldFocus * (eco ? 0.45 : 1);
+  torusCore.ratioWeb.material.opacity = torusCore.ratioWeb.visible ? (0.26 + activeBoost * 0.26 + negativeSpaceOpacity * 0.08) * scaffoldFocus : 0;
   torusCore.ratioLoop.material.color.setHex(palette.web);
   torusCore.ratioWeb.material.color.setHex(palette.web);
 
@@ -6774,8 +7740,8 @@ function renderTorusFrame(width, height, phase) {
     const base = marker.userData.basePosition;
     const slot = marker.userData.slot;
     const angle = marker.userData.baseAngle;
-    marker.visible = !eco || slot % 3 === 0 || activeBoost > 0.36 || glitch > 0.2;
-    const gravityWave = Math.sin(phase * (activeBoost > 0.02 ? 0.036 : 0.014) + slot * 0.86) * (idleLevel * 0.026 + (activeBoost || glitch > 0 ? 0.08 + pulse * 0.18 : 0));
+    marker.visible = !eco || slot % 3 === 0 || activeBoost > 0.36;
+    const gravityWave = Math.sin(phase * (activeBoost > 0.02 ? 0.036 : 0.014) + slot * 0.86) * (idleLevel * 0.026 + (activeBoost > 0.02 ? 0.08 + pulse * 0.18 : 0));
     const rimFold = smoothstep(0.18, 0.86, wormholePhase);
     const vortex = rimFold * Math.sin(slot * 1.7 + time * 0.42) * 0.08;
     marker.position.set(
@@ -6783,13 +7749,13 @@ function renderTorusFrame(width, height, phase) {
       base.y * (1 - rimFold * 0.08) + Math.sin(angle) * vortex,
       base.z + gravityWave + rimFold * Math.sin(slot * 1.21 + time * 0.38) * 0.16,
     );
-    marker.scale.setScalar(1 + idleLevel * Math.max(0, Math.sin(phase * 0.016 + slot)) * 0.06 + Math.max(activeBoost, glitch) * Math.max(0, Math.sin(phase * 0.04 + slot)) * 0.18 - rimFold * 0.08);
+    marker.scale.setScalar(1 + idleLevel * Math.max(0, Math.sin(phase * 0.016 + slot)) * 0.06 + activeBoost * Math.max(0, Math.sin(phase * 0.04 + slot)) * 0.18 - rimFold * 0.08);
     marker.material.opacity = (0.86 - focusZoom * 0.34 + activeBoost * 0.08) * (eco && slot % 3 !== 0 ? 0.3 : 1);
     const markerColor = ratioColorHex(slot, isDubModeVisual());
     marker.material.color.setHex(markerColor);
     marker.material.emissive.setHex(markerColor);
   });
-  if (!eco || activeBoost > 0.35 || glitch > 0.24) updateRatioConnectorGeometry();
+  if (!eco || activeBoost > 0.35) updateRatioConnectorGeometry();
 
   torusCore.renderer.render(torusCore.scene, torusCore.camera);
 }
@@ -6897,8 +7863,10 @@ function updateRatioConnectorGeometry() {
 }
 
 function ratioColorHex(slot, dubVisual = false) {
-  const palette = torusPalette(dubVisual);
-  return slot % 2 ? palette.markerB : palette.markerA;
+  const palette = state.visualLightPalette?.dubVisual === Boolean(dubVisual)
+    ? state.visualLightPalette
+    : updateVisualLightPalette(dubVisual);
+  return palette.hex.markers[mod(slot, 12)] || palette.hex.torus;
 }
 
 function drawCore(timestamp = 0) {
@@ -6924,7 +7892,8 @@ function drawCore(timestamp = 0) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
   const dubVisual = isDubModeVisual();
-  ctx.fillStyle = dubVisual ? "rgba(0, 8, 3, 0.22)" : "rgba(255, 248, 220, 0.08)";
+  const visualPalette = updateVisualLightPalette(dubVisual);
+  ctx.fillStyle = dubVisual ? rgbaString(visualPalette.colors.torus, 0.16) : rgbaString(visualPalette.colors.haloB, 0.06);
   ctx.fillRect(0, 0, width, height);
   const cx = width / 2;
   const cy = height / 2;
@@ -6933,16 +7902,15 @@ function drawCore(timestamp = 0) {
 
   const voidGlow = state.negativeSpaceOpacity || 0;
   const halo = ctx.createRadialGradient(cx, cy, 8, cx, cy, Math.min(width, height) * (0.34 + voidGlow * 0.12));
-  halo.addColorStop(0, dubVisual ? `rgba(183, 255, 77, ${0.1 + voidGlow * 0.16})` : `rgba(215, 46, 127, ${0.08 + voidGlow * 0.12})`);
-  halo.addColorStop(0.28, dubVisual ? `rgba(48, 255, 126, ${0.12 + voidGlow * 0.1})` : `rgba(41, 169, 199, ${0.08 + voidGlow * 0.08})`);
-  halo.addColorStop(0.55, dubVisual ? "rgba(0, 255, 200, 0.06)" : "rgba(53, 162, 184, 0.06)");
-  halo.addColorStop(1, dubVisual ? "rgba(0, 0, 0, 0)" : "rgba(255, 209, 102, 0)");
+  halo.addColorStop(0, rgbaString(visualPalette.colors.haloA, 0.08 + voidGlow * 0.14));
+  halo.addColorStop(0.28, rgbaString(visualPalette.colors.haloB, 0.08 + voidGlow * 0.1));
+  halo.addColorStop(0.55, rgbaString(visualPalette.colors.haloC, 0.04 + voidGlow * 0.04));
+  halo.addColorStop(1, rgbaString(visualPalette.colors.haloB, 0));
   ctx.fillStyle = halo;
   ctx.fillRect(0, 0, width, height);
 
   drawGravityWaveField(ctx, width, height, phase);
   drawApertureLens(ctx, width, height, phase);
-  drawEcoGlitchOverlay(ctx, width, height, phase);
   if (!torusCore.ready) drawProjectedTorusFallback(ctx, width, height, phase);
 
   const frameMs = Math.max(16, timestamp - (state.coreLastDrawnAt || timestamp));
@@ -6957,6 +7925,7 @@ function drawGravityWaveField(ctx, width, height, phase) {
   const cx = width / 2;
   const cy = height / 2;
   const dubVisual = isDubModeVisual();
+  const visualPalette = state.visualLightPalette || updateVisualLightPalette(dubVisual);
   const eco = visualEcoActive();
   const horizontalGap = eco ? 30 : 18;
   const horizontalStep = eco ? 18 : 10;
@@ -6973,7 +7942,7 @@ function drawGravityWaveField(ctx, width, height, phase) {
       if (x === -16) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
     }
-    ctx.strokeStyle = dubVisual ? "rgba(57, 255, 136, 0.42)" : "rgba(41, 169, 199, 0.38)";
+    ctx.strokeStyle = rgbaString(visualPalette.colors.fieldA, dubVisual ? 0.42 : 0.38);
     ctx.stroke();
   }
 
@@ -6984,7 +7953,7 @@ function drawGravityWaveField(ctx, width, height, phase) {
       if (y === -16) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
     }
-    ctx.strokeStyle = dubVisual ? "rgba(183, 255, 77, 0.24)" : "rgba(61, 183, 178, 0.26)";
+    ctx.strokeStyle = rgbaString(visualPalette.colors.fieldB, dubVisual ? 0.26 : 0.24);
     ctx.stroke();
   }
 
@@ -6995,6 +7964,7 @@ function drawApertureLens(ctx, width, height, phase) {
   const focus = state.focusZoom || 0;
   const voidGlow = state.negativeSpaceOpacity || 0;
   const dubVisual = isDubModeVisual();
+  const visualPalette = state.visualLightPalette || updateVisualLightPalette(dubVisual);
   const intensity = Math.max(focus, voidGlow * 0.72);
   if (intensity <= 0.025) return;
 
@@ -7006,15 +7976,13 @@ function drawApertureLens(ctx, width, height, phase) {
   ctx.globalAlpha = 0.18 + intensity * 0.36;
   ctx.lineWidth = 0.62;
   ctx.shadowBlur = 12 + intensity * 18;
-  ctx.shadowColor = dubVisual ? `rgba(57, 255, 136, ${0.18 + intensity * 0.22})` : `rgba(215, 46, 127, ${0.12 + intensity * 0.18})`;
+  ctx.shadowColor = rgbaString(visualPalette.colors.haloA, 0.12 + intensity * 0.2);
 
   for (let ring = 0; ring < 4; ring += 1) {
     const radius = base * (1 + ring * 0.42 + Math.sin(phase * 0.012 + ring) * 0.035);
     ctx.beginPath();
     ctx.ellipse(cx, cy, radius * (1.55 + wobble), radius * (0.58 - wobble * 0.18), Math.sin(phase * 0.006) * 0.08, 0, Math.PI * 2);
-    ctx.strokeStyle = dubVisual
-      ? (ring % 2 ? "rgba(183, 255, 77, 0.32)" : "rgba(57, 255, 136, 0.36)")
-      : (ring % 2 ? "rgba(215, 46, 127, 0.32)" : "rgba(41, 169, 199, 0.34)");
+    ctx.strokeStyle = rgbaString(ring % 2 ? visualPalette.colors.web : visualPalette.colors.torus, ring % 2 ? 0.32 : 0.36);
     ctx.stroke();
   }
 
@@ -7032,50 +8000,7 @@ function drawApertureLens(ctx, width, height, phase) {
       cx + Math.cos(angle) * outer,
       cy + Math.sin(angle) * outer * 0.58,
     );
-    ctx.strokeStyle = dubVisual ? "rgba(0, 255, 200, 0.32)" : "rgba(41, 169, 199, 0.36)";
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-function drawEcoGlitchOverlay(ctx, width, height, phase) {
-  const now = Date.now();
-  const glitch = visualGlitchEnvelope(now);
-  const eco = visualEcoActive(now);
-  const intensity = Math.max(glitch, eco ? 0.16 : 0);
-  if (intensity <= 0.01) return;
-
-  const dubVisual = isDubModeVisual();
-  const bandCount = glitch > 0.04 ? 8 : 3;
-  const paletteA = dubVisual ? "rgba(57, 255, 136," : "rgba(41, 169, 199,";
-  const paletteB = dubVisual ? "rgba(183, 255, 77," : "rgba(215, 46, 127,";
-  ctx.save();
-  ctx.globalCompositeOperation = "screen";
-
-  for (let band = 0; band < bandCount; band += 1) {
-    const wave = Math.sin(phase * 0.19 + band * 2.71);
-    const y = mod((phase * (0.9 + band * 0.07) + band * 41), height + 28) - 14;
-    const bandHeight = glitch > 0.04 ? 1 + Math.abs(wave) * 7 : 1.4;
-    const offset = wave * width * (0.018 + intensity * 0.036);
-    ctx.globalAlpha = 0.06 + intensity * (band % 2 ? 0.2 : 0.13);
-    ctx.fillStyle = `${band % 2 ? paletteB : paletteA} ${0.22 + intensity * 0.42})`;
-    ctx.fillRect(offset, y, width, bandHeight);
-    if (glitch > 0.08) {
-      ctx.globalAlpha = 0.035 + intensity * 0.1;
-      ctx.fillStyle = `${band % 2 ? paletteA : paletteB} ${0.14 + intensity * 0.28})`;
-      ctx.fillRect(-offset * 0.6, y + bandHeight + 2, width, 1);
-    }
-  }
-
-  ctx.globalAlpha = 0.06 + intensity * 0.18;
-  ctx.lineWidth = 0.5;
-  for (let y = 0; y < height; y += eco ? 16 : 9) {
-    const offset = Math.sin(y * 0.045 + phase * 0.05) * intensity * 8;
-    ctx.beginPath();
-    ctx.moveTo(offset, y + 0.5);
-    ctx.lineTo(width + offset, y + 0.5);
-    ctx.strokeStyle = dubVisual ? "rgba(57, 255, 136, 0.34)" : "rgba(255, 255, 255, 0.32)";
+    ctx.strokeStyle = rgbaString(visualPalette.colors.fieldB, dubVisual ? 0.32 : 0.36);
     ctx.stroke();
   }
 
@@ -7104,18 +8029,17 @@ function drawProjectedTorusFallback(ctx, width, height, phase) {
   const ry = rx * 0.42;
   const tilt = Math.sin(phase * 0.008) * 0.14;
   const dubVisual = isDubModeVisual();
+  const visualPalette = state.visualLightPalette || updateVisualLightPalette(dubVisual);
 
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(tilt);
   ctx.shadowBlur = state.animationVisualLevel > 0.02 ? 18 : 10;
-  ctx.shadowColor = dubVisual ? "rgba(57, 255, 136, 0.34)" : "rgba(215, 46, 127, 0.28)";
+  ctx.shadowColor = rgbaString(visualPalette.colors.haloA, dubVisual ? 0.34 : 0.28);
   for (let ring = -4; ring <= 4; ring += 1) {
     ctx.beginPath();
     ctx.ellipse(0, ring * 3.1, rx + Math.cos(phase * 0.018 + ring) * 3, ry + ring * 1.2, 0, 0, Math.PI * 2);
-    ctx.strokeStyle = dubVisual
-      ? (ring % 2 ? "rgba(183, 255, 77, 0.24)" : "rgba(57, 255, 136, 0.32)")
-      : (ring % 2 ? "rgba(215, 46, 127, 0.22)" : "rgba(53, 162, 184, 0.28)");
+    ctx.strokeStyle = rgbaString(ring % 2 ? visualPalette.colors.web : visualPalette.colors.torus, ring % 2 ? 0.24 : 0.32);
     ctx.lineWidth = 0.72;
     ctx.stroke();
   }

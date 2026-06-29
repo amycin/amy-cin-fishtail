@@ -11,7 +11,7 @@
     HYBRID_DRIFT: "hybrid_drift",
     LIVING_DRIFT: "living_drift",
   });
-  const DEFAULT_IRRATIONAL_FEEL_MODE = IRRATIONAL_FEEL_MODES.LATTICE_SAFE;
+  const DEFAULT_IRRATIONAL_FEEL_MODE = IRRATIONAL_FEEL_MODES.LIVING_DRIFT;
   const TEARDROP_MODEL = "teardrop_v1";
   const TICKER_MODEL = "pink_bpf_v1";
   const TEARDROP_DELTA = 1 / (12 * 12);
