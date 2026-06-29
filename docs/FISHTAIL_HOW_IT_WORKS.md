@@ -60,7 +60,7 @@ Fishtail tempo is based on:
 BPM = 60 * referenceHz / n
 ```
 
-The default reference is A3 = 216 Hz with A4 anchored at 432 Hz and `n = 216`, producing 60.0000 BPM.
+The default reference is A3 = 220 Hz with A4 anchored at 440 Hz and `n = 220`, producing 60.0000 BPM.
 
 When the tempo lattice is enabled, the app can reshape pulse durations while preserving bar or phrase endpoints depending on the selected feel mode. DAWs that read the MIDI conductor track hear the same tick positions through a warped tick-to-seconds timeline. The lattice supports:
 

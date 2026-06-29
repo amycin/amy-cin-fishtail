@@ -1,10 +1,10 @@
 "use strict";
 
 const PPQ = 480;
-const DEFAULT_A4_HZ = 432;
+const DEFAULT_A4_HZ = 440;
 const DEFAULT_REFERENCE_NOTE = "A3";
-const DEFAULT_REFERENCE_HZ = 216;
-const DEFAULT_TEMPO_DIVISOR = 216;
+const DEFAULT_REFERENCE_HZ = 220;
+const DEFAULT_TEMPO_DIVISOR = 220;
 const DEFAULT_FORM_STATE_NAME = "Fishtail project";
 const DEFAULT_RHYTHM_MOTION = 0.18;
 const REFERENCE_FINE_CENTS_MIN = -100;
@@ -1280,7 +1280,7 @@ function formStateSnapshot(name = currentFormStateName()) {
       map: els.resolutionInput?.value || "literal",
       output: els.outputModeInput?.value || "equal",
       root_note: els.rootNoteInput?.value || "A",
-      root_hz: clamp(parseFloat(els.rootFreqInput?.value) || 432, 20, 2000),
+      root_hz: clamp(parseFloat(els.rootFreqInput?.value) || DEFAULT_A4_HZ, 20, 2000),
       link_root_to_reference: Boolean(els.linkRootInput?.checked),
     },
   };
@@ -3746,7 +3746,7 @@ function readSettings(seed) {
     rootPc: noteToPc(els.rootNoteInput.value),
     rootNote: `${els.rootNoteInput.value}4`,
     rootMidi: 60 + noteToPc(els.rootNoteInput.value),
-    rootFreq: clamp(parseFloat(els.rootFreqInput.value) || 432, 20, 2000),
+    rootFreq: clamp(parseFloat(els.rootFreqInput.value) || DEFAULT_A4_HZ, 20, 2000),
   };
 }
 

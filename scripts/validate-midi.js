@@ -2362,13 +2362,16 @@ function runFugueTests() {
   const pitchInputJs = fs.readFileSync(path.join(ROOT, "src", "pitch-input.js"), "utf8");
   const styleOptionOk = indexHtml.includes('<option value="fishtail_fugue">Fishtail Fugue</option>');
   const tempoDefaultOk = indexHtml.includes('id="tempoInput" type="text" value="60.0000"')
-    && indexHtml.includes('id="tempoDivisorLabel">n = 216</span>')
-    && indexHtml.includes('id="tempoDivisorInput" type="range" min="59" max="432" step="1" value="216"')
+    && indexHtml.includes('id="tempoDivisorLabel">n = 220</span>')
+    && indexHtml.includes('id="tempoDivisorInput" type="range" min="60" max="440" step="1" value="220"')
     && indexHtml.includes('meter 5/4 from form 1')
     && indexHtml.includes('first share 0.333')
-    && indexHtml.includes('id="referenceFreqInput" type="number" min="20" max="2000" step="any" inputmode="decimal" value="216.00" readonly')
+    && indexHtml.includes('id="referenceFreqInput" type="number" min="20" max="2000" step="any" inputmode="decimal" value="220.00" readonly')
     && stylesCss.includes("#tempoDivisorInput")
-    && stylesCss.includes("direction: rtl");
+    && stylesCss.includes("direction: rtl")
+    && appJs.includes("const DEFAULT_A4_HZ = 440")
+    && appJs.includes("const DEFAULT_REFERENCE_HZ = 220")
+    && appJs.includes("const DEFAULT_TEMPO_DIVISOR = 220");
   const variedLabelOk = indexHtml.includes("Varied") && !indexHtml.includes("Strange");
   const notesClosedOk = indexHtml.includes('class="toolbar-icon-button notes-toggle-button" id="toggleNotesButton" type="button" title="Show generation notes" aria-label="Show generation notes"')
     && indexHtml.includes('<section class="panel output-panel" id="notesPanel" hidden>');
@@ -2381,8 +2384,12 @@ function runFugueTests() {
     && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="tempoDivisorLabel"')
     && stylesCss.includes(".topbar-dub-switch .switch-track {\n  display: none;");
   const panelOrderOk = indexHtml.indexOf('class="panel sound-time-panel"') < indexHtml.indexOf('class="panel voices-panel"')
+    && indexHtml.includes("<h2>Pitch and Tempi</h2>")
     && indexHtml.indexOf("<h3>Pitch Behaviour</h3>") > indexHtml.indexOf('id="settingsModal"')
-    && stylesCss.includes(".sound-time-panel {\n  grid-column: 1 / -1;\n  grid-row: 2;")
+    && stylesCss.includes(".sound-time-panel {\n  grid-column: 1;\n  grid-row: 1;")
+    && stylesCss.includes(".visual-pitch-stack {\n  grid-column: 2;\n  grid-row: 1;")
+    && stylesCss.includes("@media (max-width: 980px)")
+    && stylesCss.includes(".visual-panel .generator-core {\n  height: clamp(230px, 26vw, 360px);")
     && !indexHtml.includes('class="panel pitch-panel pitch-drawer"');
   const timelineUiOk = indexHtml.includes('class="form-timeline-shell"')
     && indexHtml.includes('id="sectionTimeline" role="list"')
@@ -2401,7 +2408,8 @@ function runFugueTests() {
     && indexHtml.includes("Project, MIDI, WAV, CV, notes")
     && indexHtml.includes("What Export MIDI delivers")
     && indexHtml.includes("Equal Temperament MIDI follows the receiving synth tuning, usually A4 = 440")
-    && indexHtml.includes("tune the receiving synth to A4 = 432 to match the default A3 216 Hz pulse")
+    && indexHtml.includes("Fishtail now defaults to A3 220 Hz")
+    && indexHtml.includes("If you change the reference, the receiving synth must be tuned to match")
     && indexHtml.includes("Amy Dub Intonation needs Entonal or a similar retuner")
     && indexHtml.includes("Bend MIDI needs separate mono channels or instruments")
     && !indexHtml.includes("Bend MIDI / Amy Dub Intonation for tuning-aware playback")
@@ -2474,7 +2482,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=68"')
+    && indexHtml.includes('href="styles.css?v=69"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
@@ -2490,7 +2498,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=8')
     && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=110')
+    && indexHtml.includes('src/app.js?v=111')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -2505,9 +2513,9 @@ function runFugueTests() {
     && indexHtml.includes('id="prepareProbeWavInput" type="checkbox" hidden')
     && indexHtml.includes('id="prepareTickerWavInput" type="checkbox" hidden')
     && indexHtml.includes("Export Pulse WAV")
-    && indexHtml.includes("Fishtail's default reference is A3 = 216 Hz, which implies A4 = 432 Hz")
+    && indexHtml.includes("Fishtail's default reference is A3 = 220 Hz, which implies A4 = 440 Hz")
     && indexHtml.includes("it does not retune the instrument")
-    && indexHtml.includes("the receiving synth must be tuned to A4 = 432")
+    && indexHtml.includes("matching the usual synth default")
     && indexHtml.includes("the retuner has to receive and interpret that key")
     && indexHtml.includes("with pitch-bend messages for compatible synth setups")
     && indexHtml.includes("mono 48 kHz / 24-bit stems")
@@ -2640,13 +2648,13 @@ function runFugueTests() {
       function probePitchControlsDriveReference() {
         const offSwitch = { getAttribute: () => "false" };
         els.referenceNoteInput = { value: "A3" };
-        els.referenceFreqInput = { value: "216.00" };
+        els.referenceFreqInput = { value: "220.00" };
         const a3Index = REFERENCE_NOTE_NAMES.indexOf("A3");
         els.probePitchInput = { value: String(a3Index), min: "0", max: String(REFERENCE_NOTE_NAMES.length - 1) };
         els.probePitchLabel = { textContent: "" };
         els.probeFineInput = { value: "25.0", min: "-100", max: "100" };
         els.probeFineLabel = { textContent: "" };
-        els.tempoDivisorInput = { value: "216", min: "", max: "" };
+        els.tempoDivisorInput = { value: "220", min: "", max: "" };
         els.tempoInput = { value: "" };
         els.tempoDivisorLabel = { textContent: "" };
         els.tempoLatticeInput = { checked: false };

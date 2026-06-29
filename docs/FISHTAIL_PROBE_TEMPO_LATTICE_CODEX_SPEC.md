@@ -124,25 +124,25 @@ For the MIDI grid, implement this as a meter-aware, deterministic, positive-dura
 Change the initial reference pitch to:
 
 - Reference note: **A3**
-- Reference frequency: **216.00 Hz**
-- A4 anchor: **432.00 Hz**
-- Tempo divisor: **n = 216**
+- Reference frequency: **220.00 Hz**
+- A4 anchor: **440.00 Hz**
+- Tempo divisor: **n = 220**
 - Resulting default BPM: **60.0000**
 
-Do **not** change `DEFAULT_A4_HZ` from 432 to 216. A3 at this tuning is 216 Hz because it is one octave below A4 = 432 Hz.
+Do **not** change `DEFAULT_A4_HZ` to the A3 reference frequency. A3 at this tuning is 220 Hz because it is one octave below A4 = 440 Hz.
 
 Add separate constants, for example:
 
 ```js
-const DEFAULT_A4_HZ = 432;
+const DEFAULT_A4_HZ = 440;
 const DEFAULT_REFERENCE_NOTE = "A3";
-const DEFAULT_REFERENCE_HZ = 216;
-const DEFAULT_TEMPO_DIVISOR = 216;
+const DEFAULT_REFERENCE_HZ = 220;
+const DEFAULT_TEMPO_DIVISOR = 220;
 ```
 
 The probe follows `settings.referenceHz`.
 
-The tuning root remains governed by the existing root/link system. If the root is A4 and linked to A3 = 216 Hz, a root frequency of 432 Hz is correct.
+The tuning root remains governed by the existing root/link system. If the root is A4 and linked to A3 = 220 Hz, a root frequency of 440 Hz is correct.
 
 ---
 
@@ -615,7 +615,7 @@ Both stems should match the full real-time duration of the generated piece.
 Examples:
 
 ```text
-amy-cin-fishtail-probe-216p0000hz-<seed>.wav
+amy-cin-fishtail-probe-220p0000hz-<seed>.wav
 amy-cin-fishtail-ticker-60p0000bpm-<seed>.wav
 ```
 
@@ -1004,8 +1004,8 @@ The ticker must use cached pink noise, BPF centre clamp(referenceHz * 8, 400,
 8000), approximately Q = 1 / 0.18, 30 ms decay, 30 ms filter glide, and
 meter-aware accents from the existing METERS table.
 
-Make the reference default A3 = 216 Hz while retaining A4 anchor = 432 Hz.
-Set n = 216 so default BPM remains 60.
+Make the reference default A3 = 220 Hz while retaining A4 anchor = 440 Hz.
+Set n = 220 so default BPM remains 60.
 
 Tempo-lattice MIDI must use direct microseconds-per-quarter Set Tempo meta
 events at pulse boundaries. When disabled, current output must remain unchanged.
@@ -1070,7 +1070,7 @@ issues, in separate commits, without redesigning the feature.
 The feature is ready to test when:
 
 - the page opens exactly as before, with no sound;
-- A3 = 216 Hz and n = 216 display 60 BPM;
+- A3 = 220 Hz and n = 220 display 60 BPM;
 - holding Probe produces a smooth Teardrop tone;
 - moving reference Hz glides without clicks;
 - metronome supports every existing meter;

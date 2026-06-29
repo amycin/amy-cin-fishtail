@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=68">
+    <link rel="stylesheet" href="styles.css?v=69">
   </head>
   <body>
     <main class="shell">
@@ -14,7 +14,7 @@
             <span>BPM</span>
             <input id="tempoInput" type="text" value="60.0000" readonly>
           </label>
-          <span class="menu-chip pitch-menu-chip" id="probePitchLabel">A3 216.00Hz</span>
+          <span class="menu-chip pitch-menu-chip" id="probePitchLabel">A3 220.00Hz</span>
         </div>
         <button class="icon-button floating-settings-button" id="settingsButton" type="button" title="Settings" aria-label="Settings">
           <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -57,7 +57,7 @@
 
           <section class="panel sound-time-panel">
             <div class="panel-head">
-              <h2>Choose a Fundamental Frequency and Tempo</h2>
+              <h2>Pitch and Tempi</h2>
             </div>
             <div class="field-grid sound-grid">
               <div class="probe-pitch-field">
@@ -154,8 +154,8 @@
               </label>
               <div class="tempo-field">
                 <span class="tempo-field-label" id="tempoFieldLabel">Tempo</span>
-                <span class="visually-hidden" id="tempoDivisorLabel">n = 216</span>
-                <input id="tempoDivisorInput" type="range" min="59" max="432" step="1" value="216" aria-labelledby="tempoFieldLabel tempoDivisorLabel">
+                <span class="visually-hidden" id="tempoDivisorLabel">n = 220</span>
+                <input id="tempoDivisorInput" type="range" min="60" max="440" step="1" value="220" aria-labelledby="tempoFieldLabel tempoDivisorLabel">
               </div>
               <label title="Stroll to swagger: lengthens the first pulse of each accent group and lets the next pulse arrive late.">
                 Rational swing
@@ -329,7 +329,7 @@
               </div>
               <div class="midi-export-note">
                 <span>What Export MIDI delivers</span>
-                <p>Export MIDI saves Standard MIDI note events, plus tempo and time-signature data when Tempo Data is on. Equal Temperament MIDI follows the receiving synth tuning, usually A4 = 440; tune the receiving synth to A4 = 432 to match the default A3 216 Hz pulse. Amy Dub Intonation needs Entonal or a similar retuner to interpret its carrier notes; Bend MIDI needs separate mono channels or instruments that receive its pitch-bend data correctly.</p>
+                <p>Export MIDI saves Standard MIDI note events, plus tempo and time-signature data when Tempo Data is on. Equal Temperament MIDI follows the receiving synth tuning, usually A4 = 440; Fishtail now defaults to A3 220 Hz so ordinary synths begin in familiar tuning. If you change the reference, the receiving synth must be tuned to match. Amy Dub Intonation needs Entonal or a similar retuner to interpret its carrier notes; Bend MIDI needs separate mono channels or instruments that receive its pitch-bend data correctly.</p>
               </div>
               <p class="download-help">Generate creates the piece. Export MIDI saves the music file using the project name, BPM, style, and seed. Save Project keeps the loadable Fishtail settings and form. Audio and CV exports render from the generated piece and may show a size estimate.</p>
             </details>
@@ -396,7 +396,7 @@
 
               <section>
                 <h3>Pitch Modes</h3>
-                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs, but it does not retune the instrument. Fishtail's default reference is A3 = 216 Hz, which implies A4 = 432 Hz; most synths play ordinary MIDI at A4 = 440, so the receiving synth must be tuned to A4 = 432 if you want Equal MIDI to match the pulse. The voice tracks stay clean: note on/off events only, no program changes, no controller setup, and no track-name clutter. If Tempo Data is on, a separate conductor track writes BPM and time signatures. The selected BPM is also shown in the downloaded filename.</p>
+                <p><strong>Equal Temperament</strong> writes ordinary MIDI notes. This is the safest mode for most synths and DAWs, but it does not retune the instrument. Fishtail's default reference is A3 = 220 Hz, which implies A4 = 440 Hz, matching the usual synth default. If you change the reference, the receiving synth must be tuned to match if you want Equal MIDI to line up with the pulse. The voice tracks stay clean: note on/off events only, no program changes, no controller setup, and no track-name clutter. If Tempo Data is on, a separate conductor track writes BPM and time signatures. The selected BPM is also shown in the downloaded filename.</p>
                 <p><strong>Amy Dub Intonation</strong> is Amy McBride's experimental ratio-based dub tuning. Instead of dividing the octave into twelve equal steps, it maps chromatic slots to chosen ratios. It is designed to be run through Entonal or a similar retuner that can define these ratios. In retuner mode the MIDI notes are carrier keys: the note number may look ordinary or unusual, but the retuner has to receive and interpret that key as the intended ratio pitch.</p>
                 <p><strong>Amy Dub ratio pattern</strong>, chromatic from the selected root:</p>
                 <ul class="ratio-list">
@@ -526,7 +526,7 @@
                   </label>
                   <label class="locked-field">
                     Reference Hz
-                    <input id="referenceFreqInput" type="number" min="20" max="2000" step="any" inputmode="decimal" value="216.00" readonly>
+                    <input id="referenceFreqInput" type="number" min="20" max="2000" step="any" inputmode="decimal" value="220.00" readonly>
                   </label>
                   <label>
                     Map
@@ -549,7 +549,7 @@
                   </label>
                   <label class="tuning-root-only">
                     Root Hz
-                    <input id="rootFreqInput" type="number" min="20" max="2000" step="0.01" value="432.00">
+                    <input id="rootFreqInput" type="number" min="20" max="2000" step="0.01" value="440.00">
                   </label>
                   <label class="tuning-root-only check-label">
                     <input id="linkRootInput" type="checkbox" checked>
@@ -691,6 +691,6 @@
     <script src="src/wav-export.js?v=8"></script>
     <script src="src/pitch-input.js?v=3"></script>
     <script src="src/random-router.js?v=1"></script>
-    <script src="src/app.js?v=110"></script>
+    <script src="src/app.js?v=111"></script>
   </body>
 </html>
