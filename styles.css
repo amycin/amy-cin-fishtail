@@ -1097,6 +1097,7 @@ button:disabled {
 .section-expression {
   grid-column: 1 / -1;
   display: grid;
+  justify-self: stretch;
   min-width: 0;
   margin-top: 2px;
   border: 1px solid rgba(var(--section-editor-rgb), 0.2);
@@ -1108,7 +1109,21 @@ button:disabled {
   overflow: hidden;
 }
 
+.section-expression:not([open]) {
+  justify-self: end;
+  width: var(--control-height);
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  margin-top: 0;
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(135deg, rgba(255, 252, 239, 0.78), rgba(var(--section-editor-soft-rgb), 0.44)),
+    rgba(255, 246, 225, 0.48);
+  overflow: visible;
+}
+
 .section-expression-summary {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
@@ -1118,6 +1133,15 @@ button:disabled {
   color: rgb(var(--section-editor-ink-rgb));
   cursor: pointer;
   list-style: none;
+}
+
+.section-expression:not([open]) .section-expression-summary {
+  display: inline-flex;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0;
+  border-radius: inherit;
 }
 
 .section-expression-summary::marker,
@@ -1145,6 +1169,27 @@ button:disabled {
   opacity: 0.82;
 }
 
+.expression-piano-icon {
+  stroke-width: 1.65;
+}
+
+.section-expression:not([open]) .expression-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.section-expression:not([open]) [data-expression-summary] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .expression-summary-title span {
   min-width: 0;
   color: var(--muted);
@@ -1170,6 +1215,20 @@ button:disabled {
 
 .expression-active-badge[hidden] {
   display: none;
+}
+
+.section-expression:not([open]) .expression-active-badge {
+  position: absolute;
+  inset-block-start: -4px;
+  inset-inline-end: -4px;
+  width: 10px;
+  height: 10px;
+  min-height: 10px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 999px;
+  color: transparent;
+  font-size: 0;
 }
 
 .section-expression-grid {
@@ -3594,9 +3653,14 @@ pre {
 
   .section-row .row-index,
   .section-row > label,
-  .section-row .icon-button {
+  .section-row .icon-button,
+  .section-row .section-expression {
     grid-column: auto !important;
     grid-row: auto !important;
+  }
+
+  .section-row .section-expression {
+    grid-column: 1 / -1 !important;
   }
 
   .section-row .icon-button {
@@ -3651,7 +3715,7 @@ pre {
     padding: 10px;
   }
 
-  .section-expression {
+  .section-expression[open] {
     padding: 10px;
   }
 

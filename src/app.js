@@ -3249,8 +3249,8 @@ function pressureDensityLabel(value) {
 function expressionSummaryLabel(expression) {
   const normalized = normalizeSectionExpression(expression);
   const contour = SECTION_VELOCITY_CONTOURS[normalized.velocityContour] || SECTION_VELOCITY_CONTOURS.natural;
-  const bloom = normalized.keyboardBloom ? " · Bloom saved" : "";
-  return `Expression · ${contour} · Width ${percentLabel(normalized.registerSpread)} · ${voicingLiftLabel(normalized.voicingLift)} · Pressure ${pressureDensityLabel(normalized.pressureDensity)}${bloom}`;
+  const bloom = normalized.keyboardBloom ? " · Keyboard Bloom saved" : "";
+  return `Dynamics · ${contour}${bloom}`;
 }
 
 function sectionExpressionDrawerIsOpen(index, expression) {
@@ -3258,11 +3258,11 @@ function sectionExpressionDrawerIsOpen(index, expression) {
   if (Object.prototype.hasOwnProperty.call(state.sectionExpressionDrawerOpen, key)) {
     return Boolean(state.sectionExpressionDrawerOpen[key]);
   }
-  return !sectionExpressionIsDefault(expression);
+  return false;
 }
 
 function expressionIconSvg() {
-  return '<svg class="expression-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 15c3.2-7.2 6.2-7.2 9 0s5.2 7.2 7 0"></path><path d="M4 9c2.4 3.2 4.6 3.2 6.6 0s4.4-3.2 7.4 0"></path></svg>';
+  return '<svg class="expression-icon expression-piano-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="14" rx="2.2"></rect><path d="M7 5v14M11 5v14M15 5v14M19 5v14"></path><path d="M5.8 5v7M9.2 5v7M13.2 5v7M16.6 5v7"></path></svg>';
 }
 
 function sectionExpressionControlsHtml(expression, index) {
@@ -3271,10 +3271,11 @@ function sectionExpressionControlsHtml(expression, index) {
   const pressureValue = pressureAuto ? 50 : Math.round(normalized.pressureDensity * 100);
   const open = sectionExpressionDrawerIsOpen(index, normalized);
   const active = !sectionExpressionIsDefault(normalized);
+  const summaryLabel = expressionSummaryLabel(normalized);
   return `
     <details class="section-expression" data-expression-panel${open ? " open" : ""}>
-      <summary class="section-expression-summary">
-        <span class="expression-summary-title">${expressionIconSvg()}<span data-expression-summary>${escapeHtml(expressionSummaryLabel(normalized))}</span></span>
+      <summary class="section-expression-summary" title="${escapeHtml(summaryLabel)}" aria-label="Section dynamics controls">
+        <span class="expression-summary-title">${expressionIconSvg()}<span data-expression-summary>${escapeHtml(summaryLabel)}</span></span>
         <span class="expression-active-badge"${active ? "" : " hidden"}>Active</span>
       </summary>
       <div class="section-expression-grid">
