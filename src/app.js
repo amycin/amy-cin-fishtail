@@ -724,6 +724,10 @@ function bindElements() {
     "copySectionButton",
     "duplicateSectionButton",
     "pasteSectionButton",
+    "projectLoadMenu",
+    "projectLoadMenuButton",
+    "projectLoadMenuPanel",
+    "loadFormStateToolbarButton",
     "formStateNameInput",
     "saveFormStateButton",
     "loadFormStateButton",
@@ -881,6 +885,11 @@ function bindEvents() {
   els.pasteSectionButton?.addEventListener("click", pasteAfterSelectedSection);
   els.saveFormStateButton?.addEventListener("click", saveFormState);
   els.loadFormStateButton?.addEventListener("click", loadFormState);
+  els.projectLoadMenuButton?.addEventListener("click", toggleProjectLoadMenu);
+  els.loadFormStateToolbarButton?.addEventListener("click", () => {
+    closeProjectLoadMenu();
+    loadFormState();
+  });
   els.loadFormStateInput?.addEventListener("change", handleFormStateFileSelection);
   els.clearFormStateButton?.addEventListener("click", clearFormState);
   els.gentleRollButton.addEventListener("click", () => randomiseForm("gentle"));
@@ -992,6 +1001,7 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (handleFormHistoryShortcut(event)) return;
     if (event.key === "Escape") {
+      if (els.projectLoadMenuPanel && !els.projectLoadMenuPanel.hidden) return closeProjectLoadMenu({ focus: true });
       if (!els.guideModal.hidden) return closeGuide();
       if (!els.helpModal.hidden) return closeHelp();
       if (!els.creditsModal.hidden) return closeCredits();
@@ -1419,6 +1429,11 @@ function bindRangeResetEvents() {
     if ((event.timeStamp || runtimeNow()) < state.rangeResetSuppressUntil) return;
     resetRangeControl(input);
   }, true);
+  document.addEventListener("pointerdown", (event) => {
+    if (!els.projectLoadMenuPanel || els.projectLoadMenuPanel.hidden) return;
+    if (els.projectLoadMenu?.contains(event.target)) return;
+    closeProjectLoadMenu();
+  }, true);
 }
 
 function resetRangeControl(input) {
@@ -1450,10 +1465,32 @@ async function saveJsonBlobFromButton(blob, filename) {
 
 async function loadFormState() {
   if (state.generating || state.randomising) return;
+  closeProjectLoadMenu();
   if (els.loadFormStateInput) {
     els.loadFormStateInput.value = "";
     els.loadFormStateInput.click();
   }
+}
+
+function setProjectLoadMenuOpen(open, options = {}) {
+  if (!els.projectLoadMenuButton || !els.projectLoadMenuPanel) return;
+  const nextOpen = Boolean(open) && !state.generating && !state.randomising;
+  els.projectLoadMenuPanel.hidden = !nextOpen;
+  els.projectLoadMenu?.classList.toggle("is-open", nextOpen);
+  els.projectLoadMenuButton.setAttribute("aria-expanded", String(nextOpen));
+  if (nextOpen) {
+    els.loadFormStateToolbarButton?.focus();
+  } else if (options.focus) {
+    els.projectLoadMenuButton.focus();
+  }
+}
+
+function toggleProjectLoadMenu() {
+  setProjectLoadMenuOpen(els.projectLoadMenuPanel?.hidden !== false);
+}
+
+function closeProjectLoadMenu(options = {}) {
+  setProjectLoadMenuOpen(false, options);
 }
 
 async function handleFormStateFileSelection(event) {
@@ -2830,6 +2867,9 @@ function updateTimelineActions() {
   if (els.clearFormStateButton) els.clearFormStateButton.disabled = busy;
   if (els.saveFormStateButton) els.saveFormStateButton.disabled = busy;
   if (els.loadFormStateButton) els.loadFormStateButton.disabled = busy;
+  if (els.projectLoadMenuButton) els.projectLoadMenuButton.disabled = busy;
+  if (els.loadFormStateToolbarButton) els.loadFormStateToolbarButton.disabled = busy;
+  if (busy) closeProjectLoadMenu();
   if (!els.timelineStatus) return;
   if (!selected) {
     els.timelineStatus.textContent = "Select a section";
@@ -3846,6 +3886,7 @@ function playGenerateFeedback(visualRng = makeRandomRouter("visual-feedback").st
 }
 
 function setGenerationControlsDisabled(disabled) {
+  if (disabled) closeProjectLoadMenu();
   [
     els.generateButton,
     els.gentleRollButton,
@@ -3859,6 +3900,8 @@ function setGenerationControlsDisabled(disabled) {
     els.copySectionButton,
     els.duplicateSectionButton,
     els.pasteSectionButton,
+    els.projectLoadMenuButton,
+    els.loadFormStateToolbarButton,
     els.formStateNameInput,
     els.saveFormStateButton,
     els.loadFormStateButton,

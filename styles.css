@@ -381,6 +381,31 @@ body.dub-mode .timeline-popover-delete.is-armed {
   background: rgba(168, 42, 58, 0.92);
 }
 
+body.dub-mode .toolbar-divider {
+  background: rgba(var(--timeline-graph-rgb), 0.2);
+}
+
+body.dub-mode .toolbar-menu-panel {
+  color: #eaffef;
+  border-color: rgba(var(--timeline-graph-rgb), 0.3);
+  background:
+    linear-gradient(135deg, rgba(var(--timeline-graph-rgb), 0.18), rgba(0, 18, 8, 0.96)),
+    rgba(0, 8, 4, 0.94);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34), inset 0 0 18px rgba(var(--timeline-graph-rgb), 0.08);
+}
+
+body.dub-mode .toolbar-menu-item {
+  color: #eaffef;
+  border-color: rgba(var(--timeline-graph-rgb), 0.22);
+  background: rgba(var(--timeline-graph-rgb), 0.1);
+}
+
+body.dub-mode .toolbar-menu-item:disabled {
+  color: rgba(223, 255, 232, 0.44);
+  border-color: rgba(var(--timeline-graph-rgb), 0.16);
+  background: rgba(0, 11, 5, 0.4);
+}
+
 body.dub-mode .form-safety {
   color: #dfffe8;
   box-shadow: inset 0 0 18px rgba(57, 255, 136, 0.04);
@@ -1514,6 +1539,7 @@ button:disabled {
 .timeline-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   justify-content: flex-end;
 }
@@ -1537,6 +1563,70 @@ button:disabled {
 .toolbar-icon-button .ui-icon {
   width: 17px;
   height: 17px;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 30px;
+  margin: 0 2px;
+  border-radius: 999px;
+  background: rgba(184, 74, 42, 0.18);
+}
+
+.toolbar-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.toolbar-menu-trigger[aria-expanded="true"] {
+  border-color: rgba(215, 46, 127, 0.44);
+  background: rgba(255, 209, 102, 0.36);
+  box-shadow: 0 0 0 2px rgba(255, 209, 102, 0.18);
+}
+
+.toolbar-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 28;
+  display: grid;
+  gap: 4px;
+  width: max-content;
+  min-width: 178px;
+  max-width: min(230px, calc(100vw - 32px));
+  padding: 6px;
+  border: 1px solid rgba(184, 74, 42, 0.24);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(255, 252, 239, 0.98), rgba(255, 239, 196, 0.96));
+  box-shadow: 0 14px 30px rgba(76, 37, 40, 0.18), var(--shadow-inset);
+}
+
+.toolbar-menu-panel[hidden] {
+  display: none;
+}
+
+.toolbar-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  color: #6d3a22;
+  border-color: rgba(184, 74, 42, 0.16);
+  background: rgba(255, 252, 239, 0.62);
+  font-size: 0.76rem;
+  font-weight: 760;
+  line-height: 1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.toolbar-menu-item:disabled {
+  color: rgba(78, 49, 39, 0.48);
+  border-style: dashed;
+  background: rgba(255, 247, 216, 0.44);
 }
 
 .toolbar-icon-button:hover:not(:disabled),
