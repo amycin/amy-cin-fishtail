@@ -783,6 +783,7 @@ function bindElements() {
     "linkRootInput",
     "generateButton",
     "generateFeedbackLabel",
+    "exportAssetsSummary",
     "downloadMidiButton",
     "downloadJsonButton",
     "downloadProbeWavButton",
@@ -3705,6 +3706,7 @@ async function generatePiece() {
     els.statusLabel.textContent = "Add a form section first";
     els.pieceLengthLabel.textContent = "Blank form";
     setGenerateFeedback("Add a form section first.", "warn");
+    setExportAssetsPlaceholder("Generate to see export sizes and lengths.");
     updateGenerationAvailability();
     return;
   }
@@ -3737,6 +3739,7 @@ async function generatePiece() {
   els.downloadJsonButton.disabled = true;
   releaseAudioExports();
   updateAudioExportButtons();
+  setExportAssetsPlaceholder("Generating export assets...");
   els.statusLabel.textContent = customEntropyEndpoint() ? "Tuning + entropy" : "Tuning";
   els.pieceLengthLabel.textContent = "Preparing";
   setGenerateFeedback("Preparing tuning, form, and timing.", "working");
@@ -3762,14 +3765,17 @@ async function generatePiece() {
       els.statusLabel.textContent = piece.audit.ok ? "MIDI ready" : "Generated with notes";
       setGenerateFeedback(`${els.statusLabel.textContent}: ${pieceSummary}. Open Exports to save MIDI, project, audio, CV, or notes.`, piece.audit.ok ? "ready" : "warn");
       await prepareRequestedAudioExports(piece);
+      updateExportAssetsSummary(piece);
     } else {
       els.statusLabel.textContent = "MIDI blocked by checker";
       setGenerateFeedback(`${els.statusLabel.textContent}: ${pieceSummary}. Open Notes for details.`, "error");
+      updateExportAssetsSummary(piece);
     }
   } catch (error) {
     els.statusLabel.textContent = "Stopped";
     els.reportOutput.textContent = `Generation stopped:\n${error.message}`;
     setGenerateFeedback(`Generation stopped: ${error.message}`, "error");
+    setExportAssetsPlaceholder("Export assets unavailable until generation succeeds.");
     console.error(error);
   } finally {
     state.animationActive = false;
@@ -7669,6 +7675,134 @@ function formatSeconds(seconds) {
   return `${safe.toFixed(1)}s`;
 }
 
+function textByteSize(text) {
+  const value = String(text ?? "");
+  if (typeof Blob === "function") return new Blob([value]).size;
+  if (typeof TextEncoder === "function") return new TextEncoder().encode(value).length;
+  return value.length;
+}
+
+function exportPieceDurationSeconds(piece) {
+  const direct = Number(piece?.tempoTimeline?.totalSeconds);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  try {
+    return Number(estimateTimelineForSettings(piece?.settings || {}).totalSeconds) || 0;
+  } catch (error) {
+    return 0;
+  }
+}
+
+function exportAssetMeta(parts) {
+  return parts.filter(Boolean).join(" · ");
+}
+
+function projectStateByteSize() {
+  try {
+    return textByteSize(JSON.stringify(formStateSnapshot(currentFormStateName()), null, 2));
+  } catch (error) {
+    return null;
+  }
+}
+
+function audioExportSummaryRow(kind, plan) {
+  const descriptor = audioExportDescriptor(kind);
+  const ready = state.lastAudioExports[kind];
+  if (ready?.blob) {
+    const duration = Number(ready.durationSeconds) || Number(plan?.durationSeconds) || 0;
+    const detail = ready.stemCount ? `${ready.stemCount} stems` : "ready";
+    return {
+      name: ready.label || descriptor.label,
+      meta: exportAssetMeta([
+        formatBytes(ready.blob.size),
+        formatSeconds(duration),
+        detail,
+      ]),
+    };
+  }
+  return {
+    name: plan?.label || descriptor.label,
+    meta: exportAssetMeta([
+      plan ? `about ${formatBytes(plan.downloadBytes)}` : "size estimated on export",
+      plan ? formatSeconds(plan.durationSeconds) : "",
+      "renders on export",
+    ]),
+  };
+}
+
+function exportAssetRows(piece) {
+  if (!piece) return [];
+  const duration = exportPieceDurationSeconds(piece);
+  const manifestBytes = textByteSize(JSON.stringify(piece.manifest || {}, null, 2));
+  const notesBytes = textByteSize(piece.report || "");
+  const projectBytes = projectStateByteSize();
+  const rows = [
+    {
+      name: "MIDI",
+      meta: exportAssetMeta([
+        formatBytes(piece.midiBytes?.length || 0),
+        formatSeconds(duration),
+        piece.audit?.issues?.length ? "blocked by checker" : "ready",
+      ]),
+    },
+    {
+      name: "Project JSON",
+      meta: exportAssetMeta([
+        projectBytes == null ? "size unavailable" : formatBytes(projectBytes),
+        "loadable state",
+      ]),
+    },
+    {
+      name: "Manifest JSON",
+      meta: exportAssetMeta([
+        formatBytes(manifestBytes),
+        `${formatSeconds(duration)} metadata`,
+      ]),
+    },
+    {
+      name: "Notes TXT",
+      meta: exportAssetMeta([
+        formatBytes(notesBytes),
+        "generation notes",
+      ]),
+    },
+  ];
+  const audioPlans = estimateAudioExportPlans(["probe", "ticker", "cv"], { piece });
+  audioPlans.forEach((plan) => rows.push(audioExportSummaryRow(plan.kind, plan)));
+  return rows;
+}
+
+function setExportAssetsPlaceholder(text) {
+  if (!els.exportAssetsSummary) return;
+  const message = document.createElement("span");
+  message.textContent = text;
+  els.exportAssetsSummary.replaceChildren(message);
+}
+
+function updateExportAssetsSummary(piece = state.lastPiece) {
+  if (!els.exportAssetsSummary) return;
+  if (!piece) {
+    setExportAssetsPlaceholder("Generate to see export sizes and lengths.");
+    return;
+  }
+  const summary = document.createElement("span");
+  summary.className = "export-assets-kicker";
+  summary.textContent = `Exports for ${formatSeconds(exportPieceDurationSeconds(piece))} piece`;
+  const list = document.createElement("ul");
+  list.className = "export-assets-list";
+  exportAssetRows(piece).forEach((row) => {
+    const item = document.createElement("li");
+    const name = document.createElement("span");
+    name.className = "export-asset-name";
+    name.textContent = row.name;
+    const meta = document.createElement("span");
+    meta.className = "export-asset-meta";
+    meta.textContent = row.meta;
+    item.replaceChildren(name, meta);
+    list.append(item);
+  });
+  els.exportAssetsSummary.replaceChildren(summary, list);
+}
+
 function estimateTimelineForSettings(settings) {
   const sectionMeta = sectionMetaFromSections(settings.sections || state.sections);
   return FishtailTempoLattice.buildTempoTimeline(sectionMeta, settings, { ppq: PPQ, meters: METERS });
@@ -7777,6 +7911,7 @@ async function renderAudioExport(kind, piece) {
     const audioExport = await descriptor.renderer(piece);
     state.lastAudioExports[kind] = audioExport;
     recordAudioExport(piece, audioExport);
+    updateExportAssetsSummary(piece);
     updateAudioExportButtons();
     return audioExport;
   } finally {
