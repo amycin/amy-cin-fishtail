@@ -782,6 +782,7 @@ function bindElements() {
     "rootFreqInput",
     "linkRootInput",
     "generateButton",
+    "generateFeedbackLabel",
     "downloadMidiButton",
     "downloadJsonButton",
     "downloadProbeWavButton",
@@ -3692,11 +3693,18 @@ function updateGenerationAvailability() {
   }
 }
 
+function setGenerateFeedback(text, stateName = "idle") {
+  if (!els.generateFeedbackLabel) return;
+  els.generateFeedbackLabel.textContent = text;
+  els.generateFeedbackLabel.dataset.state = stateName;
+}
+
 async function generatePiece() {
   if (state.generating) return;
   if (!state.sections.length) {
     els.statusLabel.textContent = "Add a form section first";
     els.pieceLengthLabel.textContent = "Blank form";
+    setGenerateFeedback("Add a form section first.", "warn");
     updateGenerationAvailability();
     return;
   }
@@ -3731,10 +3739,13 @@ async function generatePiece() {
   updateAudioExportButtons();
   els.statusLabel.textContent = customEntropyEndpoint() ? "Tuning + entropy" : "Tuning";
   els.pieceLengthLabel.textContent = "Preparing";
+  setGenerateFeedback("Preparing tuning, form, and timing.", "working");
   try {
     els.statusLabel.textContent = "Generating";
+    setGenerateFeedback("Generating voices and counterpoint.", "working");
     const piece = buildPiece(settings, random);
     els.statusLabel.textContent = "Checking";
+    setGenerateFeedback("Checking voice-leading and export safety.", "working");
     state.lastPiece = piece;
     document.body.dataset.fishtailMidiBytes = String(piece.midiBytes.length);
     document.body.dataset.fishtailManifestEvents = String(piece.manifest.events.length);
@@ -3743,18 +3754,22 @@ async function generatePiece() {
     els.reportOutput.textContent = piece.report;
     els.seedLabel.textContent = `Seed: ${seed.slice(0, 12)}`;
     const fatalIssues = piece.audit.issues.length > 0;
-    els.pieceLengthLabel.textContent = `${piece.totalBars} bars | ${piece.events.length} notes | ${piece.audit.ok ? "checked" : fatalIssues ? "MIDI blocked" : "musical notes"}`;
+    const pieceSummary = `${piece.totalBars} bars | ${piece.events.length} notes | ${piece.audit.ok ? "checked" : fatalIssues ? "MIDI blocked" : "musical notes"}`;
+    els.pieceLengthLabel.textContent = pieceSummary;
     els.downloadMidiButton.disabled = fatalIssues;
     els.downloadJsonButton.disabled = false;
     if (!fatalIssues) {
       els.statusLabel.textContent = piece.audit.ok ? "MIDI ready" : "Generated with notes";
+      setGenerateFeedback(`${els.statusLabel.textContent}: ${pieceSummary}. Open Exports to save MIDI, project, audio, CV, or notes.`, piece.audit.ok ? "ready" : "warn");
       await prepareRequestedAudioExports(piece);
     } else {
       els.statusLabel.textContent = "MIDI blocked by checker";
+      setGenerateFeedback(`${els.statusLabel.textContent}: ${pieceSummary}. Open Notes for details.`, "error");
     }
   } catch (error) {
     els.statusLabel.textContent = "Stopped";
     els.reportOutput.textContent = `Generation stopped:\n${error.message}`;
+    setGenerateFeedback(`Generation stopped: ${error.message}`, "error");
     console.error(error);
   } finally {
     state.animationActive = false;
