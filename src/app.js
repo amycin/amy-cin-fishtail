@@ -448,6 +448,23 @@ const SECTION_TREATMENTS = {
   dubby: "Dubby",
 };
 
+const SECTION_EXPRESSION_VERSION = "section_expression_v1";
+const SECTION_EXPRESSION_DEFAULTS = Object.freeze({
+  velocityContour: "natural",
+  registerSpread: 0.5,
+  voicingLift: 0,
+  pressureDensity: null,
+  wholeKeyboardSam: false,
+});
+const SECTION_VELOCITY_CONTOURS = {
+  natural: "Natural",
+  rise: "Rise",
+  fall: "Fall",
+  arch: "Arch",
+  valley: "Valley",
+  swell: "Swell",
+};
+
 const DEFAULT_FORM_TEMPLATE_C = [
   { bars: 4, key: "C", mode: "ionian", meter: "5/4", cadence: "plagal", role: "normal", treatment: "straight" },
   { bars: 4, key: "C", mode: "ionian", meter: "3/4", cadence: "plagal", role: "normal", treatment: "straight" },
@@ -561,6 +578,7 @@ const state = {
   timelineDeletePress: null,
   timelineSuppressClickUntil: 0,
   timelineSuppressContextMenuUntil: 0,
+  sectionExpressionPadDrag: null,
   lastPiece: null,
   animationActive: false,
   animationPhase: 0,
@@ -1305,6 +1323,7 @@ function formStateSnapshot(name = currentFormStateName()) {
         cadence: section.cadence,
         role: section.role,
         treatment: section.treatment,
+        expression: section.expression,
         start_tick: section.startTick,
         bar_ticks: section.barTicks,
       })),
@@ -3203,6 +3222,183 @@ function cancelTimelineDrag() {
   renderSectionTimeline();
 }
 
+function percentRangeValue(value, fallback = 0.5) {
+  const numeric = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return String(Math.round(clamp(numeric, 0, 1) * 100));
+}
+
+function signedPercentRangeValue(value, fallback = 0) {
+  const numeric = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return String(Math.round(clamp(numeric, -1, 1) * 100));
+}
+
+function percentLabel(value, fallback = 0.5) {
+  return `${percentRangeValue(value, fallback)}%`;
+}
+
+function voicingLiftLabel(value) {
+  const amount = Math.round(clamp(Number(value) || 0, -1, 1) * 100);
+  if (amount === 0) return "Center";
+  return amount > 0 ? `+${amount}` : String(amount);
+}
+
+function pressureDensityLabel(value) {
+  return value == null ? "Auto" : percentLabel(value, 0.5);
+}
+
+function expressionSummaryLabel(expression) {
+  const normalized = normalizeSectionExpression(expression);
+  const contour = SECTION_VELOCITY_CONTOURS[normalized.velocityContour] || SECTION_VELOCITY_CONTOURS.natural;
+  const sam = normalized.wholeKeyboardSam ? " | Sam" : "";
+  return `${contour} | width ${percentLabel(normalized.registerSpread)} | lift ${voicingLiftLabel(normalized.voicingLift)} | pressure ${pressureDensityLabel(normalized.pressureDensity)}${sam}`;
+}
+
+function sectionExpressionControlsHtml(expression) {
+  const normalized = normalizeSectionExpression(expression);
+  const pressureAuto = normalized.pressureDensity == null;
+  const pressureValue = pressureAuto ? 50 : Math.round(normalized.pressureDensity * 100);
+  return `
+    <div class="section-expression" data-expression-panel>
+      <div class="section-expression-head">
+        <span>Section Expression</span>
+        <span data-expression-summary>${escapeHtml(expressionSummaryLabel(normalized))}</span>
+      </div>
+      <div class="section-expression-grid">
+        <label class="expression-field expression-field-select">Velocity contour<select data-expression-field="velocityContour">${Object.entries(SECTION_VELOCITY_CONTOURS).map(([id, label]) => optionHtml(id, label, id === normalized.velocityContour)).join("")}</select></label>
+        <label class="expression-field expression-field-range"><span><span>Register width</span><output data-expression-output="registerSpread">${percentLabel(normalized.registerSpread)}</output></span><input type="range" min="0" max="100" step="1" value="${percentRangeValue(normalized.registerSpread)}" data-reset-value="50" data-expression-field="registerSpread" aria-label="Register width"></label>
+        <label class="expression-field expression-field-range"><span><span>Voicing lift</span><output data-expression-output="voicingLift">${voicingLiftLabel(normalized.voicingLift)}</output></span><input type="range" min="-100" max="100" step="1" value="${signedPercentRangeValue(normalized.voicingLift)}" data-reset-value="0" data-expression-field="voicingLift" aria-label="Voicing lift"></label>
+        <div class="expression-field expression-pressure-field">
+          <label class="expression-field-range"><span><span>Pressure / Density</span><output data-expression-output="pressureDensity">${pressureDensityLabel(normalized.pressureDensity)}</output></span><input type="range" min="0" max="100" step="1" value="${pressureValue}" data-reset-value="50" data-expression-field="pressureDensity" aria-label="Pressure density"${pressureAuto ? " disabled" : ""}></label>
+          <label class="expression-auto-toggle"><input type="checkbox" data-expression-field="pressureAuto"${pressureAuto ? " checked" : ""}>Auto</label>
+        </div>
+        <label class="switch-label expression-sam-toggle">
+          <span><strong>Whole Keyboard Sam</strong><small>Full-keyboard spread with bass anchors, octave echoes, and high shimmer.</small></span>
+          <span class="switch-control"><input type="checkbox" data-expression-field="wholeKeyboardSam"${normalized.wholeKeyboardSam ? " checked" : ""}><span class="switch-track"></span></span>
+        </label>
+        <div class="expression-pad" data-expression-pad role="group" tabindex="0" aria-label="Section expression gesture pad">
+          <span>Expression Pad</span>
+          <b aria-hidden="true"></b>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function updateSectionExpressionControlLabels(row) {
+  if (!row) return;
+  const registerInput = row.querySelector('[data-expression-field="registerSpread"]');
+  const liftInput = row.querySelector('[data-expression-field="voicingLift"]');
+  const pressureInput = row.querySelector('[data-expression-field="pressureDensity"]');
+  const pressureAutoInput = row.querySelector('[data-expression-field="pressureAuto"]');
+  const contourInput = row.querySelector('[data-expression-field="velocityContour"]');
+  const samInput = row.querySelector('[data-expression-field="wholeKeyboardSam"]');
+  const registerSpread = clamp((parseFloat(registerInput?.value) || 0) / 100, 0, 1);
+  const voicingLift = clamp((parseFloat(liftInput?.value) || 0) / 100, -1, 1);
+  const pressureAuto = Boolean(pressureAutoInput?.checked);
+  const pressureDensity = pressureAuto ? null : clamp((parseFloat(pressureInput?.value) || 0) / 100, 0, 1);
+  if (pressureInput) pressureInput.disabled = pressureAuto;
+  const expression = normalizeSectionExpression({
+    velocityContour: contourInput?.value,
+    registerSpread,
+    voicingLift,
+    pressureDensity,
+    wholeKeyboardSam: Boolean(samInput?.checked),
+  });
+  const registerOutput = row.querySelector('[data-expression-output="registerSpread"]');
+  const liftOutput = row.querySelector('[data-expression-output="voicingLift"]');
+  const pressureOutput = row.querySelector('[data-expression-output="pressureDensity"]');
+  const summary = row.querySelector("[data-expression-summary]");
+  if (registerOutput) registerOutput.textContent = percentLabel(expression.registerSpread);
+  if (liftOutput) liftOutput.textContent = voicingLiftLabel(expression.voicingLift);
+  if (pressureOutput) pressureOutput.textContent = pressureDensityLabel(expression.pressureDensity);
+  if (summary) summary.textContent = expressionSummaryLabel(expression);
+  const pad = row.querySelector("[data-expression-pad]");
+  if (pad) {
+    pad.style.setProperty("--expression-pad-y", `${100 - (expression.pressureDensity ?? 0.5) * 100}%`);
+    pad.style.setProperty("--expression-pad-x", `${expression.registerSpread * 100}%`);
+  }
+}
+
+function commitSectionExpression(index, patch, options = {}) {
+  if (!state.sections.length) return false;
+  const safeIndex = clamp(parseInt(index, 10) || 0, 0, state.sections.length - 1);
+  const current = normalizeSection(state.sections[safeIndex], safeIndex);
+  const nextExpression = normalizeSectionExpression({ ...current.expression, ...patch });
+  if (JSON.stringify(current.expression) === JSON.stringify(nextExpression)) return false;
+  beginFormEdit();
+  state.selectedSectionIndex = safeIndex;
+  state.sections[safeIndex] = normalizeSection({ ...current, expression: nextExpression }, safeIndex);
+  if (options.render === false) updateSectionSelectionUi();
+  else renderSections();
+  if (els.statusLabel) els.statusLabel.textContent = "Section expression updated";
+  return true;
+}
+
+function bindSectionExpressionControls(row, index) {
+  row.querySelectorAll("[data-expression-field]").forEach((input) => {
+    input.addEventListener("input", () => updateSectionExpressionControlLabels(row));
+    input.addEventListener("change", () => {
+      updateSectionExpressionControlLabels(row);
+      const pressureAutoInput = row.querySelector('[data-expression-field="pressureAuto"]');
+      const pressureInput = row.querySelector('[data-expression-field="pressureDensity"]');
+      const patch = {
+        velocityContour: row.querySelector('[data-expression-field="velocityContour"]')?.value,
+        registerSpread: clamp((parseFloat(row.querySelector('[data-expression-field="registerSpread"]')?.value) || 0) / 100, 0, 1),
+        voicingLift: clamp((parseFloat(row.querySelector('[data-expression-field="voicingLift"]')?.value) || 0) / 100, -1, 1),
+        pressureDensity: pressureAutoInput?.checked ? null : clamp((parseFloat(pressureInput?.value) || 0) / 100, 0, 1),
+        wholeKeyboardSam: Boolean(row.querySelector('[data-expression-field="wholeKeyboardSam"]')?.checked),
+      };
+      commitSectionExpression(index, patch);
+    });
+  });
+  bindSectionExpressionPad(row, index);
+  updateSectionExpressionControlLabels(row);
+}
+
+function bindSectionExpressionPad(row, index) {
+  const pad = row.querySelector("[data-expression-pad]");
+  if (!pad) return;
+  pad.addEventListener("pointerdown", (event) => {
+    if (event.button != null && event.button !== 0) return;
+    const expression = normalizeSectionExpression(state.sections[index]?.expression);
+    state.sectionExpressionPadDrag = {
+      index,
+      pointerId: event.pointerId,
+      startY: event.clientY || 0,
+      startValue: expression.pressureDensity ?? 0.5,
+      value: expression.pressureDensity ?? 0.5,
+      row,
+    };
+    pad.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+  pad.addEventListener("pointermove", (event) => {
+    const drag = state.sectionExpressionPadDrag;
+    if (!drag || drag.pointerId !== event.pointerId || drag.index !== index) return;
+    const height = Math.max(64, pad.getBoundingClientRect?.().height || 96);
+    const next = clamp(drag.startValue + (drag.startY - (event.clientY || 0)) / height, 0, 1);
+    drag.value = next;
+    const pressureAutoInput = row.querySelector('[data-expression-field="pressureAuto"]');
+    const pressureInput = row.querySelector('[data-expression-field="pressureDensity"]');
+    if (pressureAutoInput) pressureAutoInput.checked = false;
+    if (pressureInput) {
+      pressureInput.disabled = false;
+      pressureInput.value = percentRangeValue(next);
+    }
+    updateSectionExpressionControlLabels(row);
+    event.preventDefault();
+  });
+  const finishDrag = (event) => {
+    const drag = state.sectionExpressionPadDrag;
+    if (!drag || drag.pointerId !== event.pointerId || drag.index !== index) return;
+    state.sectionExpressionPadDrag = null;
+    pad.releasePointerCapture?.(event.pointerId);
+    commitSectionExpression(index, { pressureDensity: drag.value });
+  };
+  pad.addEventListener("pointerup", finishDrag);
+  pad.addEventListener("pointercancel", finishDrag);
+}
+
 function renderSections() {
   clampSelectedSectionIndex();
   state.sections = state.sections.map((section, index) => normalizeSection(section, index));
@@ -3236,6 +3432,7 @@ function renderSections() {
     <label>Role<select data-field="role">${roleOptionsForSection(index).map(([id, label]) => optionHtml(id, label, id === normalized.role)).join("")}</select></label>
     <label>Treatment<select data-field="treatment">${treatmentOptionsForRole(normalized.role).map(([id, label]) => optionHtml(id, label, id === normalized.treatment)).join("")}</select></label>
     <button class="icon-button" type="button" data-remove="${index}" title="Remove section">-</button>
+    ${sectionExpressionControlsHtml(normalized.expression)}
   `;
   row.querySelectorAll("[data-field]").forEach((input) => {
     const commitField = () => {
@@ -3262,6 +3459,7 @@ function renderSections() {
   row.querySelector("[data-remove]").addEventListener("click", () => {
     requestDeleteSection(index);
   });
+  bindSectionExpressionControls(row, index);
   els.sectionTable.append(row);
   updateFormSafety();
   updateSoundTimeControls();
@@ -3340,6 +3538,36 @@ function roleOptionsForSection(index) {
   return index === 0 ? [["normal", SECTION_ROLES.normal]] : Object.entries(SECTION_ROLES);
 }
 
+function normalizeSectionExpression(expression = null) {
+  const safe = expression && typeof expression === "object" ? expression : {};
+  const velocityContour = SECTION_VELOCITY_CONTOURS[safe.velocityContour] ? safe.velocityContour : SECTION_EXPRESSION_DEFAULTS.velocityContour;
+  const registerSpread = Number.isFinite(Number(safe.registerSpread))
+    ? clamp(Number(safe.registerSpread), 0, 1)
+    : SECTION_EXPRESSION_DEFAULTS.registerSpread;
+  const voicingLift = Number.isFinite(Number(safe.voicingLift))
+    ? clamp(Number(safe.voicingLift), -1, 1)
+    : SECTION_EXPRESSION_DEFAULTS.voicingLift;
+  const pressureDensity = safe.pressureDensity != null && Number.isFinite(Number(safe.pressureDensity))
+    ? clamp(Number(safe.pressureDensity), 0, 1)
+    : null;
+  return {
+    velocityContour,
+    registerSpread,
+    voicingLift,
+    pressureDensity,
+    wholeKeyboardSam: Boolean(safe.wholeKeyboardSam),
+  };
+}
+
+function sectionExpressionIsDefault(expression) {
+  const normalized = normalizeSectionExpression(expression);
+  return normalized.velocityContour === SECTION_EXPRESSION_DEFAULTS.velocityContour
+    && normalized.registerSpread === SECTION_EXPRESSION_DEFAULTS.registerSpread
+    && normalized.voicingLift === SECTION_EXPRESSION_DEFAULTS.voicingLift
+    && normalized.pressureDensity == null
+    && normalized.wholeKeyboardSam === SECTION_EXPRESSION_DEFAULTS.wholeKeyboardSam;
+}
+
 function normalizeSection(section, index = null) {
   const safeSection = section || {};
   const requestedRole = SECTION_ROLES[safeSection.role] ? safeSection.role : "normal";
@@ -3356,6 +3584,7 @@ function normalizeSection(section, index = null) {
     cadence: CADENCES[safeSection.cadence] ? safeSection.cadence : "authentic",
     role,
     treatment,
+    expression: normalizeSectionExpression(safeSection.expression),
   };
 }
 
@@ -6161,7 +6390,8 @@ function applyGravityVelocity(tracks, sectionMeta, settings) {
     velocityByVoice[ref.voice] = ref.event.velocity;
   });
 
-  return velocitySummary(refs.map((ref) => ref.event.velocity), profileId, profile, settings, tempo);
+  const expressionSummary = sectionExpressionVelocitySummary(sectionMeta, refs, profileId !== "flat");
+  return velocitySummary(refs.map((ref) => ref.event.velocity), profileId, profile, settings, tempo, expressionSummary);
 }
 
 function velocityComponentsForEvent(ref, previous, sectionMeta, settings, simultaneousStarts) {
@@ -6177,6 +6407,11 @@ function velocityComponentsForEvent(ref, previous, sectionMeta, settings, simult
   const secondaryAccent = (METERS[section.meter]?.accents || []).includes(location.pulseInBar);
   const contour = (hashUnit(settings.seed, "velocity-contour", event.symbolicOffset, mod(event.startStep ?? location.step ?? 0, 8), event.phraseRole || "field") * 2 - 1) * 1.8;
   const tempo = velocityTempoCoupling(settings);
+  const expressionVelocity = settings.velocityProfile === "flat" ? 0 : sectionExpressionVelocityOffset(section, location);
+  if (expressionVelocity) {
+    event.expressionVelocityContour = normalizeSectionExpression(section.expression).velocityContour;
+    event.expressionVelocityOffset = Number(expressionVelocity.toFixed(4));
+  }
 
   return {
     base: 92,
@@ -6188,8 +6423,70 @@ function velocityComponentsForEvent(ref, previous, sectionMeta, settings, simult
     cadencePull: (cadenceStage === "final" || cadenceStage === "cadence-final" ? 4.5 : cadenceStage === "cadence-prep" ? 1.8 : 0) * tempo.cadenceScale,
     dubRole: dubVelocityRole(event, voice),
     motifContour: contour,
+    sectionExpression: expressionVelocity,
     simultaneousCompensation: -1.15 * Math.max(0, simultaneousStarts - 1),
     tempoBreath: tempo.component,
+  };
+}
+
+function sectionExpressionVelocityOffset(section, location) {
+  const expression = normalizeSectionExpression(section?.expression);
+  const contour = expression.velocityContour;
+  if (contour === "natural") return 0;
+  const totalSteps = Math.max(1, (section?.bars || 1) * (section?.numerator || 4));
+  const progress = clamp(((location.step ?? 0) + 0.5) / totalSteps, 0, 1);
+  const amount = 7.5;
+  const arch = 1 - Math.abs(progress - 0.5) * 2;
+  let offset = 0;
+  if (contour === "rise") offset = (progress * 2 - 1) * amount;
+  else if (contour === "fall") offset = (1 - progress * 2) * amount;
+  else if (contour === "arch") offset = arch * amount - amount * 0.28;
+  else if (contour === "valley") offset = (1 - arch) * amount - amount * 0.5;
+  else if (contour === "swell") offset = Math.sin(progress * Math.PI) * amount * 0.95;
+  return clamp(offset, -9, 9);
+}
+
+function sectionExpressionVelocitySummary(sectionMeta, refs = [], velocityActive = true) {
+  const sections = (sectionMeta || []).map((section, index) => {
+    const expression = normalizeSectionExpression(section.expression);
+    const active = [];
+    if (expression.velocityContour !== SECTION_EXPRESSION_DEFAULTS.velocityContour) active.push("velocityContour");
+    if (expression.registerSpread !== SECTION_EXPRESSION_DEFAULTS.registerSpread) active.push("registerSpread");
+    if (expression.voicingLift !== SECTION_EXPRESSION_DEFAULTS.voicingLift) active.push("voicingLift");
+    if (expression.pressureDensity != null) active.push("pressureDensity");
+    if (expression.wholeKeyboardSam) active.push("wholeKeyboardSam");
+    return {
+      section: index + 1,
+      active,
+      expression,
+    };
+  });
+  const activeSections = sections.filter((section) => section.active.length);
+  const contours = {};
+  sections.forEach((section) => {
+    const contour = section.expression.velocityContour;
+    if (contour !== "natural") contours[contour] = (contours[contour] || 0) + 1;
+  });
+  return {
+    version: SECTION_EXPRESSION_VERSION,
+    active_sections: activeSections.length,
+    velocity_active: Boolean(velocityActive),
+    velocity_events_shaped: velocityActive ? refs.filter((ref) => Number(ref.event.expressionVelocityOffset)).length : 0,
+    velocity_contours: contours,
+    stored_only: {
+      register_spread: true,
+      voicing_lift: true,
+      pressure_density: true,
+    },
+    whole_keyboard_sam_sections: activeSections
+      .filter((section) => section.expression.wholeKeyboardSam)
+      .map((section) => section.section),
+    whole_keyboard_sam_status: "saved_state_stub",
+    sections: activeSections.map((section) => ({
+      section: section.section,
+      active: section.active,
+      ...section.expression,
+    })),
   };
 }
 
@@ -6264,10 +6561,10 @@ function velocityProfileId(settings) {
 }
 
 function emptyVelocitySummary(profileId, profile, settings) {
-  return velocitySummary([], profileId, profile, settings, velocityTempoCoupling(settings));
+  return velocitySummary([], profileId, profile, settings, velocityTempoCoupling(settings), sectionExpressionVelocitySummary([], [], profileId !== "flat"));
 }
 
-function velocitySummary(velocities, profileId, profile, settings, tempo) {
+function velocitySummary(velocities, profileId, profile, settings, tempo, expressionSummary = null) {
   const sorted = velocities.slice().sort((a, b) => a - b);
   const average = velocities.length ? velocities.reduce((sum, value) => sum + value, 0) / velocities.length : 0;
   return {
@@ -6292,6 +6589,7 @@ function velocitySummary(velocities, profileId, profile, settings, tempo) {
       p10: Number(percentile(sorted, 0.1).toFixed(2)),
       p90: Number(percentile(sorted, 0.9).toFixed(2)),
     },
+    section_expression: expressionSummary,
   };
 }
 
@@ -6758,6 +7056,7 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
     },
     velocity_model: stats.velocitySummary,
     velocity_curve: stats.velocitySummary,
+    section_expression: stats.velocitySummary?.section_expression || sectionExpressionVelocitySummary(sectionMeta, [], settings.velocityProfile !== "flat"),
     fishtail_tempo: {
       formula: "BPM = 60 * referenceHz / n",
       reference_note: settings.referenceNote,
@@ -6901,6 +7200,8 @@ function makeManifest(settings, sectionMeta, events, subject, stats, audit) {
       groove_offset_ms_requested: Number((Number(event.grooveOffsetMsRequested) || 0).toFixed(4)),
       groove_offset_ms_realized: Number((Number(event.grooveOffsetMsRealized) || 0).toFixed(4)),
       phrase_role: event.phraseRole,
+      section_expression_contour: event.expressionVelocityContour || null,
+      section_expression_velocity_offset: Number((Number(event.expressionVelocityOffset) || 0).toFixed(4)),
     })),
   };
 }
@@ -6939,6 +7240,17 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push(`Pitch map: ${settings.resolution}`);
   lines.push(`Output: ${outputModeLabel(settings.outputMode)}`);
   lines.push(`Gravity Velocity: ${stats.velocitySummary?.label || "Calm Gravity"} ${settings.velocityProfile === "flat" ? "fixed at 100" : `range ${stats.velocitySummary?.stats?.min ?? 0}-${stats.velocitySummary?.stats?.max ?? 0}, linked to Fishtail tempo n=${settings.tempoDivisor}`}.`);
+  if (stats.velocitySummary?.section_expression?.active_sections) {
+    const expression = stats.velocitySummary.section_expression;
+    const contours = Object.entries(expression.velocity_contours || {})
+      .map(([contour, count]) => `${SECTION_VELOCITY_CONTOURS[contour] || contour} x${count}`)
+      .join(", ") || "Natural";
+    const shaped = expression.velocity_active ? `${expression.velocity_events_shaped} velocity events shaped` : "velocity contours stored; fixed velocity is on";
+    const sam = expression.whole_keyboard_sam_sections?.length
+      ? ` Whole Keyboard Sam is saved for section ${expression.whole_keyboard_sam_sections.join(", ")} as a visible state stub.`
+      : "";
+    lines.push(`Section Expression: ${expression.active_sections} active section(s); contours ${contours}; ${shaped}. Register width, voicing lift, and pressure/density are saved for this pass.${sam}`);
+  }
   if (settings.prepareProbeWav || settings.prepareTickerWav || settings.prepareCvWav) {
     const requested = [
       settings.prepareProbeWav ? "pulse" : "",
@@ -6954,7 +7266,11 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
   lines.push("Form");
   sectionMeta.forEach((section, index) => {
     const direction = sectionIsRetrograde(section) ? " | retrograde negative-time" : "";
-    lines.push(`  ${index + 1}. ${sectionBarsLabel(section)} | ${section.key} ${MODES[section.mode].label} | ${section.meter} | ${CADENCES[section.cadence].label}${direction}`);
+    const expression = normalizeSectionExpression(section.expression);
+    const expressionNote = sectionExpressionIsDefault(expression)
+      ? ""
+      : ` | expression ${SECTION_VELOCITY_CONTOURS[expression.velocityContour] || expression.velocityContour}, width ${percentLabel(expression.registerSpread)}, lift ${voicingLiftLabel(expression.voicingLift)}, pressure ${pressureDensityLabel(expression.pressureDensity)}${expression.wholeKeyboardSam ? ", Whole Keyboard Sam saved" : ""}`;
+    lines.push(`  ${index + 1}. ${sectionBarsLabel(section)} | ${section.key} ${MODES[section.mode].label} | ${section.meter} | ${CADENCES[section.cadence].label}${direction}${expressionNote}`);
   });
   const retrogradeSections = sectionMeta.filter(sectionIsRetrograde);
   if (retrogradeSections.length) {

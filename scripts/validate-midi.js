@@ -1623,6 +1623,41 @@ function runVelocityTests() {
         return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
       }
 
+      function buildWithSettings(settings) {
+        return buildPiece(settings, FishtailRandom.createRouter(settings.seed));
+      }
+
+      function stubProjectEls() {
+        Object.assign(els, {
+          formStateNameInput: { value: "Expression Test" },
+          tempoDivisorInput: { value: "220" },
+          tempoInput: { value: "60.0000" },
+          tempoLatticeInput: { checked: true },
+          rationalSwingInput: { value: "0" },
+          irrationalSwingInput: { value: "0" },
+          irrationalFeelInput: { value: "living_drift" },
+          referenceNoteInput: { value: "A3" },
+          referenceFreqInput: { value: "220.00" },
+          styleInput: { value: "counterpoint" },
+          voicesInput: { value: "4" },
+          pedalBassInput: { checked: false },
+          pedalTenorInput: { checked: false },
+          pedalAltoInput: { checked: false },
+          pedalSopranoInput: { checked: false },
+          velocityModeInput: { checked: true },
+          dubModeInput: { checked: false },
+          breathingInput: { value: "74" },
+          densityInput: { value: "26" },
+          rhythmMotionInput: { value: "18" },
+          strangenessInput: { value: "16" },
+          resolutionInput: { value: "literal" },
+          outputModeInput: { value: "equal" },
+          rootNoteInput: { value: "A" },
+          rootFreqInput: { value: "440" },
+          linkRootInput: { checked: true },
+        });
+      }
+
       function nonVelocitySignature(piece) {
         return JSON.stringify(piece.events.map((event) => ({
           tick: event.tick,
@@ -1673,6 +1708,44 @@ function runVelocityTests() {
       const gravity = build("auto", "velocity-repeatable");
       const repeat = build("auto", "velocity-repeatable");
       const flat = build("flat", "velocity-repeatable");
+      const defaultExpression = normalizeSection({ bars: 4, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "development", treatment: "dubby" }, 1).expression;
+
+      stubProjectEls();
+      state.sections = [
+        normalizeSection({
+          bars: 2,
+          key: "C",
+          mode: "major",
+          meter: "4/4",
+          cadence: "authentic",
+          role: "normal",
+          treatment: "straight",
+          expression: {
+            velocityContour: "arch",
+            registerSpread: 0.82,
+            voicingLift: 0.35,
+            pressureDensity: 0.68,
+            wholeKeyboardSam: true,
+          },
+        }, 0),
+      ];
+      state.selectedSectionIndex = 0;
+      const savedExpressionSnapshot = formStateSnapshot("Expression Test");
+      const loadedExpression = loadedFormSections(savedExpressionSnapshot).map((section, index) => normalizeSection(section, index))[0].expression;
+      const oldProjectExpression = loadedFormSections({ form: { sections: [{ bars: 2, key: "C", mode: "major", meter: "4/4", cadence: "authentic", role: "normal", treatment: "straight" }] } })
+        .map((section, index) => normalizeSection(section, index))[0].expression;
+
+      const naturalSettings = velocitySettings("auto", "velocity-expression");
+      naturalSettings.sections = structuredClone(DEFAULT_SECTIONS).slice(0, 3);
+      const expressionSettings = velocitySettings("auto", "velocity-expression");
+      expressionSettings.sections = structuredClone(DEFAULT_SECTIONS).slice(0, 3).map((section, index) => ({
+        ...section,
+        expression: index === 0
+          ? { ...SECTION_EXPRESSION_DEFAULTS, velocityContour: "rise" }
+          : { ...SECTION_EXPRESSION_DEFAULTS },
+      }));
+      const naturalExpressionPiece = buildWithSettings(naturalSettings);
+      const contourExpressionPiece = buildWithSettings(expressionSettings);
 
       const sectionMeta = [{ ...DEFAULT_SECTIONS[0], bars: 2, meter: "4/4", startTick: 0, barTicks: 1920, numerator: 4, denominator: 4 }];
       const registerTracks = syntheticTracks({
@@ -1727,6 +1800,41 @@ function runVelocityTests() {
         {
           name: "adjacent velocity jumps are bounded",
           ok: maxAdjacentVelocityJump(gravity) <= 16,
+        },
+        {
+          name: "expression defaults",
+          ok: defaultExpression.velocityContour === "natural"
+            && defaultExpression.registerSpread === 0.5
+            && defaultExpression.voicingLift === 0
+            && defaultExpression.pressureDensity === null
+            && defaultExpression.wholeKeyboardSam === false,
+        },
+        {
+          name: "save/load expression JSON",
+          ok: savedExpressionSnapshot.form.sections[0].expression.velocityContour === "arch"
+            && loadedExpression.velocityContour === "arch"
+            && loadedExpression.registerSpread === 0.82
+            && loadedExpression.voicingLift === 0.35
+            && loadedExpression.pressureDensity === 0.68
+            && loadedExpression.wholeKeyboardSam === true,
+        },
+        {
+          name: "old project expression compatibility",
+          ok: oldProjectExpression.velocityContour === "natural"
+            && oldProjectExpression.registerSpread === 0.5
+            && oldProjectExpression.voicingLift === 0
+            && oldProjectExpression.pressureDensity === null
+            && oldProjectExpression.wholeKeyboardSam === false,
+        },
+        {
+          name: "velocity contour output stays MIDI safe",
+          ok: contourExpressionPiece.audit.issues.length === 0
+            && contourExpressionPiece.events.every((event) => Number.isInteger(event.velocity) && event.velocity >= 1 && event.velocity <= 127)
+            && nonVelocitySignature(contourExpressionPiece) === nonVelocitySignature(naturalExpressionPiece)
+            && JSON.stringify(contourExpressionPiece.events.map((event) => event.velocity)) !== JSON.stringify(naturalExpressionPiece.events.map((event) => event.velocity))
+            && contourExpressionPiece.manifest.section_expression?.active_sections === 1
+            && contourExpressionPiece.manifest.section_expression?.velocity_events_shaped > 0
+            && contourExpressionPiece.report.includes("Section Expression:"),
         },
       ];
     })()
@@ -2454,6 +2562,10 @@ function runFugueTests() {
     && stylesCss.includes(".timeline-block-title")
     && stylesCss.includes(".timeline-block-meta")
     && stylesCss.includes(".selected-section-inspector")
+    && stylesCss.includes(".section-expression")
+    && stylesCss.includes(".section-expression-grid")
+    && stylesCss.includes(".expression-pad")
+    && stylesCss.includes("body.dub-mode .section-expression")
     && stylesCss.includes(".timeline-item.is-detail-open .timeline-popover")
     && stylesCss.includes(".section-empty-state")
     && stylesCss.includes("--section-editor-rgb")
@@ -2465,6 +2577,13 @@ function runFugueTests() {
     && appJs.includes("timeline-popover-delete")
     && appJs.includes("function timelineBlockHtml(")
     && appJs.includes("selected-section-inspector warm-lattice-control")
+    && appJs.includes("const SECTION_EXPRESSION_VERSION")
+    && appJs.includes("function normalizeSectionExpression(")
+    && appJs.includes("function sectionExpressionControlsHtml(")
+    && appJs.includes("data-expression-field=\"velocityContour\"")
+    && appJs.includes("Full-keyboard spread with bass anchors, octave echoes, and high shimmer.")
+    && appJs.includes("function sectionExpressionVelocityOffset(")
+    && appJs.includes("section_expression")
     && appJs.includes("timeline-resize-handle")
     && appJs.includes("timelineDetailIndex")
     && appJs.includes("function timelineGraphRgb()")
@@ -2517,7 +2636,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=72"')
+    && indexHtml.includes('href="styles.css?v=73"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
@@ -2533,7 +2652,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=8')
     && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=114')
+    && indexHtml.includes('src/app.js?v=115')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
