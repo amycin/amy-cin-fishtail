@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>amy_cin fishtail generator</title>
-    <link rel="stylesheet" href="styles.css?v=69">
+    <link rel="stylesheet" href="styles.css?v=70">
   </head>
   <body>
     <main class="shell">
@@ -44,9 +44,15 @@
           </div>
         </header>
 
-        <section class="control-grid">
+        <nav class="app-surface-tabs" role="tablist" aria-label="Fishtail surfaces">
+          <button class="app-surface-tab is-active" id="logicSurfaceTab" type="button" role="tab" aria-selected="true" aria-controls="logicSurface">Logic</button>
+          <button class="app-surface-tab" id="feelSurfaceTab" type="button" role="tab" aria-selected="false" aria-controls="feelSurface" tabindex="-1">Feel</button>
+        </nav>
+
+        <section class="control-grid app-surface-shell">
+          <section class="app-surface feel-surface" id="feelSurface" role="tabpanel" aria-labelledby="feelSurfaceTab" hidden>
           <div class="visual-pitch-stack">
-            <section class="panel action-panel visual-panel" aria-label="Visual">
+            <section class="panel action-panel visual-panel resonance-aperture" aria-label="Resonance aperture">
               <div class="generator-core" aria-hidden="true">
                 <div class="torus-host" id="torusHost"></div>
                 <canvas id="coreCanvas" width="360" height="220"></canvas>
@@ -169,7 +175,9 @@
               <input id="prepareTickerWavInput" type="checkbox" hidden>
             </div>
           </section>
+          </section>
 
+          <section class="app-surface logic-surface is-active" id="logicSurface" role="tabpanel" aria-labelledby="logicSurfaceTab">
           <section class="panel voices-panel">
             <div class="panel-head">
               <h2>Structure</h2>
@@ -334,14 +342,15 @@
               <p class="download-help">Generate creates the piece. Export MIDI saves the music file using the project name, BPM, style, and seed. Save Project keeps the loadable Fishtail settings and form. Audio and CV exports render from the generated piece and may show a size estimate.</p>
             </details>
           </section>
-        </section>
 
-        <section class="panel output-panel" id="notesPanel" hidden>
-          <div class="panel-head">
-            <h2>Generation Notes</h2>
-            <span id="pieceLengthLabel">No piece yet</span>
-          </div>
-          <pre id="reportOutput">Choose a form, roll the dice if you like, then press Generate.</pre>
+            <section class="panel output-panel" id="notesPanel" hidden>
+              <div class="panel-head">
+                <h2>Generation Notes</h2>
+                <span id="pieceLengthLabel">No piece yet</span>
+              </div>
+              <pre id="reportOutput">Choose a form, roll the dice if you like, then press Generate.</pre>
+            </section>
+          </section>
         </section>
 
         <section class="help-modal" id="helpModal" hidden aria-labelledby="helpTitle" aria-modal="true" role="dialog">
@@ -691,6 +700,6 @@
     <script src="src/wav-export.js?v=8"></script>
     <script src="src/pitch-input.js?v=3"></script>
     <script src="src/random-router.js?v=1"></script>
-    <script src="src/app.js?v=111"></script>
+    <script src="src/app.js?v=112"></script>
   </body>
 </html>

@@ -804,6 +804,10 @@ function bindElements() {
     "pieceLengthLabel",
     "torusHost",
     "coreCanvas",
+    "logicSurfaceTab",
+    "feelSurfaceTab",
+    "logicSurface",
+    "feelSurface",
   ]) {
     els[id] = document.getElementById(id);
   }
@@ -841,6 +845,7 @@ function hydrateSelects() {
 }
 
 function bindEvents() {
+  bindSurfaceTabs();
   document.addEventListener("pointerdown", requestMotionPermissionOnce, { once: true, passive: true });
   els.addSectionButton.addEventListener("click", addSection);
   els.addSectionBottomButton?.addEventListener("click", addSection);
@@ -976,6 +981,53 @@ function bindEvents() {
   });
   bindSoundTimeEvents();
   bindRangeResetEvents();
+}
+
+function appSurfaceControls() {
+  return [
+    { name: "logic", tab: els.logicSurfaceTab, panel: els.logicSurface },
+    { name: "feel", tab: els.feelSurfaceTab, panel: els.feelSurface },
+  ].filter((surface) => surface.tab && surface.panel);
+}
+
+function bindSurfaceTabs() {
+  const surfaces = appSurfaceControls();
+  surfaces.forEach((surface, index) => {
+    surface.tab.addEventListener("click", () => setAppSurface(surface.name));
+    surface.tab.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const direction = event.key === "ArrowLeft" ? -1 : 1;
+      let nextIndex = index;
+      if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = surfaces.length - 1;
+      else nextIndex = (index + direction + surfaces.length) % surfaces.length;
+      setAppSurface(surfaces[nextIndex].name, { focus: true });
+    });
+  });
+  setAppSurface("logic");
+}
+
+function setAppSurface(name, options = {}) {
+  const surfaces = appSurfaceControls();
+  const next = surfaces.find((surface) => surface.name === name) || surfaces[0];
+  if (!next) return;
+  surfaces.forEach((surface) => {
+    const active = surface === next;
+    surface.panel.hidden = !active;
+    surface.panel.classList.toggle("is-active", active);
+    surface.tab.classList.toggle("is-active", active);
+    surface.tab.setAttribute("aria-selected", String(active));
+    surface.tab.tabIndex = active ? 0 : -1;
+  });
+  document.body.dataset.appSurface = next.name;
+  if (options.focus) next.tab.focus();
+  if (next.name === "feel") {
+    requestAnimationFrame(() => {
+      refreshTorusTuning();
+      requestCoreFrame(true);
+    });
+  }
 }
 
 function addSection() {
@@ -2719,6 +2771,19 @@ function timelinePopoverHtml(section) {
   `;
 }
 
+function timelineBlockHtml(section, index) {
+  const mode = MODES[section.mode]?.label || section.mode;
+  const role = SECTION_ROLES[section.role] || "Fishtail";
+  const treatment = sectionTreatmentLabel(section.role, section.treatment);
+  const direction = sectionIsRetrograde(section) ? "Retrograde" : "Forward";
+  return `
+    <span class="timeline-block-kicker">${escapeHtml(String(index + 1).padStart(2, "0"))}</span>
+    <span class="timeline-block-title">${escapeHtml(sectionBarsLabel(section))}</span>
+    <span class="timeline-block-meta">${escapeHtml(section.key)} ${escapeHtml(mode)} · ${escapeHtml(section.meter)}</span>
+    <span class="timeline-block-meta">${escapeHtml(direction)} · ${escapeHtml(role)} / ${escapeHtml(treatment)}</span>
+  `;
+}
+
 function updateTimelineActions() {
   const index = clampSelectedSectionIndex();
   const hasSections = state.sections.length > 0;
@@ -2859,7 +2924,9 @@ function updateSectionBarsFromTimeline(index, bars, options = {}) {
   if (item) {
     item.style.setProperty("--section-bars", String(sectionBarCount(normalized)));
     item.classList.toggle("is-backward", sectionIsRetrograde(normalized));
-    item.querySelector(".timeline-block")?.setAttribute("aria-label", timelineSectionLabel(normalized, safeIndex));
+    const block = item.querySelector(".timeline-block");
+    block?.setAttribute("aria-label", timelineSectionLabel(normalized, safeIndex));
+    if (block) block.innerHTML = timelineBlockHtml(normalized, safeIndex);
     const popover = item.querySelector(".timeline-popover");
     if (popover) {
       popover.setAttribute("aria-label", timelineSectionLabel(normalized, safeIndex));
@@ -3004,6 +3071,7 @@ function renderSectionTimeline() {
     block.dataset.selectSection = String(index);
     block.setAttribute("aria-pressed", String(index === selectedIndex));
     block.setAttribute("aria-label", timelineSectionLabel(normalized, index));
+    block.innerHTML = timelineBlockHtml(normalized, index);
     block.addEventListener("click", () => {
       if (Date.now() < state.timelineSuppressClickUntil) return;
       selectSection(index);
@@ -3151,8 +3219,10 @@ function renderSections() {
   }
   const normalized = state.sections[index];
   const row = document.createElement("div");
-  row.className = "section-row is-selected";
+  row.className = "section-row selected-section-inspector warm-lattice-control is-selected";
   row.dataset.sectionIndex = String(index);
+  row.setAttribute("role", "group");
+  row.setAttribute("aria-label", `Selected section ${index + 1} inspector`);
   setSectionEditorColor(row, normalized);
   row.innerHTML = `
     <div class="row-index">${String(index + 1).padStart(2, "0")}</div>

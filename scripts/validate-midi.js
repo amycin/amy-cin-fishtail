@@ -2383,13 +2383,28 @@ function runFugueTests() {
     && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="dubModeInput"')
     && !indexHtml.slice(indexHtml.indexOf('<div class="floating-menu"'), indexHtml.indexOf('<section class="instrument"')).includes('id="tempoDivisorLabel"')
     && stylesCss.includes(".topbar-dub-switch .switch-track {\n  display: none;");
-  const panelOrderOk = indexHtml.indexOf('class="panel sound-time-panel"') < indexHtml.indexOf('class="panel voices-panel"')
+  const surfaceShellOk = indexHtml.includes('class="app-surface-tab is-active" id="logicSurfaceTab" type="button" role="tab" aria-selected="true" aria-controls="logicSurface"')
+    && indexHtml.includes('class="app-surface-tab" id="feelSurfaceTab" type="button" role="tab" aria-selected="false" aria-controls="feelSurface" tabindex="-1"')
+    && indexHtml.includes('class="app-surface logic-surface is-active" id="logicSurface" role="tabpanel" aria-labelledby="logicSurfaceTab"')
+    && indexHtml.includes('class="app-surface feel-surface" id="feelSurface" role="tabpanel" aria-labelledby="feelSurfaceTab" hidden')
+    && indexHtml.includes('class="panel action-panel visual-panel resonance-aperture"')
     && indexHtml.includes("<h2>Pitch and Tempi</h2>")
+    && indexHtml.indexOf('id="notesPanel"') > indexHtml.indexOf('id="logicSurface"')
     && indexHtml.indexOf("<h3>Pitch Behaviour</h3>") > indexHtml.indexOf('id="settingsModal"')
-    && stylesCss.includes(".sound-time-panel {\n  grid-column: 1;\n  grid-row: 1;")
-    && stylesCss.includes(".visual-pitch-stack {\n  grid-column: 2;\n  grid-row: 1;")
+    && stylesCss.includes(".app-surface-tabs")
+    && stylesCss.includes(".app-surface[hidden]")
+    && stylesCss.includes(".logic-surface")
+    && stylesCss.includes(".feel-surface")
+    && stylesCss.includes(".feel-surface .visual-pitch-stack {\n  grid-column: 2;\n  grid-row: 1;")
+    && stylesCss.includes(".feel-surface .sound-time-panel {\n  grid-column: 1;\n  grid-row: 1;")
+    && stylesCss.includes(".resonance-aperture")
+    && stylesCss.includes("@media (prefers-reduced-motion: reduce)")
     && stylesCss.includes("@media (max-width: 980px)")
-    && stylesCss.includes(".visual-panel .generator-core {\n  height: clamp(230px, 26vw, 360px);")
+    && stylesCss.includes(".visual-panel .generator-core {\n  height: clamp(260px, 31vw, 480px);")
+    && appJs.includes("function bindSurfaceTabs()")
+    && appJs.includes("function setAppSurface(")
+    && appJs.includes('setAppSurface("logic")')
+    && appJs.includes('if (next.name === "feel")')
     && !indexHtml.includes('class="panel pitch-panel pitch-drawer"');
   const timelineUiOk = indexHtml.includes('class="form-timeline-shell"')
     && indexHtml.includes('id="sectionTimeline" role="list"')
@@ -2427,6 +2442,10 @@ function runFugueTests() {
     && stylesCss.includes(".timeline-drag-handle")
     && stylesCss.includes(".timeline-resize-handle")
     && stylesCss.includes(".timeline-popover")
+    && stylesCss.includes(".timeline-block-kicker")
+    && stylesCss.includes(".timeline-block-title")
+    && stylesCss.includes(".timeline-block-meta")
+    && stylesCss.includes(".selected-section-inspector")
     && stylesCss.includes(".timeline-item.is-detail-open .timeline-popover")
     && stylesCss.includes(".section-empty-state")
     && stylesCss.includes("--section-editor-rgb")
@@ -2436,6 +2455,8 @@ function runFugueTests() {
     && stylesCss.includes("--timeline-graph-rgb")
     && appJs.includes("TIMELINE_HOVER_DETAIL_MS")
     && appJs.includes("timeline-popover-delete")
+    && appJs.includes("function timelineBlockHtml(")
+    && appJs.includes("selected-section-inspector warm-lattice-control")
     && appJs.includes("timeline-resize-handle")
     && appJs.includes("timelineDetailIndex")
     && appJs.includes("function timelineGraphRgb()")
@@ -2482,7 +2503,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=69"')
+    && indexHtml.includes('href="styles.css?v=70"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
@@ -2498,7 +2519,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=8')
     && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=111')
+    && indexHtml.includes('src/app.js?v=112')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -2921,14 +2942,14 @@ function runFugueTests() {
     })()
   `, context);
 
-  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && dubTopbarOk && panelOrderOk && timelineUiOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk && audioSaveOk;
+  let ok = styleOptionOk && tempoDefaultOk && variedLabelOk && notesClosedOk && velocitySwitchOk && dubTopbarOk && surfaceShellOk && timelineUiOk && probePitchSliderOk && cvExportOk && inputRaceOk && audioHardeningOk && wavHardeningOk && audioSaveOk;
   console.log(`${styleOptionOk ? "ok" : "failed"} fugue style option`);
   console.log(`${tempoDefaultOk ? "ok" : "failed"} tempo default and direction`);
   console.log(`${variedLabelOk ? "ok" : "failed"} varied label`);
   console.log(`${notesClosedOk ? "ok" : "failed"} notes default closed`);
   console.log(`${velocitySwitchOk ? "ok" : "failed"} velocity switch default`);
   console.log(`${dubTopbarOk ? "ok" : "failed"} dub control is in the topbar`);
-  console.log(`${panelOrderOk ? "ok" : "failed"} panel order puts pulse and pitch before structure`);
+  console.log(`${surfaceShellOk ? "ok" : "failed"} two-surface app shell`);
   console.log(`${timelineUiOk ? "ok" : "failed"} form timeline copy paste and drag affordance`);
   console.log(`${probePitchSliderOk ? "ok" : "failed"} probe pitch sliders and metronome boost`);
   console.log(`${cvExportOk ? "ok" : "failed"} analogue CV export controls`);

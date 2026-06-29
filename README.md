@@ -25,6 +25,10 @@ For web hosting, ownership notes, and optional custom entropy-server wiring, see
 - [User guide](docs/FISHTAIL_USER_GUIDE.html): a browser-readable manual with quick-start notes, technical manual pages, timing notes, output explanations, and links back to the app.
 - [How Fishtail works](docs/FISHTAIL_HOW_IT_WORKS.md): a system overview covering the musical model, generation flow, timing layers, tuning modes, exports, and validation.
 
+## Design Pass
+
+The interface now uses a two-surface shell: Logic for form, structure, generation, exports, and notes; Feel for Pitch and Tempi, Living Reference, Pulse sound, metronome, swing, and the resonance aperture visual. The current Warm Lattice Instrument style keeps the cream/gold/coral Ocular Debris identity while softening panels, controls, timeline blocks, focus states, and DUB mode for a more tactile cross-platform instrument feel.
+
 ## Validation
 
 Run the built-in MIDI export smoke checks:
@@ -46,7 +50,7 @@ Use `--strict-note-voices` for Equal Temperament and Amy Dub Intonation exports 
 - Weighted random form generation with D4 and D20-style dice controls.
 - Section controls for bars, key, mode, time signature, and cadence.
 - Style switch for Imitation + Invention, Counterpoint, or Fishtail Fugue generation.
-- Reference-pitch menu, Pulse pitch / Fine pitch ear-tuning sliders, and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A3 = 216 Hz with A4 anchored at 432 Hz and `n = 216`, giving 60.0000 BPM.
+- Reference-pitch menu, Pulse pitch / Fine pitch ear-tuning sliders, and Fishtail tempo slider using `BPM = 60 * referenceHz / n`, displayed to four decimal places. The default is A3 = 220 Hz with A4 anchored at 440 Hz and `n = 220`, giving 60.0000 BPM.
 - Living Reference Input for capture-and-freeze monophonic pitch: press Listen, sing or play one sustained note through a mic/line-in/USB input exposed by the browser, then press Use this pitch to set the exact Fishtail reference locally. Audio is analysed on-device only and is not recorded, uploaded, or saved with device identity.
 - Switch-on Teardrop Pulse for the current reference frequency, with one shared browser `AudioContext`, silent-at-load safety, smooth one-second pitch glide, and an 11-oscillator symmetric Teardrop voice table under the 12-node budget.
 - Louder live pink-noise metronome preview with existing meter accents, rational/irrational Fishtail swing controls, Lattice Safe / Hybrid Drift / Living Drift feel modes, live-only tempo/swing control glide, and a shared tempo-lattice timing model.
