@@ -795,6 +795,7 @@ function bindElements() {
     "projectLoadMenuButton",
     "projectLoadMenuPanel",
     "loadFormStateToolbarButton",
+    "clearFormStateToolbarButton",
     "formStateNameInput",
     "saveFormStateButton",
     "loadFormStateButton",
@@ -872,6 +873,7 @@ function bindElements() {
     "linkRootInput",
     "generateButton",
     "generateFeedbackLabel",
+    "exportDrawer",
     "exportAssetsSummary",
     "downloadMidiButton",
     "downloadJsonButton",
@@ -960,6 +962,7 @@ function bindEvents() {
   });
   els.loadFormStateInput?.addEventListener("change", handleFormStateFileSelection);
   els.clearFormStateButton?.addEventListener("click", clearFormState);
+  els.clearFormStateToolbarButton?.addEventListener("click", clearFormState);
   els.gentleRollButton.addEventListener("click", () => randomiseForm("gentle"));
   els.wildRollButton.addEventListener("click", () => randomiseForm("wild"));
   els.voicesInput.addEventListener("change", () => {
@@ -1456,8 +1459,26 @@ function clearFormState() {
   state.sections = [];
   state.selectedSectionIndex = -1;
   state.timelineDetailIndex = null;
+  state.sectionClipboard = null;
+  state.lastPiece = null;
+  releaseAudioExports();
   renderSections();
-  if (els.statusLabel) els.statusLabel.textContent = "Blank form";
+  updateAudioExportButtons();
+  if (els.downloadMidiButton) els.downloadMidiButton.disabled = true;
+  if (els.downloadJsonButton) els.downloadJsonButton.disabled = true;
+  delete document.body.dataset.fishtailMidiBytes;
+  delete document.body.dataset.fishtailManifestEvents;
+  delete document.body.dataset.fishtailAuditIssues;
+  delete document.body.dataset.fishtailAuditWarnings;
+  if (els.exportDrawer) els.exportDrawer.open = false;
+  if (els.reportOutput) els.reportOutput.textContent = "";
+  if (els.seedLabel) els.seedLabel.textContent = "Seed: -";
+  if (els.pieceLengthLabel) els.pieceLengthLabel.textContent = "Blank form";
+  if (els.formStateNameInput) els.formStateNameInput.value = DEFAULT_FORM_STATE_NAME;
+  setGenerateFeedback("No piece yet", "idle");
+  setExportAssetsPlaceholder("Generate MIDI to see export sizes and lengths.");
+  updateGenerationAvailability();
+  if (els.statusLabel) els.statusLabel.textContent = "Blank project";
 }
 
 function bindRangeResetEvents() {
@@ -3025,6 +3046,7 @@ function updateTimelineActions() {
   if (els.duplicateSectionButton) els.duplicateSectionButton.disabled = busy || !hasSections;
   if (els.pasteSectionButton) els.pasteSectionButton.disabled = busy || !state.sectionClipboard;
   if (els.clearFormStateButton) els.clearFormStateButton.disabled = busy;
+  if (els.clearFormStateToolbarButton) els.clearFormStateToolbarButton.disabled = busy;
   if (els.saveFormStateButton) els.saveFormStateButton.disabled = busy;
   if (els.saveFormStateToolbarButton) els.saveFormStateToolbarButton.disabled = busy;
   if (els.loadFormStateButton) els.loadFormStateButton.disabled = busy;
@@ -4584,6 +4606,7 @@ function setGenerationControlsDisabled(disabled) {
     els.saveFormStateToolbarButton,
     els.projectLoadMenuButton,
     els.loadFormStateToolbarButton,
+    els.clearFormStateToolbarButton,
     els.formStateNameInput,
     els.saveFormStateButton,
     els.loadFormStateButton,
@@ -4650,13 +4673,17 @@ function setGenerateFeedback(text, stateName = "idle") {
   els.generateFeedbackLabel.dataset.state = stateName;
 }
 
+function openExportDrawer() {
+  if (els.exportDrawer) els.exportDrawer.open = true;
+}
+
 async function generatePiece() {
   if (state.generating) return;
   if (!state.sections.length) {
     els.statusLabel.textContent = "Add a form section first";
     els.pieceLengthLabel.textContent = "Blank form";
     setGenerateFeedback("Add a form section first.", "warn");
-    setExportAssetsPlaceholder("Generate to see export sizes and lengths.");
+    setExportAssetsPlaceholder("Generate MIDI to see export sizes and lengths.");
     updateGenerationAvailability();
     return;
   }
@@ -4713,11 +4740,13 @@ async function generatePiece() {
     els.downloadJsonButton.disabled = false;
     if (!fatalIssues) {
       els.statusLabel.textContent = piece.audit.ok ? "MIDI ready" : "Generated with notes";
-      setGenerateFeedback(`${els.statusLabel.textContent}: ${pieceSummary}. Open Exports to save MIDI, project, audio, CV, or notes.`, piece.audit.ok ? "ready" : "warn");
+      openExportDrawer();
+      setGenerateFeedback(`${els.statusLabel.textContent}: ${pieceSummary}. Exports are open; MIDI is ready to save.`, piece.audit.ok ? "ready" : "warn");
       await prepareRequestedAudioExports(piece);
       updateExportAssetsSummary(piece);
     } else {
       els.statusLabel.textContent = "MIDI blocked by checker";
+      openExportDrawer();
       setGenerateFeedback(`${els.statusLabel.textContent}: ${pieceSummary}. Open Notes for details.`, "error");
       updateExportAssetsSummary(piece);
     }
@@ -8879,7 +8908,7 @@ function setExportAssetsPlaceholder(text) {
 function updateExportAssetsSummary(piece = state.lastPiece) {
   if (!els.exportAssetsSummary) return;
   if (!piece) {
-    setExportAssetsPlaceholder("Generate to see export sizes and lengths.");
+    setExportAssetsPlaceholder("Generate MIDI to see export sizes and lengths.");
     return;
   }
   const summary = document.createElement("span");

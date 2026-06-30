@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Fishtail MIDI Generator</title>
-    <link rel="stylesheet" href="styles.css?v=91">
+    <link rel="stylesheet" href="styles.css?v=92">
   </head>
   <body>
     <main class="shell">
@@ -262,6 +262,9 @@
                       <button class="toolbar-menu-item" type="button" role="menuitem" disabled aria-disabled="true" title="Presets will live here">Memory presets</button>
                     </div>
                   </div>
+                  <button class="toolbar-icon-button" id="clearFormStateToolbarButton" type="button" title="New blank project / clear form" aria-label="New blank project / clear form">
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m6 6 1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
+                  </button>
                 </div>
               </div>
               <div class="section-timeline" id="sectionTimeline" role="list" aria-label="Form sections"></div>
@@ -282,10 +285,10 @@
                 <span>Project name</span>
                 <input id="formStateNameInput" type="text" value="Fishtail project" autocomplete="off" spellcheck="false">
               </label>
-              <button class="primary-button" id="generateButton" type="button">Generate</button>
+              <button class="primary-button" id="generateButton" type="button">Generate MIDI</button>
             </div>
             <p class="generate-feedback" id="generateFeedbackLabel" aria-live="polite">No piece yet</p>
-            <details class="export-drawer">
+            <details class="export-drawer" id="exportDrawer">
               <summary>
                 <span>Exports</span>
                 <span>Project, MIDI, WAV, CV, notes</span>
@@ -296,33 +299,41 @@
                   <div class="export-icon-set">
                     <button class="toolbar-icon-button" id="saveFormStateButton" type="button" title="Save project" aria-label="Save project">
                       <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path><path d="M7 3v6h9"></path><path d="M7 21v-8h10v8"></path></svg>
+                      <span class="toolbar-icon-label">Save</span>
                     </button>
                     <button class="toolbar-icon-button" id="loadFormStateButton" type="button" title="Load project" aria-label="Load project">
                       <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 19V5a2 2 0 0 1 2-2h8l6 6v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"></path><path d="M14 3v6h6"></path><path d="M12 17V9"></path><path d="m8.5 12.5 3.5-3.5 3.5 3.5"></path></svg>
+                      <span class="toolbar-icon-label">Load</span>
                     </button>
                     <input id="loadFormStateInput" type="file" accept="application/json,.json" hidden>
                     <button class="toolbar-icon-button" id="clearFormStateButton" type="button" title="Clear project" aria-label="Clear project">
                       <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m6 6 1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
+                      <span class="toolbar-icon-label">Clear</span>
                     </button>
                   </div>
                 </div>
                 <div class="export-group" aria-label="File exports">
                   <span class="export-group-label">Export</span>
                   <div class="export-icon-set">
-                    <button class="toolbar-icon-button" id="downloadMidiButton" type="button" disabled title="Export MIDI" aria-label="Export MIDI">
+                    <button class="toolbar-icon-button labeled-export-button midi-export-button" id="downloadMidiButton" type="button" disabled title="Export MIDI" aria-label="Export MIDI">
                       <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 18V5l11-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="17" cy="16" r="3"></circle><path d="M9 9l11-2"></path></svg>
+                      <span class="toolbar-icon-label">MIDI</span>
                     </button>
                     <button class="toolbar-icon-button" id="downloadProbeWavButton" type="button" disabled title="Export Pulse WAV" aria-label="Export Pulse WAV">
                       <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h2l2-5 4 10 3-7 2 2h3"></path></svg>
+                      <span class="toolbar-icon-label">Pulse</span>
                     </button>
                     <button class="toolbar-icon-button" id="downloadTickerWavButton" type="button" disabled title="Export Ticker WAV" aria-label="Export Ticker WAV">
                       <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h3l2-4 4 8 2-4h5"></path><path d="M6 20V4"></path><path d="M18 20V4"></path></svg>
+                      <span class="toolbar-icon-label">Ticker</span>
                     </button>
                     <button class="toolbar-icon-button" id="downloadCvWavButton" type="button" disabled title="Export CV ZIP" aria-label="Export CV ZIP">
                       <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 17V7"></path><path d="M8 17V7"></path><path d="M12 17V7"></path><path d="M16 17V7"></path><path d="M20 17V7"></path><path d="M4 12h16"></path></svg>
+                      <span class="toolbar-icon-label">CV</span>
                     </button>
                     <button class="toolbar-icon-button" id="downloadJsonButton" type="button" disabled title="Export manifest JSON" aria-label="Export manifest JSON">
                       <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path><path d="m10 9-3 3 3 3"></path><path d="m14 9 3 3-3 3"></path></svg>
+                      <span class="toolbar-icon-label">JSON</span>
                     </button>
                   </div>
                 </div>
@@ -331,18 +342,19 @@
                   <div class="export-icon-set">
                     <button class="toolbar-icon-button notes-toggle-button" id="toggleNotesButton" type="button" title="Show generation notes" aria-label="Show generation notes">
                       <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 4h14v16H5z"></path><path d="M8 8h8"></path><path d="M8 12h8"></path><path d="M8 16h5"></path></svg>
+                      <span class="toolbar-icon-label">Notes</span>
                     </button>
                   </div>
                 </div>
               </div>
               <div class="export-assets-summary" id="exportAssetsSummary" aria-live="polite">
-                <span>Generate to see export sizes and lengths.</span>
+                <span>Generate MIDI to see export sizes and lengths.</span>
               </div>
               <div class="midi-export-note">
                 <span>What Export MIDI delivers</span>
                 <p>Export MIDI saves Standard MIDI note events, plus tempo and time-signature data when Tempo Data is on. Equal Temperament MIDI follows the receiving synth tuning, usually A4 = 440; Fishtail now defaults to A3 220 Hz so ordinary synths begin in familiar tuning. If you change the reference, the receiving synth must be tuned to match. Amy Dub Intonation needs Entonal or a similar retuner to interpret its carrier notes; Bend MIDI needs separate mono channels or instruments that receive its pitch-bend data correctly.</p>
               </div>
-              <p class="download-help">Generate creates the piece. Export MIDI saves the music file using the project name, BPM, style, and seed. Save Project keeps the loadable Fishtail settings and form. Audio and CV exports render from the generated piece and may show a size estimate.</p>
+              <p class="download-help">Generate MIDI creates the piece and opens these exports. MIDI saves the music file using the project name, BPM, style, and seed. Save Project keeps the loadable Fishtail settings and form. Audio and CV exports render from the generated piece and may show a size estimate.</p>
             </details>
           </section>
 
@@ -386,7 +398,7 @@
                 <ol>
                   <li>Choose sections in Form: bars, key, mode, meter, cadence, role, and treatment.</li>
                   <li>Choose Imitation + Invention, Counterpoint, or Fishtail Fugue, then set voice count, pedal voices, breathing, density, and pitch mode.</li>
-                  <li>Press Generate to make the piece, then open Exports and choose Export MIDI.</li>
+                  <li>Press Generate MIDI to make the piece and open Exports, then choose MIDI to save or share the file.</li>
                   <li>Use Save Project to keep the form, pitch, tempo, and structure settings for later.</li>
                 </ol>
               </section>
@@ -738,6 +750,6 @@
     <script src="src/wav-export.js?v=8"></script>
     <script src="src/pitch-input.js?v=3"></script>
     <script src="src/random-router.js?v=1"></script>
-    <script src="src/app.js?v=130"></script>
+    <script src="src/app.js?v=131"></script>
   </body>
 </html>
