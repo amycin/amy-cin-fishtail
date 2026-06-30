@@ -357,7 +357,7 @@
     const requestedDurationMode = settings.cvDurationMode ?? settings.durationMode;
     const clockMode = ["pulse", "bar", "ppqn24"].includes(requestedClockMode) ? requestedClockMode : "pulse";
     const gatePolarity = requestedGatePolarity === "inverted" ? "inverted" : "positive";
-    const durationMode = requestedDurationMode === "full" ? "full" : "first60";
+    const durationMode = requestedDurationMode === "first60" ? "first60" : "full";
     return {
       fullScaleVolts: clamp(Number.isFinite(fullScale) ? fullScale : CV_FULL_SCALE_VOLTS, 1, 10),
       zeroOffsetVolts: clamp(Number.isFinite(zeroOffset) ? zeroOffset : 0, -5, 5),
@@ -434,7 +434,7 @@
     const estimate = estimateCvRenderBytes(renderSeconds, stemCount, options);
     const byteLimit = options.allowLarge ? MAX_CONFIRMED_RENDER_BYTES : renderByteLimit();
     if (estimate.totalBytes > byteLimit) {
-      throw new Error("Analogue CV package too large for this browser; choose one CV voice and First 60 seconds, or use a desktop browser");
+      throw new Error("Analogue CV package too large for this browser; choose fewer CV voices, First 60 seconds, or use a desktop browser");
     }
     return {
       sampleRate,
@@ -736,7 +736,7 @@
     const voices = cvVoiceNamesForPiece(piece, settings);
     const fullPieceSeconds = timeline.totalSeconds || 0;
     if (cv.durationMode === "full" && fullPieceSeconds > CV_MAX_RENDER_SECONDS && !settings.audioExportConfirmed) {
-      throw new Error(`Whole-piece CV export is capped at ${CV_MAX_RENDER_SECONDS} seconds for browser memory safety; choose First 60 seconds or shorten the form`);
+      throw new Error(`Entire-piece CV export needs confirmation above ${CV_MAX_RENDER_SECONDS} seconds; choose First 60 seconds or confirm the large render`);
     }
     const pieceSeconds = cv.durationMode === "full" ? fullPieceSeconds : Math.min(fullPieceSeconds, CV_MAX_RENDER_SECONDS);
     const truncated = pieceSeconds + 0.0001 < fullPieceSeconds;
@@ -872,7 +872,7 @@
         "- calibration/*.wav: staircase, one-octave and gate test files for interface calibration.",
         "",
         `Clock mode: ${cv.clockMode}. Musical pulses are performance pulse events, not conventional MIDI 24 PPQN clock.`,
-        `Duration mode: ${cv.durationMode}${truncated ? `; this package contains the first ${pieceSeconds.toFixed(2)} seconds of a ${fullPieceSeconds.toFixed(2)} second piece.` : "."}`,
+        `Duration mode: ${cv.durationMode === "full" ? "entire piece" : "first 60 seconds"}${truncated ? `; this package contains the first ${pieceSeconds.toFixed(2)} seconds of a ${fullPieceSeconds.toFixed(2)} second piece.` : "."}`,
         `Pitch scale: +/-${cv.fullScaleVolts}V maps to +/-1.0 sample; zero offset is ${cv.zeroOffsetVolts}V.`,
         `Gate: ${cv.gateVolts}V ${cv.gatePolarity}; retrigger gap ${cv.retriggerMs} ms.`,
         "",

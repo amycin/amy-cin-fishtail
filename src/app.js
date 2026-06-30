@@ -4790,8 +4790,8 @@ function readSettings(seed) {
     prepareTickerWav: false,
     prepareCvWav: Boolean(els.prepareCvWavInput?.checked),
     audioExportConfirmed: false,
-    cvVoiceMode: els.cvVoiceModeInput?.value || "bass",
-    cvDurationMode: els.cvDurationInput?.value || "first60",
+    cvVoiceMode: els.cvVoiceModeInput?.value || "all",
+    cvDurationMode: els.cvDurationInput?.value || "full",
     cvClockMode: els.cvClockModeInput?.value || "pulse",
     cvFullScaleVolts: clamp(parseFloat(els.cvFullScaleInput?.value) || 5, 1, 10),
     cvZeroOffsetVolts: clamp(parseFloat(els.cvZeroOffsetInput?.value) || 0, -5, 5),
@@ -8756,7 +8756,7 @@ function audioExportDescriptor(kind) {
   }
   return {
     label: "CV ZIP",
-    readyText: "Export CV ZIP",
+    readyText: "Save CV ZIP",
     renderText: "Render CV ZIP",
     renderingText: "Rendering CV ZIP",
     renderer: FishtailWavExport.renderCvZip,
@@ -8960,10 +8960,19 @@ function estimateWavExportPlan(kind, settings, timeline) {
 }
 
 function estimateCvVoiceCount(settings, piece) {
-  const requested = settings.cvVoiceMode || "bass";
+  const requested = settings.cvVoiceMode || "all";
   if (requested !== "all") return 1;
   if (piece?.events?.length) return Math.max(1, new Set(piece.events.map((event) => event.voice).filter(Boolean)).size);
   return Math.max(1, activeVoiceLayout(settings.voices || 4).length);
+}
+
+function cvVoiceModeLabel(mode) {
+  if (!mode || mode === "all") return "all voices";
+  return `${mode} voice`;
+}
+
+function cvDurationModeLabel(mode) {
+  return mode === "full" ? "entire piece" : "first 60 seconds";
 }
 
 function estimateCvExportPlan(settings, timeline, piece = null) {
@@ -8982,7 +8991,7 @@ function estimateCvExportPlan(settings, timeline, piece = null) {
   return {
     kind: "cv",
     label: "CV ZIP",
-    detail: `${settings.cvVoiceMode || "bass"} voice mode, ${cv.durationMode === "full" ? "whole short piece" : "first 60 seconds"}${truncated ? " truncated" : ""}, ${stemCount} stems`,
+    detail: `${cvVoiceModeLabel(settings.cvVoiceMode)}, ${cvDurationModeLabel(cv.durationMode)}${truncated ? " truncated" : ""}, ${stemCount} stems`,
     durationSeconds: renderSeconds,
     downloadBytes: estimate.retainedWavBytes + estimate.calibrationWavBytes,
     workingBytes: estimate.totalBytes,
@@ -9023,6 +9032,8 @@ function confirmAudioExportEstimate(kinds, options = {}) {
     "",
     options.action === "generation"
       ? "OK = generate and render these files. Cancel = generate the piece only."
+      : plans.length === 1 && plans[0]?.kind === "cv"
+        ? "OK = render this CV ZIP. Press Save CV ZIP again after rendering. Cancel = skip."
       : "OK = render and save this file. Cancel = skip.",
   ];
   if (typeof window === "undefined" || typeof window.confirm !== "function") return true;
@@ -9152,6 +9163,10 @@ async function downloadAudioExport(kind) {
     } catch (error) {
       els.statusLabel.textContent = `${descriptor.label} skipped: ${error.message}`;
       console.warn(`${descriptor.label} render failed.`, error);
+      return;
+    }
+    if (kind === "cv") {
+      els.statusLabel.textContent = `${descriptor.label} ready - press Save CV ZIP`;
       return;
     }
   }

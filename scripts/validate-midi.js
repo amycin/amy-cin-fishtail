@@ -771,8 +771,8 @@ function runStabilityTests() {
           cvMath: Math.abs(FishtailWavExport.eventCvVolts({ midi: 72 }, { outputMode: "equal" }) - 1) < 1e-9
             && Math.abs(FishtailWavExport.eventCvVolts({ tunedFrequency: 864 }, { outputMode: "bend", rootMidi: 69, rootFreq: 432 }) - 1.75) < 1e-9
             && Math.abs(FishtailWavExport.eventCvSample({ midi: 72 }, { outputMode: "equal" }) - 0.2) < 1e-9,
-          cvDefaults: FishtailWavExport.cvSettings({}).durationMode === "first60"
-            && FishtailWavExport.cvSettings({ cvDurationMode: "full" }).durationMode === "full",
+          cvDefaults: FishtailWavExport.cvSettings({}).durationMode === "full"
+            && FishtailWavExport.cvSettings({ cvDurationMode: "first60" }).durationMode === "first60",
           cvVoice: cvVoice.pitch[0] === 0
             && Math.abs(cvVoice.pitch[10] - 0.2) < 1e-6
             && cvVoice.gate[0] === 1
@@ -2950,9 +2950,9 @@ function runFugueTests() {
     && indexHtml.includes("Stumble")
     && indexHtml.includes('id="metronomeLevelInput" type="range" min="0" max="100" value="88"')
     && indexHtml.includes('src/audio-engine.js?v=8')
-    && indexHtml.includes('src/wav-export.js?v=8')
+    && indexHtml.includes('src/wav-export.js?v=9')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=131')
+    && indexHtml.includes('src/app.js?v=132')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")
@@ -2976,7 +2976,7 @@ function runFugueTests() {
     && indexHtml.includes("Pulse WAV is a short first-two-bars reference tone")
     && indexHtml.includes("Audio and CV exports render")
     && indexHtml.includes("may show a size estimate")
-    && indexHtml.includes("Browser CV export defaults to one voice and the first 60 seconds")
+    && indexHtml.includes("Browser CV export defaults to all voices and the entire piece")
     && indexHtml.includes("meter 5/4 from form 1")
     && indexHtml.includes("feel Living Drift")
     && indexHtml.includes("first share 0.333")
@@ -2994,15 +2994,15 @@ function runFugueTests() {
   const cvExportOk = indexHtml.includes('id="prepareCvWavInput" type="checkbox"')
     && indexHtml.includes("Prepare analogue CV ZIP")
     && indexHtml.includes('id="cvVoiceModeInput"')
-    && indexHtml.includes('<option value="bass" selected>Bass</option>')
+    && indexHtml.includes('<option value="all" selected>All voices</option>')
     && indexHtml.includes('id="cvDurationInput"')
-    && indexHtml.includes('<option value="first60" selected>First 60 seconds</option>')
+    && indexHtml.includes('<option value="full" selected>Entire piece</option>')
     && indexHtml.includes('id="cvClockModeInput"')
     && indexHtml.includes('id="cvFullScaleInput"')
     && indexHtml.includes('id="cvRetriggerMsInput"')
     && indexHtml.includes('id="downloadCvWavButton" type="button" disabled title="Export CV ZIP" aria-label="Export CV ZIP"')
     && indexHtml.includes("1V/oct pitch, gate, and calibration WAV files")
-    && indexHtml.includes("Browser CV export defaults to one voice and the first 60 seconds")
+    && indexHtml.includes("Browser CV export defaults to all voices and the entire piece")
     && indexHtml.includes("DC-coupled interface")
     && indexHtml.includes("analogue CV export direction");
   const inputRaceOk = appJs.includes("requestRevision")
@@ -3044,6 +3044,7 @@ function runFugueTests() {
     && appJs.includes('readyText: "Export Ticker WAV"')
     && appJs.includes('renderText: "Export Ticker WAV"')
     && appJs.includes("Render CV ZIP")
+    && appJs.includes("Save CV ZIP")
     && appJs.includes("confirmAudioExportEstimate")
     && appJs.includes("Audio export estimate")
     && appJs.includes('estimateAudioExportPlans(["probe", "ticker", "cv"]')
