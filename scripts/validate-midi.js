@@ -392,8 +392,8 @@ function runStabilityTests() {
           constants: VISUAL_LIGHT_PITCH_GLIDE_MS === 1500
             && VISUAL_LIGHT_IDLE_GLIDE_MS === 820
             && VISUAL_LIGHT_MAX_FRAME_MS === 120,
-          targetMoved: startDistance > 0.08,
-          immediateInterpolates: immediateDistance > 0.02 && immediateDistance < startDistance,
+          targetMoved: startDistance > 0.01,
+          immediateInterpolates: immediateDistance > 0.003 && immediateDistance < startDistance,
           monotonicGlide: lateDistance < midDistance && midDistance < immediateDistance,
           stillGlidingAfterImmediate: state.visualLightGlideUntil >= 2516,
         };
@@ -1774,6 +1774,14 @@ function runVelocityTests() {
         expression: { ...SECTION_EXPRESSION_DEFAULTS, keyboardBloom: false },
       }));
       const bloomOffPiece = buildWithSettings(bloomOffSettings);
+      const bloomLowPressureSettings = velocitySettings("auto", "velocity-expression");
+      bloomLowPressureSettings.sections = structuredClone(DEFAULT_SECTIONS).slice(0, 3).map((section, index) => ({
+        ...section,
+        expression: index === 0
+          ? { ...SECTION_EXPRESSION_DEFAULTS, pressureDensity: 0.6, registerSpread: 0.86, voicingLift: 0.28, keyboardBloom: true }
+          : { ...SECTION_EXPRESSION_DEFAULTS },
+      }));
+      const bloomLowPressurePiece = buildWithSettings(bloomLowPressureSettings);
       const bloomOnSettings = velocitySettings("auto", "velocity-expression");
       bloomOnSettings.sections = structuredClone(DEFAULT_SECTIONS).slice(0, 3).map((section, index) => ({
         ...section,
@@ -2006,6 +2014,14 @@ function runVelocityTests() {
           ok: bloomOffPiece.manifest.section_expression?.keyboard_bloom_status === "off"
             && bloomOffPiece.manifest.section_expression?.support_events_added === 0
             && nonVelocitySignature(bloomOffPiece) === nonVelocitySignature(naturalExpressionPiece),
+        },
+        {
+          name: "Keyboard Bloom below threshold adds no Bloom events",
+          ok: bloomLowPressurePiece.manifest.section_expression?.keyboard_bloom_status === KEYBOARD_BLOOM_STATUS_NO_SAFE_CANDIDATES
+            && bloomLowPressurePiece.manifest.section_expression?.support_events_added === 0
+            && bloomLowPressurePiece.manifest.section_expression?.pressure_events_affected === 0
+            && !bloomLowPressurePiece.events.some((event) => event.bloomLane)
+            && structuralNonVelocitySignature(bloomLowPressurePiece) === structuralNonVelocitySignature(naturalExpressionPiece),
         },
         {
           name: "Keyboard Bloom on adds guarded non-structural support events",
@@ -2787,6 +2803,8 @@ function runFugueTests() {
     && stylesCss.includes(".section-expression-grid")
     && stylesCss.includes(".expression-piano-icon")
     && stylesCss.includes(".expression-bloom-check")
+    && stylesCss.includes(".expression-map")
+    && stylesCss.includes(".expression-threshold-note")
     && stylesCss.includes(".expression-scope-note")
     && stylesCss.includes("body.dub-mode .section-expression")
     && stylesCss.includes(".timeline-item.is-detail-open .timeline-popover")
@@ -2821,11 +2839,27 @@ function runFugueTests() {
     && appJs.includes("const SECTION_EXPRESSION_VERSION")
     && appJs.includes("function normalizeSectionExpression(")
     && appJs.includes("function sectionExpressionControlsHtml(")
-    && appJs.includes("Section dynamics controls")
+    && appJs.includes("Section expression controls")
+    && appJs.includes("Expression ·")
+    && appJs.includes("Energy contour")
+    && appJs.includes("Register span")
+    && appJs.includes("Register lift")
+    && appJs.includes("Bloom Pressure")
     && appJs.includes("data-expression-field=\"velocityContour\"")
     && appJs.includes("data-expression-field=\"keyboardBloom\"")
-    && appJs.includes("Spread the section across the keyboard with bass anchors, octave echoes, and high shimmer.")
-    && appJs.includes("Velocity contour shapes MIDI dynamics")
+    && appJs.includes("May add guarded support tracks at high Bloom Pressure.")
+    && appJs.includes("Bloom Pressure is neutral at 50 percent")
+    && appJs.includes("Neutral")
+    && appJs.includes("Bloom wakes above 65%.")
+    && appJs.includes("Full bloom begins around 85%.")
+    && appJs.includes("Energy contour shapes MIDI dynamics")
+    && !appJs.includes("Velocity contour")
+    && !appJs.includes("Register width")
+    && !appJs.includes("Voicing lift")
+    && !appJs.includes("Pressure / Density")
+    && !appJs.includes("Dynamics ·")
+    && !appJs.includes("data-expression-field=\"pressureAuto\"")
+    && !appJs.includes("expression-auto-toggle")
     && appJs.includes("function applySectionExpressionBloom(")
     && appJs.includes("active_guarded_arranger")
     && !appJs.includes("Expression Keyboard")
@@ -2836,6 +2870,9 @@ function runFugueTests() {
     && appJs.includes("function sectionExpressionVelocityOffset(")
     && appJs.includes("section_expression")
     && readmeMd.includes("Per-section Expression drawer")
+    && readmeMd.includes("Energy contour")
+    && readmeMd.includes("Register span")
+    && readmeMd.includes("Bloom Pressure")
     && readmeMd.includes("Keyboard Bloom")
     && !indexHtml.includes("Whole Keyboard Sam")
     && !readmeMd.includes("Whole Keyboard Sam")
@@ -2881,7 +2918,8 @@ function runFugueTests() {
     && appJs.includes("function visualLightGlideAlpha(")
     && appJs.includes("renderTorusFrame(width, height, phase, visualPalette)")
     && stylesCss.includes(".timeline-item.is-backward")
-    && appJs.includes("function dubSpectralRgb(")
+    && appJs.includes("function maryPaletteRgbForSpectral(")
+    && appJs.includes("function pastelizeSpectralRgb(")
     && appJs.includes("function updateSelectedSectionEditorColor(")
     && stylesCss.includes("body.dub-mode .section-timeline")
     && appJs.includes("version: \"form_state_v1\"")
@@ -2892,7 +2930,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=79"')
+    && indexHtml.includes('href="styles.css?v=84"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
@@ -2908,7 +2946,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=8')
     && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=125')
+    && indexHtml.includes('src/app.js?v=129')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")

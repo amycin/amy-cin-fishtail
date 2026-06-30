@@ -43,6 +43,42 @@ const VISUAL_LIGHT_TEARDROP_P = 2;
 const VISUAL_LIGHT_PITCH_GLIDE_MS = 1500;
 const VISUAL_LIGHT_IDLE_GLIDE_MS = 820;
 const VISUAL_LIGHT_MAX_FRAME_MS = 120;
+const MARY_PASTEL_PALETTE = Object.freeze({
+  paper: "#eeecd8",
+  cloth: "#d5d4cc",
+  warmMist: "#e9d5ce",
+  rose: "#eba9ab",
+  dustyRose: "#d59195",
+  coral: "#cf918c",
+  peach: "#e2a693",
+  softOrange: "#d29470",
+  ochre: "#d8b18f",
+  oliveGlow: "#899358",
+  mint: "#60c4a0",
+  aqua: "#94ddd0",
+  plumInk: "#5f4650",
+  warmInk: "#432934",
+});
+const MARY_PASTEL_ANCHOR_HEXES = Object.freeze([
+  MARY_PASTEL_PALETTE.rose,
+  MARY_PASTEL_PALETTE.coral,
+  MARY_PASTEL_PALETTE.peach,
+  MARY_PASTEL_PALETTE.ochre,
+  MARY_PASTEL_PALETTE.oliveGlow,
+  MARY_PASTEL_PALETTE.mint,
+  MARY_PASTEL_PALETTE.aqua,
+  MARY_PASTEL_PALETTE.cloth,
+]);
+const DUB_PASTEL_ANCHOR_HEXES = Object.freeze([
+  "#3f8f68",
+  "#7bcfa6",
+  "#8fd8ce",
+  "#a9b879",
+  "#35402f",
+  MARY_PASTEL_PALETTE.plumInk,
+]);
+const MARY_PASTEL_ANCHORS = MARY_PASTEL_ANCHOR_HEXES.map(hexToRgb01);
+const DUB_PASTEL_ANCHORS = DUB_PASTEL_ANCHOR_HEXES.map(hexToRgb01);
 const TIMELINE_LONG_PRESS_ACTION_MS = 680;
 const TIMELINE_LONG_PRESS_MOVE_CANCEL_PX = 9;
 const RANGE_RESET_DOUBLE_CLICK_MS = 360;
@@ -2811,17 +2847,93 @@ function rgbCssComponents(rgb) {
   return rgb.map((channel) => Math.round(clamp(Number(channel) || 0, 0, 1) * 255)).join(", ");
 }
 
-function spectralUiRgb(rgb, dubVisual = isDubModeVisual(), options = {}) {
-  if (!dubVisual) {
-    return mixRgb(liftRgb(rgb, options.lift ?? 0.065), [1, 1, 1], options.whiteMix ?? 0.08);
-  }
-  const pressured = dubSpectralRgb(rgb, options);
-  return mixRgb(liftRgb(pressured, options.lift ?? 0.018), [1, 1, 1], options.whiteMix ?? 0.012);
+function rgbToCssHex(rgb) {
+  return `#${rgb.map((channel) => clamp(Math.round(channel * 255), 0, 255).toString(16).padStart(2, "0")).join("")}`;
 }
 
-function dubSpectralRgb(rgb, options = {}) {
-  const saturated = saturateRgb(rgb, options.saturation ?? 1.72);
-  return mixRgb(saturated, [0, 0, 0], options.shadow ?? 0.18);
+function hexToRgb01(hex) {
+  const compact = String(hex || "").replace("#", "").trim();
+  const normalized = compact.length === 3
+    ? compact.split("").map((character) => `${character}${character}`).join("")
+    : compact;
+  const value = Number.parseInt(normalized, 16);
+  if (!Number.isFinite(value)) return [0, 0, 0];
+  return [
+    ((value >> 16) & 255) / 255,
+    ((value >> 8) & 255) / 255,
+    (value & 255) / 255,
+  ];
+}
+
+function rgbToHsl(rgb) {
+  const [red, green, blue] = rgb.map((channel) => clamp(channel, 0, 1));
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const lightness = (max + min) / 2;
+  if (max === min) return [0, 0, lightness];
+  const delta = max - min;
+  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+  let hue = 0;
+  if (max === red) hue = (green - blue) / delta + (green < blue ? 6 : 0);
+  else if (max === green) hue = (blue - red) / delta + 2;
+  else hue = (red - green) / delta + 4;
+  return [hue / 6, saturation, lightness];
+}
+
+function hueDistance01(a, b) {
+  const distance = Math.abs(a - b);
+  return Math.min(distance, 1 - distance);
+}
+
+function rgbDistanceSquared(a, b) {
+  return a.reduce((sum, channel, index) => sum + (channel - b[index]) ** 2, 0);
+}
+
+function nearestRgbByHueAndDistance(rgb, anchors) {
+  const [hue, saturation, lightness] = rgbToHsl(rgb);
+  return anchors.reduce((best, anchor) => {
+    const [anchorHue, anchorSaturation, anchorLightness] = rgbToHsl(anchor);
+    const hueScore = hueDistance01(hue, anchorHue) * (0.42 + saturation);
+    const rgbScore = Math.sqrt(rgbDistanceSquared(rgb, anchor)) * 0.48;
+    const lightScore = Math.abs(lightness - anchorLightness) * 0.18;
+    const saturationScore = Math.abs(saturation - anchorSaturation) * 0.08;
+    const score = hueScore + rgbScore + lightScore + saturationScore;
+    return score < best.score ? { rgb: anchor, score } : best;
+  }, { rgb: anchors[0] || rgb, score: Infinity }).rgb;
+}
+
+function maryPaletteRgbForSpectral(rgb, amount = 0.62, anchors = MARY_PASTEL_ANCHORS) {
+  const nearest = nearestRgbByHueAndDistance(rgb, anchors);
+  return mixRgb(rgb, nearest, clamp(amount, 0, 1));
+}
+
+function pastelizeSpectralRgb(rgb, options = {}) {
+  const paper = Array.isArray(options.paper) ? options.paper : hexToRgb01(options.paper || MARY_PASTEL_PALETTE.paper);
+  const whiteMix = clamp(options.whiteMix ?? 0.52, 0, 1);
+  const paperMix = clamp(options.paperMix ?? 0.22, 0, 1);
+  const saturation = clamp(options.saturation ?? 0.78, 0, 1.05);
+  const shadow = clamp(options.shadow ?? 0.04, 0, 1);
+  let softened = saturateRgb(rgb, saturation);
+  softened = mixRgb(softened, [1, 1, 1], whiteMix);
+  softened = mixRgb(softened, paper, paperMix);
+  softened = mixRgb(softened, [0, 0, 0], shadow);
+  return softened.map((channel) => clamp(channel, 0, 1));
+}
+
+function spectralUiRgb(rgb, dubVisual = isDubModeVisual(), options = {}) {
+  const maryMapped = maryPaletteRgbForSpectral(
+    rgb,
+    options.paletteMix ?? (dubVisual ? 0.7 : 0.62),
+    dubVisual ? DUB_PASTEL_ANCHORS : MARY_PASTEL_ANCHORS,
+  );
+  return pastelizeSpectralRgb(maryMapped, {
+    whiteMix: dubVisual ? 0.18 : 0.46,
+    paperMix: dubVisual ? 0.12 : 0.22,
+    saturation: dubVisual ? 0.86 : 0.79,
+    shadow: dubVisual ? 0.18 : 0.035,
+    paper: dubVisual ? "#35402f" : MARY_PASTEL_PALETTE.paper,
+    ...options,
+  });
 }
 
 function sectionVisualRgb(section) {
@@ -2830,12 +2942,26 @@ function sectionVisualRgb(section) {
   const slot = mod(sectionPc - referencePc, 12);
   const frequency = currentReferenceHz() * ratioFrequencyForVisualSlot(slot);
   const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(frequency));
-  return spectralUiRgb(rgb, isDubModeVisual(), { saturation: 1.8, shadow: 0.16, whiteMix: isDubModeVisual() ? 0.01 : 0.08 });
+  const dubVisual = isDubModeVisual();
+  return spectralUiRgb(rgb, dubVisual, {
+    paletteMix: dubVisual ? 0.72 : 0.64,
+    saturation: dubVisual ? 0.88 : 0.81,
+    shadow: dubVisual ? 0.18 : 0.045,
+    whiteMix: dubVisual ? 0.18 : 0.44,
+    paperMix: dubVisual ? 0.1 : 0.2,
+  });
 }
 
 function timelineGraphRgb() {
   const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(currentReferenceHz()));
-  return spectralUiRgb(rgb, isDubModeVisual(), { saturation: 1.58, shadow: 0.22, whiteMix: isDubModeVisual() ? 0.018 : 0.12 });
+  const dubVisual = isDubModeVisual();
+  return spectralUiRgb(rgb, dubVisual, {
+    paletteMix: dubVisual ? 0.74 : 0.66,
+    saturation: dubVisual ? 0.84 : 0.75,
+    shadow: dubVisual ? 0.2 : 0.035,
+    whiteMix: dubVisual ? 0.2 : 0.5,
+    paperMix: dubVisual ? 0.12 : 0.24,
+  });
 }
 
 function timelineSectionLabel(section, index) {
@@ -3314,6 +3440,16 @@ function percentLabel(value, fallback = 0.5) {
   return `${percentRangeValue(value, fallback)}%`;
 }
 
+function pressureSliderValue(value) {
+  return percentRangeValue(value, 0.5);
+}
+
+function pressureDensityFromSliderValue(value) {
+  const amount = Math.round(clamp(Number(value) || 0, 0, 100));
+  if (amount === 50) return null;
+  return amount / 100;
+}
+
 function voicingLiftLabel(value) {
   const amount = Math.round(clamp(Number(value) || 0, -1, 1) * 100);
   if (amount === 0) return "Center";
@@ -3321,17 +3457,17 @@ function voicingLiftLabel(value) {
 }
 
 function pressureDensityLabel(value) {
-  return value == null ? "Auto" : percentLabel(value, 0.5);
+  const amount = Number(pressureSliderValue(value));
+  return amount === 50 ? "Neutral" : `${amount}%`;
 }
 
 function expressionSummaryLabel(expression) {
   const normalized = normalizeSectionExpression(expression);
   const contour = SECTION_VELOCITY_CONTOURS[normalized.velocityContour] || SECTION_VELOCITY_CONTOURS.natural;
-  const spread = normalized.registerSpread === SECTION_EXPRESSION_DEFAULTS.registerSpread ? "" : ` · Width ${percentLabel(normalized.registerSpread)}`;
+  const spread = normalized.registerSpread === SECTION_EXPRESSION_DEFAULTS.registerSpread ? "" : ` · Span ${percentLabel(normalized.registerSpread)}`;
   const lift = normalized.voicingLift === SECTION_EXPRESSION_DEFAULTS.voicingLift ? "" : ` · Lift ${voicingLiftLabel(normalized.voicingLift)}`;
-  const pressure = normalized.pressureDensity == null ? "" : ` · Pressure ${percentLabel(normalized.pressureDensity)}`;
-  const bloom = normalized.keyboardBloom ? " · Guarded Bloom" : "";
-  return `Dynamics · ${contour}${spread}${lift}${pressure}${bloom}`;
+  const bloom = normalized.keyboardBloom ? " · Bloom" : "";
+  return `Expression · ${contour}${spread}${lift}${bloom}`;
 }
 
 function sectionExpressionDrawerIsOpen(index, expression) {
@@ -3348,30 +3484,36 @@ function expressionIconSvg() {
 
 function sectionExpressionControlsHtml(expression, index) {
   const normalized = normalizeSectionExpression(expression);
-  const pressureAuto = normalized.pressureDensity == null;
-  const pressureValue = pressureAuto ? 50 : Math.round(normalized.pressureDensity * 100);
+  const pressureValue = pressureSliderValue(normalized.pressureDensity);
   const open = sectionExpressionDrawerIsOpen(index, normalized);
   const active = !sectionExpressionIsDefault(normalized);
   const summaryLabel = expressionSummaryLabel(normalized);
+  const bloomAria = "Keyboard Bloom may add extra guarded support tracks at high Bloom Pressure";
+  const pressureHint = "Bloom Pressure is neutral at 50 percent; Bloom wakes above 65 percent when Keyboard Bloom is on.";
   return `
     <details class="section-expression" data-expression-panel${open ? " open" : ""}>
-      <summary class="section-expression-summary" title="${escapeHtml(summaryLabel)}" aria-label="Section dynamics controls">
+      <summary class="section-expression-summary" title="${escapeHtml(summaryLabel)}" aria-label="${escapeHtml(`Section expression controls: ${summaryLabel}`)}">
         <span class="expression-summary-title">${expressionIconSvg()}<span data-expression-summary>${escapeHtml(summaryLabel)}</span></span>
-        <span class="expression-active-badge"${active ? "" : " hidden"}>Active</span>
+        <span class="expression-active-badge"${active ? "" : " hidden"}>Expression active</span>
       </summary>
       <div class="section-expression-grid">
-        <label class="expression-field expression-field-select">Velocity contour<select data-expression-field="velocityContour">${Object.entries(SECTION_VELOCITY_CONTOURS).map(([id, label]) => optionHtml(id, label, id === normalized.velocityContour)).join("")}</select></label>
-        <label class="expression-field expression-field-range"><span><span>Register width</span><output data-expression-output="registerSpread">${percentLabel(normalized.registerSpread)}</output></span><input type="range" min="0" max="100" step="1" value="${percentRangeValue(normalized.registerSpread)}" data-reset-value="50" data-expression-field="registerSpread" aria-label="Register width"></label>
-        <label class="expression-field expression-field-range"><span><span>Voicing lift</span><output data-expression-output="voicingLift">${voicingLiftLabel(normalized.voicingLift)}</output></span><input type="range" min="-100" max="100" step="1" value="${signedPercentRangeValue(normalized.voicingLift)}" data-reset-value="0" data-expression-field="voicingLift" aria-label="Voicing lift"></label>
+        <label class="expression-field expression-field-select">Energy contour<select data-expression-field="velocityContour">${Object.entries(SECTION_VELOCITY_CONTOURS).map(([id, label]) => optionHtml(id, label, id === normalized.velocityContour)).join("")}</select></label>
+        <label class="expression-field expression-field-range"><span><span>Register span</span><output data-expression-output="registerSpread">${percentLabel(normalized.registerSpread)}</output></span><input type="range" min="0" max="100" step="1" value="${percentRangeValue(normalized.registerSpread)}" data-reset-value="50" data-expression-field="registerSpread" aria-label="Register span"></label>
+        <label class="expression-field expression-field-range"><span><span>Register lift</span><output data-expression-output="voicingLift">${voicingLiftLabel(normalized.voicingLift)}</output></span><input type="range" min="-100" max="100" step="1" value="${signedPercentRangeValue(normalized.voicingLift)}" data-reset-value="0" data-expression-field="voicingLift" aria-label="Register lift"></label>
         <div class="expression-field expression-pressure-field">
-          <label class="expression-field-range"><span><span>Pressure / Density</span><output data-expression-output="pressureDensity">${pressureDensityLabel(normalized.pressureDensity)}</output></span><input type="range" min="0" max="100" step="1" value="${pressureValue}" data-reset-value="50" data-expression-field="pressureDensity" aria-label="Pressure density"></label>
-          <label class="expression-auto-toggle"><input type="checkbox" data-expression-field="pressureAuto"${pressureAuto ? " checked" : ""}>Auto</label>
+          <label class="expression-field-range" title="${escapeHtml(pressureHint)}"><span><span>Bloom Pressure</span><output data-expression-output="pressureDensity">${pressureDensityLabel(normalized.pressureDensity)}</output></span><input type="range" min="0" max="100" step="1" value="${pressureValue}" data-reset-value="50" data-expression-field="pressureDensity" aria-label="${escapeHtml(pressureHint)}"></label>
         </div>
         <label class="expression-bloom-check">
-          <input type="checkbox" data-expression-field="keyboardBloom"${normalized.keyboardBloom ? " checked" : ""}>
-          <span><strong>Keyboard Bloom</strong><small>Spread the section across the keyboard with bass anchors, octave echoes, and high shimmer.</small></span>
+          <input type="checkbox" data-expression-field="keyboardBloom"${normalized.keyboardBloom ? " checked" : ""} aria-label="${bloomAria}">
+          <span><strong>Keyboard Bloom</strong><small>May add guarded support tracks at high Bloom Pressure.</small></span>
         </label>
-        <p class="expression-scope-note">Velocity contour shapes MIDI dynamics. At higher pressure, Keyboard Bloom may add guarded post-counterpoint bass anchors, octave echoes, and high shimmer; width and lift guide where those additions may live.</p>
+        <div class="expression-map" data-expression-map aria-hidden="true">
+          <span class="expression-map-label">Expression map</span>
+          <span class="expression-map-rail"><b class="expression-map-span"></b><i class="expression-map-lift"></i></span>
+          <span class="expression-map-bloom${normalized.keyboardBloom ? " is-armed" : ""}" data-expression-map-bloom>Bloom</span>
+        </div>
+        <p class="expression-threshold-note">Bloom wakes above 65%. Full bloom begins around 85%. Guards may drop unsafe support notes.</p>
+        <p class="expression-scope-note">Energy contour shapes MIDI dynamics. With Keyboard Bloom on, high Bloom Pressure may add guarded post-counterpoint bass anchors, octave echoes, and high shimmer. Span and lift guide where those additions may live.</p>
       </div>
     </details>
   `;
@@ -3382,13 +3524,11 @@ function updateSectionExpressionControlLabels(row) {
   const registerInput = row.querySelector('[data-expression-field="registerSpread"]');
   const liftInput = row.querySelector('[data-expression-field="voicingLift"]');
   const pressureInput = row.querySelector('[data-expression-field="pressureDensity"]');
-  const pressureAutoInput = row.querySelector('[data-expression-field="pressureAuto"]');
   const contourInput = row.querySelector('[data-expression-field="velocityContour"]');
   const bloomInput = row.querySelector('[data-expression-field="keyboardBloom"]');
   const registerSpread = clamp((parseFloat(registerInput?.value) || 0) / 100, 0, 1);
   const voicingLift = clamp((parseFloat(liftInput?.value) || 0) / 100, -1, 1);
-  const pressureAuto = Boolean(pressureAutoInput?.checked);
-  const pressureDensity = pressureAuto ? null : clamp((parseFloat(pressureInput?.value) || 0) / 100, 0, 1);
+  const pressureDensity = pressureDensityFromSliderValue(pressureInput?.value);
   const expression = normalizeSectionExpression({
     velocityContour: contourInput?.value,
     registerSpread,
@@ -3406,6 +3546,18 @@ function updateSectionExpressionControlLabels(row) {
   if (summary) summary.textContent = expressionSummaryLabel(expression);
   const badge = row.querySelector(".expression-active-badge");
   if (badge) badge.hidden = sectionExpressionIsDefault(expression);
+  const map = row.querySelector("[data-expression-map]");
+  if (map) {
+    const width = clamp(14 + expression.registerSpread * 72, 14, 92);
+    const pressure = expression.pressureDensity ?? 0;
+    map.style.setProperty("--expression-map-span", `${width}%`);
+    map.style.setProperty("--expression-map-left", `${50 - width / 2}%`);
+    map.style.setProperty("--expression-map-lift", `${(expression.voicingLift + 1) * 50}%`);
+    map.style.setProperty("--expression-map-pressure", String(clamp(pressure, 0, 1)));
+    map.classList.toggle("is-bloom-armed", expression.keyboardBloom);
+  }
+  const mapBloom = row.querySelector("[data-expression-map-bloom]");
+  if (mapBloom) mapBloom.classList.toggle("is-armed", expression.keyboardBloom);
 }
 
 function commitSectionExpression(index, patch, options = {}) {
@@ -3431,21 +3583,16 @@ function bindSectionExpressionControls(row, index) {
   row.querySelectorAll("[data-expression-field]").forEach((input) => {
     if (input.disabled) return;
     input.addEventListener("input", () => {
-      if (input.dataset.expressionField === "pressureDensity") {
-        const auto = row.querySelector('[data-expression-field="pressureAuto"]');
-        if (auto) auto.checked = false;
-      }
       updateSectionExpressionControlLabels(row);
     });
     input.addEventListener("change", () => {
       updateSectionExpressionControlLabels(row);
-      const pressureAuto = Boolean(row.querySelector('[data-expression-field="pressureAuto"]')?.checked);
       const pressureInput = row.querySelector('[data-expression-field="pressureDensity"]');
       const patch = {
         velocityContour: row.querySelector('[data-expression-field="velocityContour"]')?.value,
         registerSpread: clamp((parseFloat(row.querySelector('[data-expression-field="registerSpread"]')?.value) || 0) / 100, 0, 1),
         voicingLift: clamp((parseFloat(row.querySelector('[data-expression-field="voicingLift"]')?.value) || 0) / 100, -1, 1),
-        pressureDensity: pressureAuto ? null : clamp((parseFloat(pressureInput?.value) || 0) / 100, 0, 1),
+        pressureDensity: pressureDensityFromSliderValue(pressureInput?.value),
         keyboardBloom: Boolean(row.querySelector('[data-expression-field="keyboardBloom"]')?.checked),
       };
       commitSectionExpression(index, patch);
@@ -3602,9 +3749,12 @@ function normalizeSectionExpression(expression = null) {
   const voicingLift = Number.isFinite(Number(safe.voicingLift))
     ? clamp(Number(safe.voicingLift), -1, 1)
     : SECTION_EXPRESSION_DEFAULTS.voicingLift;
-  const pressureDensity = safe.pressureDensity != null && Number.isFinite(Number(safe.pressureDensity))
+  const pressureValue = safe.pressureDensity != null && Number.isFinite(Number(safe.pressureDensity))
     ? clamp(Number(safe.pressureDensity), 0, 1)
     : null;
+  const pressureDensity = pressureValue == null || Math.round(pressureValue * 100) === 50
+    ? null
+    : pressureValue;
   return {
     velocityContour,
     registerSpread,
@@ -4157,6 +4307,8 @@ function escapeHtml(value) {
 
 async function randomiseForm(kind) {
   if (state.generating || state.randomising) return;
+  const rollButton = kind === "gentle" ? els.gentleRollButton : els.wildRollButton;
+  rollButton?.classList.add("is-rolling");
   state.randomising = true;
   setGenerationControlsDisabled(true);
   try {
@@ -4201,6 +4353,7 @@ async function randomiseForm(kind) {
   } finally {
     state.randomising = false;
     setGenerationControlsDisabled(false);
+    setTimeout(() => rollButton?.classList.remove("is-rolling"), 520);
   }
 }
 
@@ -7844,17 +7997,19 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
     const contours = Object.entries(expression.velocity_contours || {})
       .map(([contour, count]) => `${SECTION_VELOCITY_CONTOURS[contour] || contour} x${count}`)
       .join(", ") || "Natural";
-    const shaped = expression.velocity_active ? `${expression.velocity_events_shaped} velocity events shaped` : "velocity contours stored; fixed velocity is on";
+    const shaped = expression.velocity_active ? `${expression.velocity_events_shaped} dynamic event(s) shaped` : "energy contours stored; fixed velocity is on";
     const pressure = expression.pressure_active_sections?.length
-      ? ` Pressure/Density is active in section ${expression.pressure_active_sections.join(", ")} across ${expression.pressure_events_affected || 0} Bloom candidate site(s).`
+      ? ` Bloom Pressure is active in section ${expression.pressure_active_sections.join(", ")} across ${expression.pressure_events_affected || 0} guarded candidate site(s).`
       : "";
     const bloom = expression.keyboard_bloom_sections?.length
       ? expression.support_events_added > 0
-        ? ` Keyboard Bloom added ${expression.support_events_added} guarded support note(s) in section ${expression.keyboard_bloom_sections.join(", ")}.`
-        : ` Keyboard Bloom was armed for section ${expression.keyboard_bloom_sections.join(", ")}, but the gravity guards found no safe support notes.`
+        ? ` Keyboard Bloom added ${expression.support_events_added} guarded support notes in section ${expression.keyboard_bloom_sections.join(", ")}.`
+        : expression.keyboard_bloom_sections.length === 1
+          ? " Keyboard Bloom was armed, but the gravity guards found no safe support notes for this section."
+          : ` Keyboard Bloom was armed for sections ${expression.keyboard_bloom_sections.join(", ")}, but the gravity guards found no safe support notes for these sections.`
       : "";
     const drops = (expression.support_events_dropped || expression.parallel_gate_drops || expression.fourth_above_bass_drops || expression.low_mud_drops || expression.forbidden_doubling_drops)
-      ? ` Gravity guards dropped ${expression.support_events_dropped} support candidate(s): parallel ${expression.parallel_gate_drops}, fourth-above-bass ${expression.fourth_above_bass_drops}, low mud ${expression.low_mud_drops}, forbidden doubling ${expression.forbidden_doubling_drops}.`
+      ? ` Gravity guard drops: ${expression.support_events_dropped} support candidate(s), including parallel ${expression.parallel_gate_drops}, fourth-above-bass ${expression.fourth_above_bass_drops}, low mud ${expression.low_mud_drops}, forbidden doubling ${expression.forbidden_doubling_drops}.`
       : "";
     lines.push(`Section Expression: ${expression.active_sections} active section(s); contours ${contours}; ${shaped}. Keyboard Bloom is a post-counterpoint arranger layer; structural voices are unchanged.${pressure}${bloom}${drops}`);
   }
@@ -7876,7 +8031,7 @@ function makeReport(settings, sectionMeta, subject, events, stats, audit) {
     const expression = normalizeSectionExpression(section.expression);
     const expressionNote = sectionExpressionIsDefault(expression)
       ? ""
-      : ` | expression ${SECTION_VELOCITY_CONTOURS[expression.velocityContour] || expression.velocityContour}, width ${percentLabel(expression.registerSpread)}, lift ${voicingLiftLabel(expression.voicingLift)}, pressure ${pressureDensityLabel(expression.pressureDensity)}${expression.keyboardBloom ? ", Keyboard Bloom saved" : ""}`;
+      : ` | expression ${SECTION_VELOCITY_CONTOURS[expression.velocityContour] || expression.velocityContour}, span ${percentLabel(expression.registerSpread)}, lift ${voicingLiftLabel(expression.voicingLift)}, Bloom Pressure ${pressureDensityLabel(expression.pressureDensity)}${expression.keyboardBloom ? ", Keyboard Bloom armed" : ""}`;
     lines.push(`  ${index + 1}. ${sectionBarsLabel(section)} | ${section.key} ${MODES[section.mode].label} | ${section.meter} | ${CADENCES[section.cadence].label}${direction}${expressionNote}`);
   });
   const retrogradeSections = sectionMeta.filter(sectionIsRetrograde);
@@ -9163,6 +9318,28 @@ function ratioFrequencyForVisualSlot(slot) {
   return AMY_DUB_RATIOS[normalized]?.[1] || 2 ** (normalized / 12);
 }
 
+function applyVisualPaletteToCss(lightPalette) {
+  if (typeof document === "undefined" || !document.documentElement || !lightPalette?.hex) return;
+  const accentMid = rgbToCssHex(lightPalette.colors.torusActive);
+  const key = [
+    lightPalette.hex.fieldA,
+    lightPalette.hex.fieldB,
+    accentMid,
+    lightPalette.hex.haloA,
+    lightPalette.dubVisual ? "dub" : "light",
+  ].join("|");
+  if (state.visualLightCssKey === key) return;
+  state.visualLightCssKey = key;
+  const root = document.documentElement;
+  root.style.setProperty("--ft-accent-a", lightPalette.hex.fieldA);
+  root.style.setProperty("--ft-accent-b", lightPalette.hex.fieldB);
+  root.style.setProperty("--ft-accent-mid", accentMid);
+  root.style.setProperty("--ft-accent-a-rgb", rgbCssComponents(lightPalette.colors.fieldA));
+  root.style.setProperty("--ft-accent-b-rgb", rgbCssComponents(lightPalette.colors.fieldB));
+  root.style.setProperty("--ft-accent-mid-rgb", rgbCssComponents(lightPalette.colors.torusActive));
+  root.style.setProperty("--ft-glow", rgbaString(lightPalette.colors.haloA, lightPalette.dubVisual ? 0.18 : 0.24));
+}
+
 function buildVisualLightPalette(dubVisual = false) {
   const fundamentalHz = currentVisualFundamentalHz();
   const baseNm = foldedLightWavelengthNm(fundamentalHz);
@@ -9170,26 +9347,27 @@ function buildVisualLightPalette(dubVisual = false) {
   const fifth = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * 3 / 2));
   const fourth = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * 4 / 3));
   const seventh = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * 7 / 4));
-  const lift = dubVisual ? 0.018 : 0.065;
-  const paletteRgb = (rgb, options = {}) => spectralUiRgb(rgb, dubVisual, { lift, ...options });
+  const paletteRgb = (rgb, options = {}) => spectralUiRgb(rgb, dubVisual, options);
   const markers = Array.from({ length: 12 }, (_, slot) => {
     const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * ratioFrequencyForVisualSlot(slot)));
     return paletteRgb(rgb, {
-      saturation: 1.7,
-      shadow: 0.18,
-      whiteMix: dubVisual ? (slot % 3 === 0 ? 0.018 : 0.006) : (slot % 3 === 0 ? 0.08 : 0.02),
+      paletteMix: dubVisual ? 0.7 : 0.64,
+      saturation: dubVisual ? 0.88 : 0.77,
+      shadow: dubVisual ? 0.17 : 0.045,
+      whiteMix: dubVisual ? (slot % 3 === 0 ? 0.2 : 0.16) : (slot % 3 === 0 ? 0.5 : 0.44),
+      paperMix: dubVisual ? 0.12 : 0.22,
     });
   });
   const colors = {
-    torus: paletteRgb(base, { saturation: 1.78, shadow: 0.13, whiteMix: dubVisual ? 0.012 : 0 }),
-    torusActive: paletteRgb(fifth, { saturation: 1.82, shadow: 0.1, whiteMix: dubVisual ? 0.035 : 0.2 }),
-    negative: paletteRgb(seventh, { saturation: 1.56, shadow: 0.24, whiteMix: dubVisual ? 0.004 : 0.05 }),
-    web: paletteRgb(fourth, { saturation: 1.7, shadow: 0.16, whiteMix: dubVisual ? 0.018 : 0.12 }),
-    fieldA: paletteRgb(base, { saturation: 1.64, shadow: 0.2, whiteMix: dubVisual ? 0.01 : 0.16 }),
-    fieldB: paletteRgb(fifth, { saturation: 1.64, shadow: 0.22, whiteMix: dubVisual ? 0.006 : 0.12 }),
-    haloA: paletteRgb(base, { saturation: 1.62, shadow: 0.12, whiteMix: dubVisual ? 0.04 : 0.22 }),
-    haloB: paletteRgb(fourth, { saturation: 1.6, shadow: 0.15, whiteMix: dubVisual ? 0.026 : 0.14 }),
-    haloC: paletteRgb(seventh, { saturation: 1.58, shadow: 0.18, whiteMix: dubVisual ? 0.016 : 0.08 }),
+    torus: paletteRgb(base, { paletteMix: 0.66, saturation: dubVisual ? 0.88 : 0.79, shadow: dubVisual ? 0.16 : 0.04, whiteMix: dubVisual ? 0.18 : 0.46 }),
+    torusActive: paletteRgb(fifth, { paletteMix: 0.62, saturation: dubVisual ? 0.94 : 0.85, shadow: dubVisual ? 0.14 : 0.035, whiteMix: dubVisual ? 0.16 : 0.42 }),
+    negative: paletteRgb(seventh, { paletteMix: 0.74, saturation: dubVisual ? 0.76 : 0.71, shadow: dubVisual ? 0.22 : 0.06, whiteMix: dubVisual ? 0.2 : 0.5 }),
+    web: paletteRgb(fourth, { paletteMix: 0.68, saturation: dubVisual ? 0.84 : 0.77, shadow: dubVisual ? 0.18 : 0.04, whiteMix: dubVisual ? 0.18 : 0.46 }),
+    fieldA: paletteRgb(base, { paletteMix: 0.72, saturation: dubVisual ? 0.82 : 0.75, shadow: dubVisual ? 0.2 : 0.035, whiteMix: dubVisual ? 0.2 : 0.52 }),
+    fieldB: paletteRgb(fifth, { paletteMix: 0.68, saturation: dubVisual ? 0.84 : 0.77, shadow: dubVisual ? 0.2 : 0.035, whiteMix: dubVisual ? 0.18 : 0.48 }),
+    haloA: paletteRgb(base, { paletteMix: 0.72, saturation: dubVisual ? 0.82 : 0.73, shadow: dubVisual ? 0.16 : 0.035, whiteMix: dubVisual ? 0.24 : 0.56 }),
+    haloB: paletteRgb(fourth, { paletteMix: 0.7, saturation: dubVisual ? 0.82 : 0.75, shadow: dubVisual ? 0.18 : 0.035, whiteMix: dubVisual ? 0.22 : 0.52 }),
+    haloC: paletteRgb(seventh, { paletteMix: 0.74, saturation: dubVisual ? 0.76 : 0.71, shadow: dubVisual ? 0.2 : 0.045, whiteMix: dubVisual ? 0.22 : 0.54 }),
     markers,
   };
   return { dubVisual: Boolean(dubVisual), fundamentalHz, baseNm, colors };
@@ -9229,10 +9407,16 @@ function updateVisualLightPalette(dubVisual = isDubModeVisual(), options = {}) {
     torusActive: rgbToHex(palette.colors.torusActive),
     negative: rgbToHex(palette.colors.negative),
     web: rgbToHex(palette.colors.web),
+    fieldA: rgbToCssHex(palette.colors.fieldA),
+    fieldB: rgbToCssHex(palette.colors.fieldB),
+    haloA: rgbToCssHex(palette.colors.haloA),
+    haloB: rgbToCssHex(palette.colors.haloB),
+    haloC: rgbToCssHex(palette.colors.haloC),
     markers: palette.colors.markers.map(rgbToHex),
   };
   state.visualLightPalette = palette;
   state.visualLightLastUpdatedAt = now;
+  applyVisualPaletteToCss(palette);
   return palette;
 }
 
@@ -9304,10 +9488,6 @@ function shapeVisualSaturation(rgb, centerNm) {
   const whiteMix = 0.035 + edgeSoftening * 0.14;
   const blackMix = edgeSoftening * 0.025;
   return mixRgb(mixRgb(rgb, [1, 1, 1], whiteMix), [0, 0, 0], blackMix);
-}
-
-function liftRgb(rgb, amount) {
-  return rgb.map((channel) => clamp(channel + (1 - channel) * amount, 0, 1));
 }
 
 function saturateRgb(rgb, amount) {
