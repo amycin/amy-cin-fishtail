@@ -2930,7 +2930,7 @@ function runFugueTests() {
     && appJs.includes("state.sections.splice(index + 1")
     && appJs.includes("currentSectionMetaForTimeline()");
   const probePitchSliderOk = indexHtml.includes('id="probePitchInput" type="range" min="0" max="83" step="1" value="45"')
-    && indexHtml.includes('href="styles.css?v=84"')
+    && indexHtml.includes('href="styles.css?v=86"')
     && indexHtml.includes('src/tempo-lattice.js?v=6')
     && indexHtml.includes('id="probeFineInput" type="range" min="-100" max="100" step="0.1" value="0"')
     && indexHtml.includes('id="tempoLatticeInput" type="checkbox" checked')
@@ -2946,7 +2946,7 @@ function runFugueTests() {
     && indexHtml.includes('src/audio-engine.js?v=8')
     && indexHtml.includes('src/wav-export.js?v=8')
     && indexHtml.includes('src/pitch-input.js?v=3')
-    && indexHtml.includes('src/app.js?v=129')
+    && indexHtml.includes('src/app.js?v=130')
     && indexHtml.includes("Listen for pitch")
     && indexHtml.includes("Use stable pitch")
     && indexHtml.includes("Capture anyway")

@@ -59,6 +59,19 @@ const MARY_PASTEL_PALETTE = Object.freeze({
   plumInk: "#5f4650",
   warmInk: "#432934",
 });
+const DUB_COOL_PALETTE = Object.freeze({
+  night: "#17283d",
+  deep: "#20364f",
+  slate: "#405b76",
+  teal: "#4a9db1",
+  mint: "#80d3c9",
+  aqua: "#9be3f2",
+  sky: "#83c7ee",
+  blue: "#78ace4",
+  periwinkle: "#aebbf6",
+  violet: "#c4afe6",
+  pearl: "#e9f6ff",
+});
 const MARY_PASTEL_ANCHOR_HEXES = Object.freeze([
   MARY_PASTEL_PALETTE.rose,
   MARY_PASTEL_PALETTE.coral,
@@ -70,12 +83,13 @@ const MARY_PASTEL_ANCHOR_HEXES = Object.freeze([
   MARY_PASTEL_PALETTE.cloth,
 ]);
 const DUB_PASTEL_ANCHOR_HEXES = Object.freeze([
-  "#3f8f68",
-  "#7bcfa6",
-  "#8fd8ce",
-  "#a9b879",
-  "#35402f",
-  MARY_PASTEL_PALETTE.plumInk,
+  DUB_COOL_PALETTE.teal,
+  DUB_COOL_PALETTE.mint,
+  DUB_COOL_PALETTE.aqua,
+  DUB_COOL_PALETTE.sky,
+  DUB_COOL_PALETTE.blue,
+  DUB_COOL_PALETTE.periwinkle,
+  DUB_COOL_PALETTE.violet,
 ]);
 const MARY_PASTEL_ANCHORS = MARY_PASTEL_ANCHOR_HEXES.map(hexToRgb01);
 const DUB_PASTEL_ANCHORS = DUB_PASTEL_ANCHOR_HEXES.map(hexToRgb01);
@@ -2909,6 +2923,7 @@ function maryPaletteRgbForSpectral(rgb, amount = 0.62, anchors = MARY_PASTEL_ANC
 
 function pastelizeSpectralRgb(rgb, options = {}) {
   const paper = Array.isArray(options.paper) ? options.paper : hexToRgb01(options.paper || MARY_PASTEL_PALETTE.paper);
+  const shadowColor = Array.isArray(options.shadowColor) ? options.shadowColor : hexToRgb01(options.shadowColor || "#000000");
   const whiteMix = clamp(options.whiteMix ?? 0.52, 0, 1);
   const paperMix = clamp(options.paperMix ?? 0.22, 0, 1);
   const saturation = clamp(options.saturation ?? 0.78, 0, 1.05);
@@ -2916,22 +2931,23 @@ function pastelizeSpectralRgb(rgb, options = {}) {
   let softened = saturateRgb(rgb, saturation);
   softened = mixRgb(softened, [1, 1, 1], whiteMix);
   softened = mixRgb(softened, paper, paperMix);
-  softened = mixRgb(softened, [0, 0, 0], shadow);
+  softened = mixRgb(softened, shadowColor, shadow);
   return softened.map((channel) => clamp(channel, 0, 1));
 }
 
 function spectralUiRgb(rgb, dubVisual = isDubModeVisual(), options = {}) {
   const maryMapped = maryPaletteRgbForSpectral(
     rgb,
-    options.paletteMix ?? (dubVisual ? 0.7 : 0.62),
+    options.paletteMix ?? (dubVisual ? 0.8 : 0.62),
     dubVisual ? DUB_PASTEL_ANCHORS : MARY_PASTEL_ANCHORS,
   );
   return pastelizeSpectralRgb(maryMapped, {
-    whiteMix: dubVisual ? 0.18 : 0.46,
-    paperMix: dubVisual ? 0.12 : 0.22,
-    saturation: dubVisual ? 0.86 : 0.79,
-    shadow: dubVisual ? 0.18 : 0.035,
-    paper: dubVisual ? "#35402f" : MARY_PASTEL_PALETTE.paper,
+    whiteMix: dubVisual ? 0.22 : 0.46,
+    paperMix: dubVisual ? 0.1 : 0.22,
+    saturation: dubVisual ? 0.88 : 0.79,
+    shadow: dubVisual ? 0.08 : 0.035,
+    paper: dubVisual ? DUB_COOL_PALETTE.deep : MARY_PASTEL_PALETTE.paper,
+    shadowColor: dubVisual ? DUB_COOL_PALETTE.night : "#000000",
     ...options,
   });
 }
@@ -2944,10 +2960,10 @@ function sectionVisualRgb(section) {
   const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(frequency));
   const dubVisual = isDubModeVisual();
   return spectralUiRgb(rgb, dubVisual, {
-    paletteMix: dubVisual ? 0.72 : 0.64,
-    saturation: dubVisual ? 0.88 : 0.81,
-    shadow: dubVisual ? 0.18 : 0.045,
-    whiteMix: dubVisual ? 0.18 : 0.44,
+    paletteMix: dubVisual ? 0.82 : 0.64,
+    saturation: dubVisual ? 0.9 : 0.81,
+    shadow: dubVisual ? 0.08 : 0.045,
+    whiteMix: dubVisual ? 0.22 : 0.44,
     paperMix: dubVisual ? 0.1 : 0.2,
   });
 }
@@ -2956,11 +2972,11 @@ function timelineGraphRgb() {
   const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(currentReferenceHz()));
   const dubVisual = isDubModeVisual();
   return spectralUiRgb(rgb, dubVisual, {
-    paletteMix: dubVisual ? 0.74 : 0.66,
-    saturation: dubVisual ? 0.84 : 0.75,
-    shadow: dubVisual ? 0.2 : 0.035,
-    whiteMix: dubVisual ? 0.2 : 0.5,
-    paperMix: dubVisual ? 0.12 : 0.24,
+    paletteMix: dubVisual ? 0.84 : 0.66,
+    saturation: dubVisual ? 0.86 : 0.75,
+    shadow: dubVisual ? 0.09 : 0.035,
+    whiteMix: dubVisual ? 0.24 : 0.5,
+    paperMix: dubVisual ? 0.1 : 0.24,
   });
 }
 
@@ -9351,23 +9367,23 @@ function buildVisualLightPalette(dubVisual = false) {
   const markers = Array.from({ length: 12 }, (_, slot) => {
     const rgb = visualTeardropRgbForWavelength(foldedLightWavelengthNm(fundamentalHz * ratioFrequencyForVisualSlot(slot)));
     return paletteRgb(rgb, {
-      paletteMix: dubVisual ? 0.7 : 0.64,
+      paletteMix: dubVisual ? 0.82 : 0.64,
       saturation: dubVisual ? 0.88 : 0.77,
-      shadow: dubVisual ? 0.17 : 0.045,
-      whiteMix: dubVisual ? (slot % 3 === 0 ? 0.2 : 0.16) : (slot % 3 === 0 ? 0.5 : 0.44),
-      paperMix: dubVisual ? 0.12 : 0.22,
+      shadow: dubVisual ? 0.08 : 0.045,
+      whiteMix: dubVisual ? (slot % 3 === 0 ? 0.26 : 0.2) : (slot % 3 === 0 ? 0.5 : 0.44),
+      paperMix: dubVisual ? 0.1 : 0.22,
     });
   });
   const colors = {
-    torus: paletteRgb(base, { paletteMix: 0.66, saturation: dubVisual ? 0.88 : 0.79, shadow: dubVisual ? 0.16 : 0.04, whiteMix: dubVisual ? 0.18 : 0.46 }),
-    torusActive: paletteRgb(fifth, { paletteMix: 0.62, saturation: dubVisual ? 0.94 : 0.85, shadow: dubVisual ? 0.14 : 0.035, whiteMix: dubVisual ? 0.16 : 0.42 }),
-    negative: paletteRgb(seventh, { paletteMix: 0.74, saturation: dubVisual ? 0.76 : 0.71, shadow: dubVisual ? 0.22 : 0.06, whiteMix: dubVisual ? 0.2 : 0.5 }),
-    web: paletteRgb(fourth, { paletteMix: 0.68, saturation: dubVisual ? 0.84 : 0.77, shadow: dubVisual ? 0.18 : 0.04, whiteMix: dubVisual ? 0.18 : 0.46 }),
-    fieldA: paletteRgb(base, { paletteMix: 0.72, saturation: dubVisual ? 0.82 : 0.75, shadow: dubVisual ? 0.2 : 0.035, whiteMix: dubVisual ? 0.2 : 0.52 }),
-    fieldB: paletteRgb(fifth, { paletteMix: 0.68, saturation: dubVisual ? 0.84 : 0.77, shadow: dubVisual ? 0.2 : 0.035, whiteMix: dubVisual ? 0.18 : 0.48 }),
-    haloA: paletteRgb(base, { paletteMix: 0.72, saturation: dubVisual ? 0.82 : 0.73, shadow: dubVisual ? 0.16 : 0.035, whiteMix: dubVisual ? 0.24 : 0.56 }),
-    haloB: paletteRgb(fourth, { paletteMix: 0.7, saturation: dubVisual ? 0.82 : 0.75, shadow: dubVisual ? 0.18 : 0.035, whiteMix: dubVisual ? 0.22 : 0.52 }),
-    haloC: paletteRgb(seventh, { paletteMix: 0.74, saturation: dubVisual ? 0.76 : 0.71, shadow: dubVisual ? 0.2 : 0.045, whiteMix: dubVisual ? 0.22 : 0.54 }),
+    torus: paletteRgb(base, { paletteMix: 0.78, saturation: dubVisual ? 0.88 : 0.79, shadow: dubVisual ? 0.07 : 0.04, whiteMix: dubVisual ? 0.22 : 0.46 }),
+    torusActive: paletteRgb(fifth, { paletteMix: 0.74, saturation: dubVisual ? 0.94 : 0.85, shadow: dubVisual ? 0.06 : 0.035, whiteMix: dubVisual ? 0.2 : 0.42 }),
+    negative: paletteRgb(seventh, { paletteMix: 0.84, saturation: dubVisual ? 0.82 : 0.71, shadow: dubVisual ? 0.1 : 0.06, whiteMix: dubVisual ? 0.24 : 0.5 }),
+    web: paletteRgb(fourth, { paletteMix: 0.8, saturation: dubVisual ? 0.86 : 0.77, shadow: dubVisual ? 0.08 : 0.04, whiteMix: dubVisual ? 0.24 : 0.46 }),
+    fieldA: paletteRgb(base, { paletteMix: 0.84, saturation: dubVisual ? 0.84 : 0.75, shadow: dubVisual ? 0.09 : 0.035, whiteMix: dubVisual ? 0.24 : 0.52 }),
+    fieldB: paletteRgb(fifth, { paletteMix: 0.8, saturation: dubVisual ? 0.86 : 0.77, shadow: dubVisual ? 0.09 : 0.035, whiteMix: dubVisual ? 0.22 : 0.48 }),
+    haloA: paletteRgb(base, { paletteMix: 0.84, saturation: dubVisual ? 0.84 : 0.73, shadow: dubVisual ? 0.07 : 0.035, whiteMix: dubVisual ? 0.28 : 0.56 }),
+    haloB: paletteRgb(fourth, { paletteMix: 0.82, saturation: dubVisual ? 0.84 : 0.75, shadow: dubVisual ? 0.08 : 0.035, whiteMix: dubVisual ? 0.26 : 0.52 }),
+    haloC: paletteRgb(seventh, { paletteMix: 0.84, saturation: dubVisual ? 0.8 : 0.71, shadow: dubVisual ? 0.09 : 0.045, whiteMix: dubVisual ? 0.26 : 0.54 }),
     markers,
   };
   return { dubVisual: Boolean(dubVisual), fundamentalHz, baseNm, colors };

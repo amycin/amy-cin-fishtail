@@ -27,7 +27,7 @@ For web hosting, ownership notes, and optional custom entropy-server wiring, see
 
 ## Design Pass
 
-The interface now uses a two-surface shell: Logic for form, structure, generation, exports, and notes; Feel for Pitch and Tempi, Living Reference, Pulse sound, metronome, swing, and the resonance aperture visual. The current Warm Lattice Instrument style keeps the cream/gold/coral Ocular Debris identity while softening panels, controls, timeline blocks, focus states, and DUB mode for a more tactile cross-platform instrument feel.
+The interface now uses a two-surface shell: Logic for form, structure, generation, exports, and notes; Feel for Pitch and Tempi, Living Reference, Pulse sound, metronome, swing, and the resonance aperture visual. The current Mary pastel instrument style uses the local bubble-painting palette for warm mode, then shifts DUB mode into cooler blue, mint, and violet pitch colours for a tactile cross-platform instrument feel.
 
 ## Validation
 
